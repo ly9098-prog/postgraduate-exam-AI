@@ -305,6 +305,66 @@ async def update_user_interval_factor(
     return factor
 
 
+async def _load_knowledge_adaptive_states(
+    db: AsyncSession,
+    user_id: int,
+    knowledge_point_ids: list[int],
+) -> dict[int, UserKnowledgeAdaptiveState]:
+    """批量加载知识点级自适应状态。"""
+    existing_result = await db.execute(
+        select(UserKnowledgeAdaptiveState).where(
+            UserKnowledgeAdaptiveState.user_id == user_id,
+            UserKnowledgeAdaptiveState.knowledge_point_id.in_(knowledge_point_ids),
+        )
+    )
+    return {s.knowledge_point_id: s for s in existing_result.scalars().all()}
+
+
+async def _ensure_knowledge_adaptive_states(
+    db: AsyncSession,
+    user_id: int,
+    knowledge_point_ids: list[int],
+    state_map: dict[int, UserKnowledgeAdaptiveState],
+) -> None:
+    """补齐缺失的知识点级状态，必要时先开启显式事务。"""
+    missing_ids = [kp_id for kp_id in knowledge_point_ids if kp_id not in state_map]
+    if missing_ids:
+        await _start_explicit_transaction(db)
+    for kp_id in missing_ids:
+        claimed = await _claim_knowledge_state(db, user_id, kp_id)
+        if claimed is None:
+            claimed = await _reload_knowledge_adaptive(db, user_id, kp_id)
+        state_map[kp_id] = claimed
+
+
+def _adjust_knowledge_interval_state(
+    state: UserKnowledgeAdaptiveState,
+    is_correct: bool,
+    is_overdue_review: bool,
+) -> None:
+    """按复习表现更新单个知识点级倍率与计数。"""
+    old = state.interval_factor
+    factor = old
+
+    if not is_correct:
+        factor = factor * 0.92
+    else:
+        if is_overdue_review:
+            factor = factor * 1.08
+        else:
+            factor = factor * 1.04
+
+    factor = _clamp(factor, 0.6, 1.6)
+    state.interval_factor = round(factor, 4)
+    state.last_adjusted_at = utcnow()
+
+    state.due_review_count += 1
+    if is_correct:
+        state.due_review_correct_count += 1
+    if is_overdue_review and not is_correct:
+        state.overdue_wrong_count += 1
+
+
 async def update_knowledge_interval_factor(
     db: AsyncSession,
     user_id: int,
@@ -319,49 +379,16 @@ async def update_knowledge_interval_factor(
     if not is_due_review:
         return
 
-    # 批量加载已有状态
-    existing_result = await db.execute(
-        select(UserKnowledgeAdaptiveState).where(
-            UserKnowledgeAdaptiveState.user_id == user_id,
-            UserKnowledgeAdaptiveState.knowledge_point_id.in_(knowledge_point_ids),
-        )
-    )
-    state_map: dict[int, UserKnowledgeAdaptiveState] = {
-        s.knowledge_point_id: s for s in existing_result.scalars().all()
-    }
-
-    missing_ids = [kp_id for kp_id in knowledge_point_ids if kp_id not in state_map]
-    if missing_ids:
-        await _start_explicit_transaction(db)
-    for kp_id in missing_ids:
-        claimed = await _claim_knowledge_state(db, user_id, kp_id)
-        if claimed is None:
-            claimed = await _reload_knowledge_adaptive(db, user_id, kp_id)
-        state_map[kp_id] = claimed
+    state_map = await _load_knowledge_adaptive_states(db, user_id, knowledge_point_ids)
+    await _ensure_knowledge_adaptive_states(db, user_id, knowledge_point_ids, state_map)
 
     # 统一更新
     for kp_id in dict.fromkeys(knowledge_point_ids):
-        state = state_map[kp_id]
-        old = state.interval_factor
-        factor = old
-
-        if not is_correct:
-            factor = factor * 0.92
-        else:
-            if is_overdue_review:
-                factor = factor * 1.08
-            else:
-                factor = factor * 1.04
-
-        factor = _clamp(factor, 0.6, 1.6)
-        state.interval_factor = round(factor, 4)
-        state.last_adjusted_at = utcnow()
-
-        state.due_review_count += 1
-        if is_correct:
-            state.due_review_correct_count += 1
-        if is_overdue_review and not is_correct:
-            state.overdue_wrong_count += 1
+        _adjust_knowledge_interval_state(
+            state_map[kp_id],
+            is_correct=is_correct,
+            is_overdue_review=is_overdue_review,
+        )
 
     await db.flush()
 
@@ -369,19 +396,13 @@ async def update_knowledge_interval_factor(
 # ── V6.2: 题目难度校准 ───────────────────────────────────────────────
 
 
-async def update_question_difficulty_state(
-    db: AsyncSession,
-    user_id: int,
-    question_id: int,
+def _difficulty_delta(
     is_correct: bool,
     answer_time_seconds: int | None,
     expected_time_seconds: int | None,
     is_overdue_review: bool,
-) -> UserQuestionDifficultyState:
-    """更新用户视角下的题目难度分数。"""
-    state = await _get_or_create_difficulty(db, user_id, question_id)
-
-    old_score = state.personal_difficulty_score
+) -> float:
+    """计算一次作答对个人难度分的影响量。"""
     delta = 0.0
 
     # 基础对错
@@ -407,17 +428,16 @@ async def update_question_difficulty_state(
     if is_overdue_review and not is_correct:
         delta += 5
 
-    new_score = _clamp(old_score + delta, 0, 100)
-    state.personal_difficulty_score = round(new_score, 1)
-    state.difficulty_label = get_difficulty_label(new_score)
+    return delta
 
-    # 计数器
-    state.answer_count += 1
-    if is_correct:
-        state.correct_count += 1
-    else:
-        state.wrong_count += 1
 
+def _apply_difficulty_counters(
+    state: UserQuestionDifficultyState,
+    is_correct: bool,
+    answer_time_seconds: int | None,
+    expected_time_seconds: int | None,
+) -> None:
+    """更新快答/慢答计数。"""
     if (
         answer_time_seconds is not None
         and expected_time_seconds is not None
@@ -431,22 +451,68 @@ async def update_question_difficulty_state(
             else:
                 state.slow_wrong_count += 1
 
+
+def _update_avg_answer_time(
+    state: UserQuestionDifficultyState,
+    answer_time_seconds: int | None,
+) -> None:
+    """滑动平均作答时间。"""
+    if answer_time_seconds is None:
+        return
+    if state.avg_answer_time_seconds is None:
+        state.avg_answer_time_seconds = float(answer_time_seconds)
+    else:
+        n = state.answer_count
+        state.avg_answer_time_seconds = (
+            state.avg_answer_time_seconds * (n - 1) + answer_time_seconds
+        ) / n
+
+
+def _apply_difficulty_answer(
+    state: UserQuestionDifficultyState,
+    is_correct: bool,
+    answer_time_seconds: int | None,
+    expected_time_seconds: int | None,
+    is_overdue_review: bool,
+) -> float:
+    """按一次作答更新难度分、标签、计数与滑动平均时间，返回新分数。"""
+    old_score = state.personal_difficulty_score
+    delta = _difficulty_delta(
+        is_correct,
+        answer_time_seconds,
+        expected_time_seconds,
+        is_overdue_review,
+    )
+
+    new_score = _clamp(old_score + delta, 0, 100)
+    state.personal_difficulty_score = round(new_score, 1)
+    state.difficulty_label = get_difficulty_label(new_score)
+
+    # 计数器
+    state.answer_count += 1
+    if is_correct:
+        state.correct_count += 1
+    else:
+        state.wrong_count += 1
+
+    _apply_difficulty_counters(
+        state, is_correct, answer_time_seconds, expected_time_seconds
+    )
     if is_overdue_review and not is_correct:
         state.overdue_wrong_count += 1
 
-    # 滑动平均作答时间
-    if answer_time_seconds is not None:
-        if state.avg_answer_time_seconds is None:
-            state.avg_answer_time_seconds = float(answer_time_seconds)
-        else:
-            n = state.answer_count
-            state.avg_answer_time_seconds = (
-                state.avg_answer_time_seconds * (n - 1) + answer_time_seconds
-            ) / n
+    _update_avg_answer_time(state, answer_time_seconds)
+    return new_score
 
-    state.last_updated_at = utcnow()
-    await db.flush()
 
+def _log_difficulty_change(
+    user_id: int,
+    question_id: int,
+    old_score: float,
+    new_score: float,
+    state: UserQuestionDifficultyState,
+) -> None:
+    """只在分数变化超过阈值时记录日志。"""
     if abs(new_score - old_score) > 0.01:
         logger.info(
             "question_difficulty_updated user=%d q=%d old=%.1f new=%.1f label=%s",
@@ -457,10 +523,143 @@ async def update_question_difficulty_state(
             state.difficulty_label,
         )
 
+
+async def update_question_difficulty_state(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+    is_correct: bool,
+    answer_time_seconds: int | None,
+    expected_time_seconds: int | None,
+    is_overdue_review: bool,
+) -> UserQuestionDifficultyState:
+    """更新用户视角下的题目难度分数。"""
+    state = await _get_or_create_difficulty(db, user_id, question_id)
+
+    old_score = state.personal_difficulty_score
+    new_score = _apply_difficulty_answer(
+        state,
+        is_correct,
+        answer_time_seconds,
+        expected_time_seconds,
+        is_overdue_review,
+    )
+
+    state.last_updated_at = utcnow()
+    await db.flush()
+    _log_difficulty_change(user_id, question_id, old_score, new_score, state)
+
     return state
 
 
 # ── 集成入口 ──────────────────────────────────────────────────────────
+
+
+async def _load_question_kp_ids(db: AsyncSession, question_id: int) -> list[int]:
+    """加载题目关联的知识点 id。"""
+    kp_rows = (
+        await db.execute(
+            select(QuestionKnowledgePoint.knowledge_point_id).where(
+                QuestionKnowledgePoint.question_id == question_id
+            )
+        )
+    ).all()
+    return [r.knowledge_point_id for r in kp_rows]
+
+
+async def _load_user_interval_factor(db: AsyncSession, user_id: int) -> float:
+    """用户全局间隔倍率；无档案时回退 1.0。"""
+    profile_result = await db.execute(
+        select(UserAdaptiveProfile).where(UserAdaptiveProfile.user_id == user_id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    return profile.interval_factor if profile else 1.0
+
+
+async def _load_knowledge_interval_factor(
+    db: AsyncSession,
+    user_id: int,
+    kp_ids: list[int],
+) -> float:
+    """题目知识点级倍率平均值；无知识点或无状态时回退 1.0。"""
+    if not kp_ids:
+        return 1.0
+    ka_result = await db.execute(
+        select(
+            UserKnowledgeAdaptiveState.knowledge_point_id,
+            UserKnowledgeAdaptiveState.interval_factor,
+        ).where(
+            UserKnowledgeAdaptiveState.user_id == user_id,
+            UserKnowledgeAdaptiveState.knowledge_point_id.in_(kp_ids),
+        )
+    )
+    factors = [r.interval_factor for r in ka_result.all()]
+    if not factors:
+        return 1.0
+    return sum(factors) / len(factors)
+
+
+async def _load_difficulty_interval_factor(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+) -> float:
+    """题目个人难度倍率；无状态时回退 1.0。"""
+    diff_result = await db.execute(
+        select(UserQuestionDifficultyState).where(
+            UserQuestionDifficultyState.user_id == user_id,
+            UserQuestionDifficultyState.question_id == question_id,
+        )
+    )
+    diff_state = diff_result.scalar_one_or_none()
+    return get_difficulty_factor(diff_state.difficulty_label) if diff_state else 1.0
+
+
+async def _load_user_question_state(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+) -> UserQuestionState | None:
+    """加载用户题目状态。"""
+    uqs_result = await db.execute(
+        select(UserQuestionState).where(
+            UserQuestionState.user_id == user_id,
+            UserQuestionState.question_id == question_id,
+        )
+    )
+    return uqs_result.scalar_one_or_none()
+
+
+async def _override_next_review_at(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+    base_interval_days: int,
+    final_days: int,
+    user_factor: float,
+    knowledge_factor: float,
+    difficulty_factor: float,
+) -> None:
+    """用个性化间隔覆盖 next_review_at；无用户题目状态时不写库。"""
+    uqs = await _load_user_question_state(db, user_id, question_id)
+    if uqs is None:
+        return
+
+    now = utcnow()
+    uqs.next_review_at = now + timedelta(days=final_days)
+    await db.flush()
+
+    logger.info(
+        "adaptive_interval_applied user=%d q=%d base=%d final=%d "
+        "user_f=%.3f kp_f=%.3f diff_f=%.3f",
+        user_id,
+        question_id,
+        base_interval_days,
+        final_days,
+        user_factor,
+        knowledge_factor,
+        difficulty_factor,
+    )
 
 
 async def apply_personalized_interval(
@@ -477,48 +676,14 @@ async def apply_personalized_interval(
         return None
 
     # 用户倍率
-    profile_result = await db.execute(
-        select(UserAdaptiveProfile).where(UserAdaptiveProfile.user_id == user_id)
-    )
-    profile = profile_result.scalar_one_or_none()
-    user_factor = profile.interval_factor if profile else 1.0
+    user_factor = await _load_user_interval_factor(db, user_id)
 
     # 知识点倍率（取该题所有知识点的平均值）
-    kp_rows = (
-        await db.execute(
-            select(QuestionKnowledgePoint.knowledge_point_id).where(
-                QuestionKnowledgePoint.question_id == question_id
-            )
-        )
-    ).all()
-    kp_ids = [r.knowledge_point_id for r in kp_rows]
-
-    knowledge_factor = 1.0
-    if kp_ids:
-        ka_result = await db.execute(
-            select(
-                UserKnowledgeAdaptiveState.knowledge_point_id,
-                UserKnowledgeAdaptiveState.interval_factor,
-            ).where(
-                UserKnowledgeAdaptiveState.user_id == user_id,
-                UserKnowledgeAdaptiveState.knowledge_point_id.in_(kp_ids),
-            )
-        )
-        factors = [r.interval_factor for r in ka_result.all()]
-        if factors:
-            knowledge_factor = sum(factors) / len(factors)
+    kp_ids = await _load_question_kp_ids(db, question_id)
+    knowledge_factor = await _load_knowledge_interval_factor(db, user_id, kp_ids)
 
     # 难度倍率
-    diff_result = await db.execute(
-        select(UserQuestionDifficultyState).where(
-            UserQuestionDifficultyState.user_id == user_id,
-            UserQuestionDifficultyState.question_id == question_id,
-        )
-    )
-    diff_state = diff_result.scalar_one_or_none()
-    difficulty_factor = (
-        get_difficulty_factor(diff_state.difficulty_label) if diff_state else 1.0
-    )
+    difficulty_factor = await _load_difficulty_interval_factor(db, user_id, question_id)
 
     # 计算最终间隔
     final_days = calculate_personalized_interval_days(
@@ -529,31 +694,107 @@ async def apply_personalized_interval(
     )
 
     # 覆盖 next_review_at
-    uqs_result = await db.execute(
-        select(UserQuestionState).where(
-            UserQuestionState.user_id == user_id,
-            UserQuestionState.question_id == question_id,
-        )
+    await _override_next_review_at(
+        db,
+        user_id,
+        question_id,
+        base_interval_days,
+        final_days,
+        user_factor,
+        knowledge_factor,
+        difficulty_factor,
     )
-    uqs = uqs_result.scalar_one_or_none()
-    if uqs is not None:
-        now = utcnow()
-        uqs.next_review_at = now + timedelta(days=final_days)
-        await db.flush()
-
-        logger.info(
-            "adaptive_interval_applied user=%d q=%d base=%d final=%d "
-            "user_f=%.3f kp_f=%.3f diff_f=%.3f",
-            user_id,
-            question_id,
-            base_interval_days,
-            final_days,
-            user_factor,
-            knowledge_factor,
-            difficulty_factor,
-        )
 
     return final_days
+
+
+def _resolve_review_flags(
+    uqs: UserQuestionState | None,
+    answered_at: datetime,
+    is_due_review: bool | None,
+    is_overdue_review: bool | None,
+) -> tuple[bool, bool]:
+    """兼容旧调用方：只有未显式传入 pre-update 状态时才自行判断。
+
+    注意：如果调用方已经先更新了 Leitner，这个 fallback 读到的是未来时间，
+    因此当前 practice 单题/批量链路都会显式传入两个布尔值。
+    """
+    nra = getattr(uqs, "next_review_at", None) if uqs is not None else None
+    if is_due_review is None:
+        is_due_review = bool(nra is not None and answered_at >= nra)
+    if is_overdue_review is None:
+        is_overdue_review = bool(
+            nra is not None and answered_at >= nra + timedelta(days=1)
+        )
+    return is_due_review, is_overdue_review
+
+
+async def _update_difficulty_from_answer(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+    is_correct: bool,
+    answer_time_seconds: int | None,
+    is_overdue_review: bool,
+) -> None:
+    """按题目 difficulty 估算期望时间并更新个人难度状态。"""
+    q_result = await db.execute(
+        select(Question.difficulty).where(Question.id == question_id)
+    )
+    q_difficulty = q_result.scalar_one_or_none()
+    expected_time = _estimate_expected_time(q_difficulty or 3)
+
+    await update_question_difficulty_state(
+        db,
+        user_id,
+        question_id,
+        is_correct=is_correct,
+        answer_time_seconds=answer_time_seconds,
+        expected_time_seconds=expected_time,
+        is_overdue_review=is_overdue_review,
+    )
+
+
+async def _apply_leitner_interval_override(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+    uqs: UserQuestionState,
+) -> None:
+    """用 Leitner 当前盒子的基础间隔覆盖 next_review_at。"""
+    from app.services.question_review_service import LEITNER_INTERVAL_DAYS
+
+    base_days = LEITNER_INTERVAL_DAYS.get(uqs.box_level, 1)
+    await apply_personalized_interval(db, user_id, question_id, base_days)
+
+
+async def _update_interval_factors(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+    is_correct: bool,
+    is_overdue_review: bool,
+) -> None:
+    """到期复习时更新用户级倍率与知识点级倍率。"""
+    await update_user_interval_factor(
+        db,
+        user_id,
+        is_due_review=True,
+        is_correct=is_correct,
+        is_overdue_review=is_overdue_review,
+    )
+
+    # 知识点级倍率
+    kp_ids = await _load_question_kp_ids(db, question_id)
+    if kp_ids:
+        await update_knowledge_interval_factor(
+            db,
+            user_id,
+            kp_ids,
+            is_due_review=True,
+            is_correct=is_correct,
+            is_overdue_review=is_overdue_review,
+        )
 
 
 async def update_adaptive_state_after_answer(
@@ -577,81 +818,121 @@ async def update_adaptive_state_after_answer(
     if not settings.ADAPTIVE_LEARNING_ENABLED:
         return
 
-    uqs_result = await db.execute(
-        select(UserQuestionState).where(
-            UserQuestionState.user_id == user_id,
-            UserQuestionState.question_id == question_id,
-        )
+    uqs = await _load_user_question_state(db, user_id, question_id)
+    is_due_review, is_overdue_review = _resolve_review_flags(
+        uqs,
+        answered_at,
+        is_due_review,
+        is_overdue_review,
     )
-    uqs = uqs_result.scalar_one_or_none()
-
-    # 兼容旧调用方：只有未显式传入 pre-update 状态时才自行判断。
-    # 注意：如果调用方已经先更新了 Leitner，这个 fallback 读到的是未来时间，
-    # 因此当前 practice 单题/批量链路都会显式传入两个布尔值。
-    nra = getattr(uqs, "next_review_at", None) if uqs is not None else None
-    if is_due_review is None:
-        is_due_review = bool(nra is not None and answered_at >= nra)
-    if is_overdue_review is None:
-        is_overdue_review = bool(
-            nra is not None and answered_at >= nra + timedelta(days=1)
-        )
 
     # V6.1: 更新用户间隔倍率
     if settings.ADAPTIVE_INTERVAL_ENABLED and is_due_review:
-        await update_user_interval_factor(
-            db,
-            user_id,
-            is_due_review=True,
-            is_correct=is_correct,
-            is_overdue_review=is_overdue_review,
+        await _update_interval_factors(
+            db, user_id, question_id, is_correct, is_overdue_review
         )
-
-        # 知识点级倍率
-        kp_rows = (
-            await db.execute(
-                select(QuestionKnowledgePoint.knowledge_point_id).where(
-                    QuestionKnowledgePoint.question_id == question_id
-                )
-            )
-        ).all()
-        kp_ids = [r.knowledge_point_id for r in kp_rows]
-        if kp_ids:
-            await update_knowledge_interval_factor(
-                db,
-                user_id,
-                kp_ids,
-                is_due_review=True,
-                is_correct=is_correct,
-                is_overdue_review=is_overdue_review,
-            )
 
     # V6.2: 更新题目难度
     if settings.ADAPTIVE_DIFFICULTY_ENABLED:
-        q_result = await db.execute(
-            select(Question.difficulty).where(Question.id == question_id)
-        )
-        q_difficulty = q_result.scalar_one_or_none()
-        expected_time = _estimate_expected_time(q_difficulty or 3)
-
-        await update_question_difficulty_state(
-            db,
-            user_id,
-            question_id,
-            is_correct=is_correct,
-            answer_time_seconds=answer_time_seconds,
-            expected_time_seconds=expected_time,
-            is_overdue_review=is_overdue_review,
+        await _update_difficulty_from_answer(
+            db, user_id, question_id, is_correct, answer_time_seconds, is_overdue_review
         )
 
     # 个性化间隔覆盖（仅在 dry_run=False 时生效）
     if not settings.ADAPTIVE_DRY_RUN and uqs is not None:
-        from app.services.question_review_service import LEITNER_INTERVAL_DAYS
-
-        base_days = LEITNER_INTERVAL_DAYS.get(uqs.box_level, 1)
-        await apply_personalized_interval(db, user_id, question_id, base_days)
+        await _apply_leitner_interval_override(db, user_id, question_id, uqs)
 
 
 # ── API: 个性化概览 ──────────────────────────────────────────────────
+
+
+def _interval_status(interval_factor: float) -> str:
+    """按用户间隔倍率给出记忆状态标签。"""
+    if interval_factor < 0.9:
+        return "fast_forgetting"
+    if interval_factor < 0.98:
+        return "slightly_fast_forgetting"
+    if interval_factor > 1.1:
+        return "stable_memory"
+    return "normal"
+
+
+async def _count_fast_forgetting_points(db: AsyncSession, user_id: int) -> int:
+    """遗忘较快的知识点数。"""
+    fast_forgetting_result = await db.execute(
+        select(func.count(UserKnowledgeAdaptiveState.id)).where(
+            UserKnowledgeAdaptiveState.user_id == user_id,
+            UserKnowledgeAdaptiveState.interval_factor < 0.9,
+        )
+    )
+    return fast_forgetting_result.scalar_one()
+
+
+async def _count_user_hard_questions(db: AsyncSession, user_id: int) -> int:
+    """个人难题数。"""
+    hard_result = await db.execute(
+        select(func.count(UserQuestionDifficultyState.id)).where(
+            UserQuestionDifficultyState.user_id == user_id,
+            UserQuestionDifficultyState.difficulty_label == "hard",
+        )
+    )
+    return hard_result.scalar_one()
+
+
+async def _count_path_blocked_knowledge(db: AsyncSession, user_id: int) -> int:
+    """V6.3 路径阻塞知识点数（有薄弱前置的 KP 数量，best-effort）。"""
+    try:
+        if not settings.ADAPTIVE_PATH_ENABLED:
+            return 0
+        # 查所有有 prerequisite 边的 target KP
+        targets_result = await db.execute(
+            select(KnowledgeEdge.target_knowledge_point_id)
+            .where(
+                KnowledgeEdge.relation_type == "prerequisite",
+                KnowledgeEdge.is_active == True,  # noqa: E712
+            )
+            .distinct()
+        )
+        all_target_ids = [r[0] for r in targets_result.all()]
+        if not all_target_ids:
+            return 0
+        blocked = await get_blocked_knowledge_points(
+            db,
+            user_id,
+            all_target_ids,
+            "",
+        )
+        return len(blocked)
+    except Exception:
+        logger.debug("path_blocked_count 计算失败", exc_info=True)
+        return 0
+
+
+async def _weight_status(db: AsyncSession, user_id: int) -> tuple[bool, str]:
+    """V6.4 权重状态（best-effort，失败回退“未调整”）。"""
+    try:
+        if not settings.ADAPTIVE_WEIGHT_ENABLED:
+            return False, ""
+        pref_result = await db.execute(
+            select(UserRecommendPreference).where(
+                UserRecommendPreference.user_id == user_id,
+            )
+        )
+        pref = pref_result.scalar_one_or_none()
+        if not pref or not pref.last_adjusted_at:
+            return False, ""
+        # 生成摘要：找出偏离 1.0 最大的权重
+        deviations = []
+        for field in _WEIGHT_FIELDS:
+            val = getattr(pref, field, 1.0)
+            if abs(val - 1.0) >= 0.05:
+                direction = "偏重" if val > 1.0 else "偏轻"
+                label = field.replace("_weight", "")
+                deviations.append(f"{label}{direction}")
+        return True, "；".join(deviations[:3]) if deviations else ""
+    except Exception:
+        logger.debug("weight_summary 计算失败", exc_info=True)
+        return False, ""
 
 
 async def get_adaptive_overview(db: AsyncSession, user_id: int) -> dict:
@@ -667,83 +948,12 @@ async def get_adaptive_overview(db: AsyncSession, user_id: int) -> dict:
     recent_due = profile.recent_due_count if profile else 0
     recent_correct = profile.recent_due_correct_count if profile else 0
     recall_rate = (recent_correct / recent_due) if recent_due > 0 else 0.0
+    interval_status = _interval_status(interval_factor)
 
-    if interval_factor < 0.9:
-        interval_status = "fast_forgetting"
-    elif interval_factor < 0.98:
-        interval_status = "slightly_fast_forgetting"
-    elif interval_factor > 1.1:
-        interval_status = "stable_memory"
-    else:
-        interval_status = "normal"
-
-    # 遗忘较快的知识点数
-    fast_forgetting_result = await db.execute(
-        select(func.count(UserKnowledgeAdaptiveState.id)).where(
-            UserKnowledgeAdaptiveState.user_id == user_id,
-            UserKnowledgeAdaptiveState.interval_factor < 0.9,
-        )
-    )
-    fast_forgetting_count = fast_forgetting_result.scalar_one()
-
-    # 个人难题数
-    hard_result = await db.execute(
-        select(func.count(UserQuestionDifficultyState.id)).where(
-            UserQuestionDifficultyState.user_id == user_id,
-            UserQuestionDifficultyState.difficulty_label == "hard",
-        )
-    )
-    hard_count = hard_result.scalar_one()
-
-    # V6.3: 路径阻塞知识点数（有薄弱前置的 KP 数量）
-    path_blocked_count = 0
-    try:
-        if settings.ADAPTIVE_PATH_ENABLED:
-            # 查所有有 prerequisite 边的 target KP
-            targets_result = await db.execute(
-                select(KnowledgeEdge.target_knowledge_point_id)
-                .where(
-                    KnowledgeEdge.relation_type == "prerequisite",
-                    KnowledgeEdge.is_active == True,  # noqa: E712
-                )
-                .distinct()
-            )
-            all_target_ids = [r[0] for r in targets_result.all()]
-            if all_target_ids:
-                blocked = await get_blocked_knowledge_points(
-                    db,
-                    user_id,
-                    all_target_ids,
-                    "",
-                )
-                path_blocked_count = len(blocked)
-    except Exception:
-        logger.debug("path_blocked_count 计算失败", exc_info=True)
-
-    # V6.4: 权重状态
-    weights_adjusted = False
-    weight_summary = ""
-    try:
-        if settings.ADAPTIVE_WEIGHT_ENABLED:
-            pref_result = await db.execute(
-                select(UserRecommendPreference).where(
-                    UserRecommendPreference.user_id == user_id,
-                )
-            )
-            pref = pref_result.scalar_one_or_none()
-            if pref and pref.last_adjusted_at:
-                weights_adjusted = True
-                # 生成摘要：找出偏离 1.0 最大的权重
-                deviations = []
-                for field in _WEIGHT_FIELDS:
-                    val = getattr(pref, field, 1.0)
-                    if abs(val - 1.0) >= 0.05:
-                        direction = "偏重" if val > 1.0 else "偏轻"
-                        label = field.replace("_weight", "")
-                        deviations.append(f"{label}{direction}")
-                weight_summary = "；".join(deviations[:3]) if deviations else ""
-    except Exception:
-        logger.debug("weight_summary 计算失败", exc_info=True)
+    fast_forgetting_count = await _count_fast_forgetting_points(db, user_id)
+    hard_count = await _count_user_hard_questions(db, user_id)
+    path_blocked_count = await _count_path_blocked_knowledge(db, user_id)
+    weights_adjusted, weight_summary = await _weight_status(db, user_id)
 
     return {
         "interval_factor": round(interval_factor, 3),
@@ -758,13 +968,9 @@ async def get_adaptive_overview(db: AsyncSession, user_id: int) -> dict:
     }
 
 
-async def get_hard_questions(
-    db: AsyncSession,
-    user_id: int,
-    limit: int = 20,
-) -> dict:
-    """返回用户个人难题列表。"""
-    q = (
+def _hard_questions_statement(user_id: int, limit: int):
+    """个人难题查询：hard 标签、按个人难度降序、limit 截断。"""
+    return (
         select(
             UserQuestionDifficultyState.question_id,
             UserQuestionDifficultyState.personal_difficulty_score,
@@ -782,68 +988,90 @@ async def get_hard_questions(
         .limit(limit)
     )
 
-    rows = (await db.execute(q)).all()
 
-    # 批量加载 KP 名称和 next_review_at
-    q_ids = [r.question_id for r in rows]
+async def _load_hard_question_labels(
+    db: AsyncSession,
+    user_id: int,
+    q_ids: list[int],
+) -> tuple[dict[int, tuple[int | None, str | None]], dict[int, str | None]]:
+    """批量加载 KP 名称和 next_review_at。"""
     kp_map: dict[int, tuple[int | None, str | None]] = {}
     review_map: dict[int, str | None] = {}
 
-    if q_ids:
-        kp_rows = (
-            await db.execute(
-                select(
-                    QuestionKnowledgePoint.question_id,
-                    QuestionKnowledgePoint.knowledge_point_id,
-                    KnowledgePoint.name,
-                )
-                .join(
-                    KnowledgePoint,
-                    QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
-                )
-                .where(QuestionKnowledgePoint.question_id.in_(q_ids))
-                .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
-            )
-        ).all()
-        for r in kp_rows:
-            if r.question_id not in kp_map:
-                kp_map[r.question_id] = (r.knowledge_point_id, r.name)
+    if not q_ids:
+        return kp_map, review_map
 
-        uqs_rows = (
-            await db.execute(
-                select(
-                    UserQuestionState.question_id,
-                    UserQuestionState.next_review_at,
-                ).where(
-                    UserQuestionState.user_id == user_id,
-                    UserQuestionState.question_id.in_(q_ids),
-                )
+    kp_rows = (
+        await db.execute(
+            select(
+                QuestionKnowledgePoint.question_id,
+                QuestionKnowledgePoint.knowledge_point_id,
+                KnowledgePoint.name,
             )
-        ).all()
-        for r in uqs_rows:
-            review_map[r.question_id] = (
-                serialize_utc_datetime(r.next_review_at) if r.next_review_at else None
+            .join(
+                KnowledgePoint,
+                QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
             )
-
-    items = []
-    for r in rows:
-        kp = kp_map.get(r.question_id)
-        items.append(
-            {
-                "question_id": r.question_id,
-                "knowledge_point_id": kp[0] if kp else None,
-                "knowledge_point_name": kp[1] if kp else None,
-                "personal_difficulty_score": round(r.personal_difficulty_score, 1),
-                "difficulty_label": r.difficulty_label,
-                "wrong_count": r.wrong_count,
-                "avg_answer_time_seconds": (
-                    round(r.avg_answer_time_seconds, 1)
-                    if r.avg_answer_time_seconds
-                    else None
-                ),
-                "next_review_at": review_map.get(r.question_id),
-            }
+            .where(QuestionKnowledgePoint.question_id.in_(q_ids))
+            .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
         )
+    ).all()
+    for r in kp_rows:
+        if r.question_id not in kp_map:
+            kp_map[r.question_id] = (r.knowledge_point_id, r.name)
+
+    uqs_rows = (
+        await db.execute(
+            select(
+                UserQuestionState.question_id,
+                UserQuestionState.next_review_at,
+            ).where(
+                UserQuestionState.user_id == user_id,
+                UserQuestionState.question_id.in_(q_ids),
+            )
+        )
+    ).all()
+    for r in uqs_rows:
+        review_map[r.question_id] = (
+            serialize_utc_datetime(r.next_review_at) if r.next_review_at else None
+        )
+
+    return kp_map, review_map
+
+
+def _hard_question_item(
+    row,
+    kp_map: dict[int, tuple[int | None, str | None]],
+    review_map: dict[int, str | None],
+) -> dict:
+    """把难题行投影成响应条目。"""
+    kp = kp_map.get(row.question_id)
+    return {
+        "question_id": row.question_id,
+        "knowledge_point_id": kp[0] if kp else None,
+        "knowledge_point_name": kp[1] if kp else None,
+        "personal_difficulty_score": round(row.personal_difficulty_score, 1),
+        "difficulty_label": row.difficulty_label,
+        "wrong_count": row.wrong_count,
+        "avg_answer_time_seconds": (
+            round(row.avg_answer_time_seconds, 1)
+            if row.avg_answer_time_seconds
+            else None
+        ),
+        "next_review_at": review_map.get(row.question_id),
+    }
+
+
+async def get_hard_questions(
+    db: AsyncSession,
+    user_id: int,
+    limit: int = 20,
+) -> dict:
+    """返回用户个人难题列表。"""
+    rows = (await db.execute(_hard_questions_statement(user_id, limit))).all()
+    q_ids = [r.question_id for r in rows]
+    kp_map, review_map = await _load_hard_question_labels(db, user_id, q_ids)
+    items = [_hard_question_item(r, kp_map, review_map) for r in rows]
 
     return {"total": len(items), "items": items}
 
@@ -899,6 +1127,364 @@ async def get_knowledge_path_adaptive(
 # ── V6.3: 知识点路径推荐 ─────────────────────────────────────────────
 
 
+def _empty_graph_context() -> dict:
+    """图推荐上下文空结果。"""
+    return {
+        "blocked_targets": {},
+        "prerequisite_candidates": {},
+        "prerequisites_by_target": {},
+    }
+
+
+def _graph_origin_ids(target_kp_ids: list[int]) -> list[int]:
+    """起点知识点 id 去重（保留首次出现顺序，跳过空值）。"""
+    return list(dict.fromkeys(int(k) for k in target_kp_ids if k))
+
+
+def _bounded_graph_limits(max_depth: int, max_nodes: int) -> tuple[int, int]:
+    """深度与节点数上限 clamp。"""
+    bounded_depth = max(1, min(int(max_depth or 1), GRAPH_MAX_DEPTH))
+    bounded_nodes = max(1, int(max_nodes or GRAPH_MAX_EXPANSION_NODES))
+    return bounded_depth, bounded_nodes
+
+
+def _graph_edge_conditions(
+    current_targets: list[int],
+    subject_ids: list[int] | None,
+) -> list:
+    """单层前置边查询条件；给定科目时同时限制边与两端知识点。"""
+    edge_conditions = [
+        KnowledgeEdge.target_knowledge_point_id.in_(current_targets),
+        KnowledgeEdge.relation_type == "prerequisite",
+        KnowledgeEdge.is_active == True,  # noqa: E712
+    ]
+    if subject_ids:
+        scope_ids = list({int(sid) for sid in subject_ids})
+        scoped_kps = select(KnowledgePoint.id).where(
+            KnowledgePoint.is_active == True,  # noqa: E712
+            KnowledgePoint.subject_id.in_(scope_ids),
+        )
+        edge_conditions.extend(
+            [
+                KnowledgeEdge.subject_id.in_(scope_ids),
+                KnowledgeEdge.source_knowledge_point_id.in_(scoped_kps),
+                KnowledgeEdge.target_knowledge_point_id.in_(scoped_kps),
+            ]
+        )
+    return edge_conditions
+
+
+async def _fetch_graph_edges(
+    db: AsyncSession,
+    edge_conditions: list,
+) -> dict[int, list]:
+    """按目标知识点分组的前置边。"""
+    edge_result = await db.execute(
+        select(
+            KnowledgeEdge.id,
+            KnowledgeEdge.target_knowledge_point_id,
+            KnowledgeEdge.source_knowledge_point_id,
+            KnowledgeEdge.weight,
+            KnowledgeEdge.confidence,
+            KnowledgeEdge.source,
+        ).where(*edge_conditions)
+    )
+    edges_by_target: dict[int, list] = {}
+    for edge in edge_result.all():
+        edges_by_target.setdefault(edge.target_knowledge_point_id, []).append(edge)
+    return edges_by_target
+
+
+def _graph_relation_payload(
+    edge,
+    prereq_id: int,
+    origin_id: int,
+    depth: int,
+    parent_quality: dict[str, float],
+) -> tuple[dict, float, float]:
+    """把一条前置边投影成关系字典，并返回累计权重与置信度。"""
+    edge_weight = normalize_edge_weight(edge.weight)
+    edge_confidence = _clamp01(edge.confidence)
+    cumulative_weight = parent_quality["weight"] * edge_weight
+    cumulative_confidence = parent_quality["confidence"] * edge_confidence
+    depth_decay = 1.0 if depth == 1 else 0.65
+    path_quality = cumulative_weight * cumulative_confidence * depth_decay
+
+    payload = {
+        "knowledge_point_id": prereq_id,
+        "origin_knowledge_point_id": origin_id,
+        "depth": depth,
+        "edge_id": edge.id,
+        "edge_weight": edge_weight,
+        "edge_confidence": edge_confidence,
+        "edge_source": edge.source,
+        "path_quality": max(0.0, min(path_quality, 1.0)),
+    }
+    return payload, cumulative_weight, cumulative_confidence
+
+
+def _expand_graph_layer(
+    depth: int,
+    max_depth: int,
+    max_nodes: int,
+    frontier: dict[tuple[int, int], dict[str, float]],
+    edges_by_target: dict[int, list],
+    visited: set[tuple[int, int]],
+    relations: list[dict],
+) -> dict[tuple[int, int], dict[str, float]]:
+    """展开一层前置关系，返回下一层 frontier。"""
+    next_frontier: dict[tuple[int, int], dict[str, float]] = {}
+    for (current_id, origin_id), parent_quality in frontier.items():
+        for edge in edges_by_target.get(current_id, []):
+            prereq_id = edge.source_knowledge_point_id
+            pair = (prereq_id, origin_id)
+            if pair in visited:
+                continue
+
+            payload, cumulative_weight, cumulative_confidence = _graph_relation_payload(
+                edge,
+                prereq_id,
+                origin_id,
+                depth,
+                parent_quality,
+            )
+            relations.append(payload)
+            visited.add(pair)
+            if len(relations) >= max_nodes:
+                break
+            if depth < max_depth:
+                next_frontier[pair] = {
+                    "weight": cumulative_weight,
+                    "confidence": cumulative_confidence,
+                }
+        if len(relations) >= max_nodes:
+            break
+    return next_frontier
+
+
+async def _collect_graph_relations(
+    db: AsyncSession,
+    origin_ids: list[int],
+    max_depth: int,
+    max_nodes: int,
+    subject_ids: list[int] | None,
+) -> list[dict]:
+    """有界广度优先遍历前置关系，返回已发现的关系字典列表。"""
+    # state[(current_node, origin_target)] = cumulative path quality before the
+    # next edge.  Start each origin at quality 1.0.
+    frontier: dict[tuple[int, int], dict[str, float]] = {
+        (origin, origin): {"weight": 1.0, "confidence": 1.0} for origin in origin_ids
+    }
+    visited: set[tuple[int, int]] = set(frontier)
+    relations: list[dict] = []
+
+    for depth in range(1, max_depth + 1):
+        if not frontier or len(relations) >= max_nodes:
+            break
+
+        current_targets = list({node_id for node_id, _origin in frontier})
+        edges_by_target = await _fetch_graph_edges(
+            db, _graph_edge_conditions(current_targets, subject_ids)
+        )
+        frontier = _expand_graph_layer(
+            depth,
+            max_depth,
+            max_nodes,
+            frontier,
+            edges_by_target,
+            visited,
+            relations,
+        )
+
+    return relations
+
+
+async def _load_graph_kp_info(
+    db: AsyncSession,
+    all_kp_ids: list[int],
+) -> dict[int, dict]:
+    """批量加载参与遍历的知识点名称与科目（仅启用知识点）。"""
+    name_result = await db.execute(
+        select(KnowledgePoint.id, KnowledgePoint.name, KnowledgePoint.subject_id).where(
+            KnowledgePoint.id.in_(all_kp_ids),
+            KnowledgePoint.is_active == True,  # noqa: E712
+        )
+    )
+    return {
+        row.id: {"name": row.name, "subject_id": row.subject_id}
+        for row in name_result.all()
+    }
+
+
+async def _load_graph_mastery(
+    db: AsyncSession,
+    user_id: int,
+    all_kp_ids: list[int],
+) -> dict[int, tuple[float, float]]:
+    """批量加载用户在这些知识点上的掌握度与置信度。"""
+    mastery_result = await db.execute(
+        select(
+            UserKnowledgeState.knowledge_point_id,
+            UserKnowledgeState.mastery_score,
+            UserKnowledgeState.confidence,
+        ).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.knowledge_point_id.in_(all_kp_ids),
+        )
+    )
+    return {
+        row.knowledge_point_id: (float(row.mastery_score), float(row.confidence))
+        for row in mastery_result.all()
+    }
+
+
+def _graph_relation_item(
+    rel: dict,
+    kp_info: dict[int, dict],
+    mastery: dict[int, tuple[float, float]],
+    subject_ids: list[int] | None,
+    min_mastery: float,
+    min_confidence: float,
+) -> dict | None:
+    """把一条关系投影成推荐条目；知识点不可见或被科目过滤时返回 None。"""
+    prereq_id = rel["knowledge_point_id"]
+    origin_id = rel["origin_knowledge_point_id"]
+    if prereq_id not in kp_info or origin_id not in kp_info:
+        return None
+    if subject_ids and (
+        kp_info[prereq_id]["subject_id"] not in subject_ids
+        or kp_info[origin_id]["subject_id"] not in subject_ids
+    ):
+        return None
+
+    prereq_mastery, prereq_conf = mastery.get(prereq_id, (50.0, 0.0))
+    origin_mastery, origin_conf = mastery.get(origin_id, (50.0, 0.0))
+    confirmed_gap = prereq_conf >= min_confidence and prereq_mastery < min_mastery
+    unknown_gap = prereq_conf < min_confidence
+
+    return {
+        **rel,
+        "name": kp_info[prereq_id]["name"],
+        "subject_id": kp_info[prereq_id]["subject_id"],
+        "mastery_score": round(prereq_mastery, 1),
+        "mastery_confidence": round(prereq_conf, 3),
+        "origin_name": kp_info[origin_id]["name"],
+        "origin_mastery_score": round(origin_mastery, 1),
+        "origin_mastery_confidence": round(origin_conf, 3),
+        "confirmed_gap": confirmed_gap,
+        "unknown_gap": unknown_gap,
+    }
+
+
+def _graph_candidate_rank(item: dict) -> tuple:
+    """候选排序键：确认缺口优先，其次路径质量，最后浅层优先。"""
+    return (
+        1 if item["confirmed_gap"] else 0,
+        item["path_quality"],
+        -item["depth"],
+    )
+
+
+def _graph_current_rank(current: dict | None) -> tuple:
+    """已存候选的排序键；无候选时返回最小键。"""
+    return (
+        1 if current and current.get("confirmed_gap") else 0,
+        current.get("path_quality", 0.0) if current else -1.0,
+        -current.get("depth", 99) if current else -99,
+    )
+
+
+def _graph_candidate_eligible(rel: dict, item: dict) -> bool:
+    """候选扩展条件：确认缺口，或直接未知前置（软诊断）。"""
+    return bool(item["confirmed_gap"] or (rel["depth"] == 1 and item["unknown_gap"]))
+
+
+def _graph_context(
+    blocked_targets: dict[int, list[dict]],
+    prerequisite_candidates: dict[int, dict],
+    prerequisites_by_target: dict[int, list[dict]],
+) -> dict:
+    """组装图推荐上下文结果。"""
+    return {
+        "blocked_targets": blocked_targets,
+        "prerequisite_candidates": prerequisite_candidates,
+        "prerequisites_by_target": prerequisites_by_target,
+    }
+
+
+def _record_graph_relation(
+    blocked_targets: dict[int, list[dict]],
+    prerequisites_by_target: dict[int, list[dict]],
+    rel: dict,
+    item: dict,
+) -> None:
+    """登记按目标分组的前置列表；仅直接确认缺口登记为硬阻塞目标。"""
+    origin_id = rel["origin_knowledge_point_id"]
+    prerequisites_by_target.setdefault(origin_id, []).append(item)
+
+    # Hard blocking only uses a direct, sufficiently observed weak prereq.
+    if rel["depth"] == 1 and item["confirmed_gap"]:
+        blocked_targets.setdefault(origin_id, []).append(item)
+
+
+def _keep_graph_candidate(
+    prerequisite_candidates: dict[int, dict],
+    rel: dict,
+    item: dict,
+) -> None:
+    """同一前置支撑多个弱目标时保留排序最强的那条关系。"""
+    # Candidate expansion: confirmed gaps are strong; unknown direct
+    # prerequisites can be softly diagnosed; mastered prerequisites are
+    # deliberately excluded so they cannot keep dominating recommendations.
+    # Prefer the strongest origin/path when the same prerequisite supports
+    # multiple weak targets.
+    prereq_id = rel["knowledge_point_id"]
+    current = prerequisite_candidates.get(prereq_id)
+    if current is None or _graph_candidate_rank(item) > _graph_current_rank(current):
+        prerequisite_candidates[prereq_id] = item
+
+
+def _project_graph_relations(
+    relations: list[dict],
+    kp_info: dict[int, dict],
+    mastery: dict[int, tuple[float, float]],
+    subject_ids: list[int] | None,
+    min_mastery: float,
+    min_confidence: float,
+) -> dict:
+    """把遍历关系投影成阻塞目标、前置候选与按目标分组的前置列表。"""
+    blocked_targets: dict[int, list[dict]] = {}
+    prerequisites_by_target: dict[int, list[dict]] = {}
+    prerequisite_candidates: dict[int, dict] = {}
+
+    for rel in relations:
+        item = _graph_relation_item(
+            rel, kp_info, mastery, subject_ids, min_mastery, min_confidence
+        )
+        if item is None:
+            continue
+
+        _record_graph_relation(blocked_targets, prerequisites_by_target, rel, item)
+        if _graph_candidate_eligible(rel, item):
+            _keep_graph_candidate(prerequisite_candidates, rel, item)
+
+    return _graph_context(
+        blocked_targets,
+        prerequisite_candidates,
+        prerequisites_by_target,
+    )
+
+
+def _graph_scope_ids(origin_ids: list[int], relations: list[dict]) -> list[int]:
+    """参与后续投影的知识点 id 集合（起点 + 已发现前置）。"""
+    return list(
+        {
+            *origin_ids,
+            *(r["knowledge_point_id"] for r in relations),
+        }
+    )
+
+
 async def get_recommendation_graph_context(
     db: AsyncSession,
     user_id: int,
@@ -925,208 +1511,24 @@ async def get_recommendation_graph_context(
     Cross-subject edges are filtered at query time when ``subject_ids`` is
     supplied.
     """
-    origin_ids = list(dict.fromkeys(int(k) for k in target_kp_ids if k))
+    origin_ids = _graph_origin_ids(target_kp_ids)
     if not origin_ids:
-        return {
-            "blocked_targets": {},
-            "prerequisite_candidates": {},
-            "prerequisites_by_target": {},
-        }
+        return _empty_graph_context()
 
-    max_depth = max(1, min(int(max_depth or 1), GRAPH_MAX_DEPTH))
-    max_nodes = max(1, int(max_nodes or GRAPH_MAX_EXPANSION_NODES))
-
-    # state[(current_node, origin_target)] = cumulative path quality before the
-    # next edge.  Start each origin at quality 1.0.
-    frontier: dict[tuple[int, int], dict[str, float]] = {
-        (origin, origin): {"weight": 1.0, "confidence": 1.0} for origin in origin_ids
-    }
-    visited: set[tuple[int, int]] = set(frontier)
-    relations: list[dict] = []
-
-    for depth in range(1, max_depth + 1):
-        if not frontier or len(relations) >= max_nodes:
-            break
-
-        current_targets = list({node_id for node_id, _origin in frontier})
-        edge_conditions = [
-            KnowledgeEdge.target_knowledge_point_id.in_(current_targets),
-            KnowledgeEdge.relation_type == "prerequisite",
-            KnowledgeEdge.is_active == True,  # noqa: E712
-        ]
-        if subject_ids:
-            scope_ids = list({int(sid) for sid in subject_ids})
-            scoped_kps = select(KnowledgePoint.id).where(
-                KnowledgePoint.is_active == True,  # noqa: E712
-                KnowledgePoint.subject_id.in_(scope_ids),
-            )
-            edge_conditions.extend(
-                [
-                    KnowledgeEdge.subject_id.in_(scope_ids),
-                    KnowledgeEdge.source_knowledge_point_id.in_(scoped_kps),
-                    KnowledgeEdge.target_knowledge_point_id.in_(scoped_kps),
-                ]
-            )
-
-        edge_result = await db.execute(
-            select(
-                KnowledgeEdge.id,
-                KnowledgeEdge.target_knowledge_point_id,
-                KnowledgeEdge.source_knowledge_point_id,
-                KnowledgeEdge.weight,
-                KnowledgeEdge.confidence,
-                KnowledgeEdge.source,
-            ).where(*edge_conditions)
-        )
-        edges_by_target: dict[int, list] = {}
-        for edge in edge_result.all():
-            edges_by_target.setdefault(edge.target_knowledge_point_id, []).append(edge)
-
-        next_frontier: dict[tuple[int, int], dict[str, float]] = {}
-        for (current_id, origin_id), parent_quality in frontier.items():
-            for edge in edges_by_target.get(current_id, []):
-                prereq_id = edge.source_knowledge_point_id
-                pair = (prereq_id, origin_id)
-                if pair in visited:
-                    continue
-
-                edge_weight = normalize_edge_weight(edge.weight)
-                edge_confidence = _clamp01(edge.confidence)
-                cumulative_weight = parent_quality["weight"] * edge_weight
-                cumulative_confidence = parent_quality["confidence"] * edge_confidence
-                depth_decay = 1.0 if depth == 1 else 0.65
-                path_quality = cumulative_weight * cumulative_confidence * depth_decay
-
-                relations.append(
-                    {
-                        "knowledge_point_id": prereq_id,
-                        "origin_knowledge_point_id": origin_id,
-                        "depth": depth,
-                        "edge_id": edge.id,
-                        "edge_weight": edge_weight,
-                        "edge_confidence": edge_confidence,
-                        "edge_source": edge.source,
-                        "path_quality": max(0.0, min(path_quality, 1.0)),
-                    }
-                )
-                visited.add(pair)
-                if len(relations) >= max_nodes:
-                    break
-                if depth < max_depth:
-                    next_frontier[pair] = {
-                        "weight": cumulative_weight,
-                        "confidence": cumulative_confidence,
-                    }
-            if len(relations) >= max_nodes:
-                break
-        frontier = next_frontier
-
+    max_depth, max_nodes = _bounded_graph_limits(max_depth, max_nodes)
+    relations = await _collect_graph_relations(
+        db, origin_ids, max_depth, max_nodes, subject_ids
+    )
     if not relations:
-        return {
-            "blocked_targets": {},
-            "prerequisite_candidates": {},
-            "prerequisites_by_target": {},
-        }
+        return _empty_graph_context()
 
-    all_kp_ids = list(
-        {
-            *origin_ids,
-            *(r["knowledge_point_id"] for r in relations),
-        }
+    all_kp_ids = _graph_scope_ids(origin_ids, relations)
+    kp_info = await _load_graph_kp_info(db, all_kp_ids)
+    mastery = await _load_graph_mastery(db, user_id, all_kp_ids)
+
+    return _project_graph_relations(
+        relations, kp_info, mastery, subject_ids, min_mastery, min_confidence
     )
-
-    name_result = await db.execute(
-        select(KnowledgePoint.id, KnowledgePoint.name, KnowledgePoint.subject_id).where(
-            KnowledgePoint.id.in_(all_kp_ids),
-            KnowledgePoint.is_active == True,  # noqa: E712
-        )
-    )
-    kp_info = {
-        row.id: {"name": row.name, "subject_id": row.subject_id}
-        for row in name_result.all()
-    }
-
-    mastery_result = await db.execute(
-        select(
-            UserKnowledgeState.knowledge_point_id,
-            UserKnowledgeState.mastery_score,
-            UserKnowledgeState.confidence,
-        ).where(
-            UserKnowledgeState.user_id == user_id,
-            UserKnowledgeState.knowledge_point_id.in_(all_kp_ids),
-        )
-    )
-    mastery = {
-        row.knowledge_point_id: (float(row.mastery_score), float(row.confidence))
-        for row in mastery_result.all()
-    }
-
-    blocked_targets: dict[int, list[dict]] = {}
-    prerequisites_by_target: dict[int, list[dict]] = {}
-    prerequisite_candidates: dict[int, dict] = {}
-
-    for rel in relations:
-        prereq_id = rel["knowledge_point_id"]
-        origin_id = rel["origin_knowledge_point_id"]
-        if prereq_id not in kp_info or origin_id not in kp_info:
-            continue
-        if subject_ids and (
-            kp_info[prereq_id]["subject_id"] not in subject_ids
-            or kp_info[origin_id]["subject_id"] not in subject_ids
-        ):
-            continue
-
-        prereq_mastery, prereq_conf = mastery.get(prereq_id, (50.0, 0.0))
-        origin_mastery, origin_conf = mastery.get(origin_id, (50.0, 0.0))
-        confirmed_gap = prereq_conf >= min_confidence and prereq_mastery < min_mastery
-        unknown_gap = prereq_conf < min_confidence
-
-        item = {
-            **rel,
-            "name": kp_info[prereq_id]["name"],
-            "subject_id": kp_info[prereq_id]["subject_id"],
-            "mastery_score": round(prereq_mastery, 1),
-            "mastery_confidence": round(prereq_conf, 3),
-            "origin_name": kp_info[origin_id]["name"],
-            "origin_mastery_score": round(origin_mastery, 1),
-            "origin_mastery_confidence": round(origin_conf, 3),
-            "confirmed_gap": confirmed_gap,
-            "unknown_gap": unknown_gap,
-        }
-        prerequisites_by_target.setdefault(origin_id, []).append(item)
-
-        # Hard blocking only uses a direct, sufficiently observed weak prereq.
-        if rel["depth"] == 1 and confirmed_gap:
-            blocked_targets.setdefault(origin_id, []).append(item)
-
-        # Candidate expansion: confirmed gaps are strong; unknown direct
-        # prerequisites can be softly diagnosed; mastered prerequisites are
-        # deliberately excluded so they cannot keep dominating recommendations.
-        eligible_candidate = confirmed_gap or (rel["depth"] == 1 and unknown_gap)
-        if not eligible_candidate:
-            continue
-
-        # Prefer the strongest origin/path when the same prerequisite supports
-        # multiple weak targets.
-        current = prerequisite_candidates.get(prereq_id)
-        rank = (
-            1 if confirmed_gap else 0,
-            rel["path_quality"],
-            -rel["depth"],
-        )
-        current_rank = (
-            1 if current and current.get("confirmed_gap") else 0,
-            current.get("path_quality", 0.0) if current else -1.0,
-            -current.get("depth", 99) if current else -99,
-        )
-        if current is None or rank > current_rank:
-            prerequisite_candidates[prereq_id] = item
-
-    return {
-        "blocked_targets": blocked_targets,
-        "prerequisite_candidates": prerequisite_candidates,
-        "prerequisites_by_target": prerequisites_by_target,
-    }
 
 
 async def get_blocked_knowledge_points(
@@ -1244,6 +1646,115 @@ def _adjust_weight(current: float, direction: int) -> float:
     return _clamp(current + direction * _ADJUST_STEP, _WEIGHT_MIN, _WEIGHT_MAX)
 
 
+def _preference_weights(pref: UserRecommendPreference) -> dict[str, float]:
+    """按固定字段顺序导出用户推荐权重。"""
+    return {field: getattr(pref, field) for field in _WEIGHT_FIELDS}
+
+
+async def _recent_practice_stats(
+    db: AsyncSession,
+    user_id: int,
+    recent_start: datetime,
+) -> tuple[int, int]:
+    """近 14 天答题数与正确数。"""
+    recent_result = await db.execute(
+        select(
+            func.count(PracticeRecord.id),
+            func.coalesce(
+                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)),  # noqa: E712
+                0,  # noqa: E712
+            ),
+        ).where(
+            PracticeRecord.user_id == user_id,
+            PracticeRecord.answered_at >= recent_start,
+        )
+    )
+    recent_count, recent_correct = recent_result.one()
+    return int(recent_count or 0), int(recent_correct or 0)
+
+
+async def _recent_due_stats(
+    db: AsyncSession,
+    user_id: int,
+    recent_start: datetime,
+) -> tuple[int, int]:
+    """近 14 天到期复习数与正确数。"""
+    due_result = await db.execute(
+        select(
+            func.count(UserQuestionState.id),
+            func.coalesce(
+                func.sum(case((UserQuestionState.last_is_correct == True, 1), else_=0)),  # noqa: E712
+                0,  # noqa: E712
+            ),
+        ).where(
+            UserQuestionState.user_id == user_id,
+            UserQuestionState.last_answered_at >= recent_start,
+        )
+    )
+    due_count, due_correct = due_result.one()
+    return int(due_count or 0), int(due_correct or 0)
+
+
+def _weight_adjustments(
+    recent_count: int,
+    recent_correct: int,
+    due_count: int,
+    due_correct: int,
+) -> dict[str, int]:
+    """按近期表现决定各权重维度的调整方向。"""
+    recent_accuracy = recent_correct / recent_count if recent_count > 0 else 0
+    due_accuracy = due_correct / due_count if due_count > 0 else 0.5
+
+    adjustments: dict[str, int] = {f: 0 for f in _WEIGHT_FIELDS}
+
+    # 到期正确率低 → 增加 due 权重
+    if due_accuracy < 0.6 and due_count >= 3:
+        adjustments["due_weight"] += 1
+    # 到期正确率高 → 可以降低 due 权重
+    elif due_accuracy >= 0.85 and due_count >= 5:
+        adjustments["due_weight"] -= 1
+
+    # 整体正确率低 → 增加 weakness 权重
+    if recent_accuracy < 0.5:
+        adjustments["weakness_weight"] += 1
+
+    # 新题比例：用 answer_count == 1 的记录占比估算
+    # 简化：如果近期答题少，增加新题权重
+    if recent_count < 10:
+        adjustments["new_question_weight"] += 1
+    elif recent_count > 30:
+        adjustments["new_question_weight"] -= 1
+
+    return adjustments
+
+
+def _apply_weight_adjustments(
+    pref: UserRecommendPreference,
+    adjustments: dict[str, int],
+) -> None:
+    """按调整方向逐项微调权重。"""
+    for field, direction in adjustments.items():
+        if direction != 0:
+            current = getattr(pref, field)
+            new_val = _adjust_weight(current, direction)
+            setattr(pref, field, new_val)
+
+
+def _log_weight_adjustments(
+    user_id: int,
+    adjustments: dict[str, int],
+    result_weights: dict[str, float],
+) -> None:
+    """只在确有维度被调整时记录日志。"""
+    if any(d != 0 for d in adjustments.values()):
+        logger.info(
+            "adaptive_weights_adjusted user=%d adjustments=%s weights=%s",
+            user_id,
+            {k: v for k, v in adjustments.items() if v != 0},
+            result_weights,
+        )
+
+
 async def adjust_recommend_weights(
     db: AsyncSession,
     user_id: int,
@@ -1268,85 +1779,24 @@ async def adjust_recommend_weights(
     recent_start = now - timedelta(days=14)
 
     # 近期答题统计
-    recent_result = await db.execute(
-        select(
-            func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)),  # noqa: E712
-                0,  # noqa: E712
-            ),
-        ).where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.answered_at >= recent_start,
-        )
+    recent_count, recent_correct = await _recent_practice_stats(
+        db, user_id, recent_start
     )
-    recent_count, recent_correct = recent_result.one()
-    recent_count = int(recent_count or 0)
-    recent_correct = int(recent_correct or 0)
-
     if recent_count < 5:
         # 数据不足，不调整
-        return {field: getattr(pref, field) for field in _WEIGHT_FIELDS}
+        return _preference_weights(pref)
 
-    recent_accuracy = recent_correct / recent_count if recent_count > 0 else 0
-
-    # 到期复习正确率
-    due_result = await db.execute(
-        select(
-            func.count(UserQuestionState.id),
-            func.coalesce(
-                func.sum(case((UserQuestionState.last_is_correct == True, 1), else_=0)),  # noqa: E712
-                0,  # noqa: E712
-            ),
-        ).where(
-            UserQuestionState.user_id == user_id,
-            UserQuestionState.last_answered_at >= recent_start,
-        )
+    # 到期复习正确率 + 开始调节
+    due_count, due_correct = await _recent_due_stats(db, user_id, recent_start)
+    adjustments = _weight_adjustments(
+        recent_count, recent_correct, due_count, due_correct
     )
-    due_count, due_correct = due_result.one()
-    due_count = int(due_count or 0)
-    due_correct = int(due_correct or 0)
-    due_accuracy = due_correct / due_count if due_count > 0 else 0.5
-
-    # 开始调节
-    adjustments: dict[str, int] = {f: 0 for f in _WEIGHT_FIELDS}
-
-    # 到期正确率低 → 增加 due 权重
-    if due_accuracy < 0.6 and due_count >= 3:
-        adjustments["due_weight"] += 1
-    # 到期正确率高 → 可以降低 due 权重
-    elif due_accuracy >= 0.85 and due_count >= 5:
-        adjustments["due_weight"] -= 1
-
-    # 整体正确率低 → 增加 weakness 权重
-    if recent_accuracy < 0.5:
-        adjustments["weakness_weight"] += 1
-
-    # 新题比例：用 answer_count == 1 的记录占比估算
-    # 简化：如果近期答题少，增加新题权重
-    if recent_count < 10:
-        adjustments["new_question_weight"] += 1
-    elif recent_count > 30:
-        adjustments["new_question_weight"] -= 1
-
-    # 应用调节
-    for field, direction in adjustments.items():
-        if direction != 0:
-            current = getattr(pref, field)
-            new_val = _adjust_weight(current, direction)
-            setattr(pref, field, new_val)
+    _apply_weight_adjustments(pref, adjustments)
 
     pref.last_adjusted_at = now
     await db.flush()
 
-    result_weights = {field: getattr(pref, field) for field in _WEIGHT_FIELDS}
-
-    if any(d != 0 for d in adjustments.values()):
-        logger.info(
-            "adaptive_weights_adjusted user=%d adjustments=%s weights=%s",
-            user_id,
-            {k: v for k, v in adjustments.items() if v != 0},
-            result_weights,
-        )
+    result_weights = _preference_weights(pref)
+    _log_weight_adjustments(user_id, adjustments, result_weights)
 
     return result_weights

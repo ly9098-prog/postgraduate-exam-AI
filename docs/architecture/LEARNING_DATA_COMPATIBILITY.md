@@ -256,3 +256,92 @@
   `study_hub_service` 其余函数与 `adaptive_learning_service`、`study_report_service`、
   `review_scheduler`、`wrong_question_service`、任务队列、OCR 导入编排、AI 分析执行等学习域大函数，
   也不声称学习域整体完成。
+
+## 13. 自适应学习服务路径推荐与状态投影拆分
+
+- 2026-10-28，`adaptive_learning_service` 八个入口收敛：
+  `get_recommendation_graph_context` 228 → 44 行、`adjust_recommend_weights` 106 → 45 行、
+  `get_adaptive_overview` 102 → 31 行、`update_adaptive_state_after_answer` 93 → 44 行、
+  `apply_personalized_interval` 91 → 44 行、`update_question_difficulty_state` 89 → 26 行、
+  `get_hard_questions` 88 → 12 行、`update_knowledge_interval_factor` 59 → 26 行；拆出 51 个 helper
+  （`_load_knowledge_adaptive_states` 13、`_ensure_knowledge_adaptive_states` 15、
+  `_adjust_knowledge_interval_state` 26、`_difficulty_delta` 33、`_apply_difficulty_counters` 19、
+  `_update_avg_answer_time` 14、`_apply_difficulty_answer` 35、`_log_difficulty_change` 17、
+  `_load_question_kp_ids` 10、`_load_user_interval_factor` 7、`_load_knowledge_interval_factor` 21、
+  `_load_difficulty_interval_factor` 14、`_load_user_question_state` 13、`_override_next_review_at` 30、
+  `_resolve_review_flags` 19、`_update_difficulty_from_answer` 24、`_apply_leitner_interval_override` 11、
+  `_update_interval_factors` 27、`_interval_status` 9、`_count_fast_forgetting_points` 9、
+  `_count_user_hard_questions` 9、`_count_path_blocked_knowledge` 27、`_weight_status` 25、
+  `_hard_questions_statement` 19、`_load_hard_question_labels` 48、`_hard_question_item` 21、
+  `_empty_graph_context` 7、`_graph_origin_ids` 3、`_bounded_graph_limits` 5、
+  `_graph_edge_conditions` 24、`_fetch_graph_edges` 19、`_graph_relation_payload` 26、
+  `_expand_graph_layer` 37、`_collect_graph_relations` 35、`_load_graph_kp_info` 15、
+  `_load_graph_mastery` 20、`_graph_relation_item` 36、`_graph_candidate_rank` 7、
+  `_graph_current_rank` 7、`_graph_candidate_eligible` 3、`_graph_context` 11、
+  `_record_graph_relation` 13、`_keep_graph_candidate` 15、`_project_graph_relations` 29、
+  `_graph_scope_ids` 8、`_preference_weights` 3、`_recent_practice_stats` 20、`_recent_due_stats` 20、
+  `_weight_adjustments` 31、`_apply_weight_adjustments` 10、`_log_weight_adjustments` 13），
+  全部满足 300/50 预算；模块 1352 → 1802 行，增量仅为 helper 定义与文档字符串。
+- 图推荐语义保持：origin id 仍按 `dict.fromkeys(int(k) ... if k)` 去重并跳过空值；深度/节点上限仍是
+  `max(1, min(int(max_depth or 1), GRAPH_MAX_DEPTH))` 与 `max(1, int(max_nodes or GRAPH_MAX_EXPANSION_NODES))`；
+  单层前置边查询仍是“目标 id 集 + `relation_type='prerequisite'` + `is_active`”，给定科目时追加边
+  `subject_id` 与两端知识点子查询；分组键仍是 `target_knowledge_point_id`；
+  `(node, origin)` 访问集、`max_nodes` 中途截断、`depth_decay`（depth 1 为 1.0，其余 0.65）、
+  `normalize_edge_weight`/`_clamp01`、`path_quality` clamp 到 `[0, 1]` 与关系字典键序完全不变。
+- 图投影语义保持：知识点名/科目查询仍带 `is_active`，掌握度查询仍是 `user_id` + id 集；缺失知识点整条
+  跳过；科目过滤对 prereq 与 origin 双向生效；缺失掌握度仍回退 `(50.0, 0.0)`；
+  `confirmed_gap = prereq_conf >= min_confidence and prereq_mastery < min_mastery`、`unknown_gap = prereq_conf < min_confidence`；
+  `mastery_score`/`mastery_confidence` 小数位仍是 1/3；硬阻塞仍只取 `depth == 1 and confirmed_gap`；
+  候选资格仍是 `confirmed_gap or (depth == 1 and unknown_gap)`；同一前置仍按
+  `(1 if confirmed_gap else 0, path_quality, -depth)` 与已存候选比较后择优。
+- 间隔语义保持：用户/知识点倍率仍按答错 ×0.92、逾期答对 ×1.08、其余答对 ×1.04 调整，知识点级仍 clamp 到
+  `[0.6, 1.6]` 并保留 `round(factor, 4)`、到期计数与逾期错计数；缺失状态仍走
+  `_start_explicit_transaction` + savepoint 认领 + 唯一冲突后重读；知识点级更新仍按
+  `dict.fromkeys(knowledge_point_ids)` 顺序去重，冲突后仍单次 `flush`。
+- 难度校准语义保持：基础 ±4/+8、慢答 +3/+4、快答 −3、逾期答错 +5 与 `> 1.5` / `< 0.6`（含
+  `expected_time_seconds > 0` 守卫）逐字不变；计数更新顺序、`overdue_wrong_count` 条件、滑动平均
+  `avg*(n-1)+t / n`（n 为自增后的作答数）与 `round(new_score, 1)`、标签阈值（<30/<70）不变。
+- 个性化间隔语义保持：profile → 题目知识点 → 知识点倍率 → 难度 → 用户题目状态五段查询顺序不变，
+  知识点倍率仍取平均值、无知识点时不再查询、无状态时不写库也不记录日志；写库仍为
+  `utcnow() + timedelta(days=final_days)` 且只在存在用户题目状态时执行。
+- 难题列表语义保持：仍按 `hard` 标签、个人难度降序、`limit` 截断；知识点名称仍按
+  `question_id asc, question_knowledge_points.id asc` 取首行；`next_review_at` 仍经
+  `serialize_utc_datetime`；`avg_answer_time_seconds` 为 0 时仍返回 `None`，分数仍保留 1 位小数。
+- 概览与权重语义保持：状态标签阈值仍是 0.9 / 0.98 / 1.1；回忆率仍 `round(..., 3)`；快速遗忘计数与
+  个人难题计数查询不变；路径阻塞计数与权重摘要仍为 best-effort（异常回落 0 / 未调整）；权重微调仍是
+  “到期正确率 <0.6 且 ≥3 → +1、≥0.85 且 ≥5 → −1、近期正确率 <0.5 → weakness +1、
+  近期答题数 <10 → 新题 +1、>30 → −1”，步长 0.05、clamp `[0.7, 1.3]`，字段导出顺序仍是 `_WEIGHT_FIELDS`。
+- 答题入口语义保持：`ADAPTIVE_LEARNING_ENABLED` 关闭时不查询；`is_due_review`/`is_overdue_review`
+  仍只在未显式传入时按 `next_review_at` 回退计算（`>= nra` / `>= nra + 1 天`）；用户倍率与知识点倍率仍只在
+  `ADAPTIVE_INTERVAL_ENABLED and is_due_review` 时更新；难度仍按 `Question.difficulty or 3` 估算期望时间；
+  覆盖仍只在 `not ADAPTIVE_DRY_RUN and uqs is not None` 时按 `LEITNER_INTERVAL_DAYS.get(box_level, 1)` 执行。
+- 134 项固定契约（`tests/test_services/test_adaptive_learning_projection_contract.py`）在拆分后与拆分前均可通过
+  （HEAD 原实现经 AST 提取后以 pytest 插件回放：134 passed），覆盖阈值边界（0.89/0.9/0.98/1.1、置信度
+  等于阈值、`due_count` 4/5、`recent_count` 9/10/30/31）、小数位（1/3/4）、clamp、守卫取反、
+  查询语句文本与绑定参数、访问器用法（`scalars().all()` vs `scalar_one_or_none()`）、
+  认领/冲突/重读路径、dry-run 与显式标志优先级，以及 `_start_explicit_transaction` 事务门禁。
+- 5600 例随机差分（`/tmp/adapt-batch/differential.py`，八个入口各 700 例）比较返回值/异常、渲染 SQL 与
+  绑定参数序列、结果访问器序列、`flush`/`add`/`begin_nested` 事件、日志调用、子函数间谍调用序列与全部状态
+  快照：0 mismatch、0 harness gap。差分覆盖被稀疏与稠密图、环、`max_nodes` 截断、科目作用域、缺失行、
+  显式与回退标志、`<5` 条记录、认领冲突与 `ADAPTIVE_DRY_RUN` 组合。
+- 99 个故障变体全部被拒绝（日志 `/tmp/adapt-batch/mutants.log`），每个变体仅作用于单个函数，覆盖图遍历
+  （深度/节点上限、访问集、截断、子查询作用域、掌握度元组顺序、`path_quality` clamp、候选排序/资格/阻塞深度）、
+  概览阈值与摘要、难题排序/首行/取整/零耗时、权重阈值与双向调整、知识点倍率与事务门禁、难度增量与比值、
+  个性化间隔默认值、Leitner 默认盒间隔与标志矩阵。
+- AST 证明（`/tmp/adapt-batch/verify_ast.py`、报告 `/tmp/adapt-batch/ast-report.json`）：模块 23 个未触及定义
+  与 HEAD AST 完全一致，模块级语句（导入与常量）逐字一致；八入口消失的表达式仅 15 个属性链、2 个字符串常量
+  与 6 个比较表达式，全部为并入共享 helper（去重）、局部变量改名（`r` → `row`、`q` → 语句构造 helper）或
+  守卫取反（`is not None` → `is None: return`），无未解释差异。
+- 6 项架构门禁（`tests/architecture/test_adaptive_learning_projection_boundaries.py`）约束 59 个函数的
+  预算、八个入口的签名与默认值、委派顺序、冻结的单行语义（图上限、候选排序/资格、状态标签）、
+  阈值与 SQL 单点，并含“放宽图深度上限”“反转记录顺序”“放宽权重/难度阈值”“在入口内联 SQL”
+  四项反向自检。
+- 定向回归：`tests/test_services -k "adaptive or smart or scored or leitner or study or report or review_scheduler"`
+  与 `tests/architecture -k "adaptive or smart or scored or leitner or study or learning or dependency"`
+  合计 661 passed；严格 Ruff、`ruff format --check`、compileall、50 行预算与 `git diff --check` 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 416 个测试文件：
+  7167 passed、0 failed、64 条既有弃用 warning，454.15 秒；Mocked readiness boundary regression 69 passed；
+  Cloud OCR profile boundary regression 30 passed。这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
+  `adaptive_learning_service`，不覆盖 `study_report_service`、`review_scheduler`、
+  `wrong_question_service`、任务队列、OCR 导入编排、AI 分析执行等学习域大函数，也不声称学习域整体完成。
