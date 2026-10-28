@@ -338,6 +338,7 @@ jobs:
             tests/test_services/test_ai_analysis_orchestration.py \
             tests/architecture/test_ai_analysis_preparation_boundaries.py \
             tests/test_services/test_ai_learning_report_contract.py \
+            tests/test_services/test_ai_learning_detail_contract.py \
             tests/architecture/test_ai_learning_report_boundaries.py \
             tests/test_services/test_ai_analysis_response_contracts.py \
             tests/test_services/test_ai_analysis_result_review.py \

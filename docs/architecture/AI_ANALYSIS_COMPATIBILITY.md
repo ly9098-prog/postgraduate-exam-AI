@@ -213,5 +213,38 @@ Layer 4 规则（`repair_questions` 内）：
 - 定向回归：`tests/test_services/test_ai_*.py` 与 `tests/architecture/test_ai_*.py`
   合计 975 passed。严格 Ruff/format、compileall 与 diff-check 通过。
 - 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 412 个测试文件：7002 passed、0 failed、64 条既有弃用 warning，449.73 秒；Mocked readiness boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。这是本地清单重放，不代表远端 CI 或生产验收。
-- 同模块 `ai_explain`（91）、`ai_analyze_mistake`（90）、`recommend_similar_questions`
-  （113）仍未拆分；本批不覆盖外部模型、真实多模态输入或生产验收。
+## 15. 题目讲解、错因分析与相似推荐拆分（2026-10-28）
+
+- `ai_explain` 从 91 行收敛至 49 行，`ai_analyze_mistake` 从 90 行收敛至 47 行，
+  `recommend_similar_questions` 从 113 行收敛至 34 行。共享题目装载、题干投影、
+  讲解/错因 payload、prompt 构造、向量推荐、规则推荐加载/评分/选择/投影分别拆入
+  私有 helper；本模块全部函数均不超过 50 行。
+- 语义保持：仅查询 active 题目，缺失时仍抛 `ValueError("题目不存在")`；dict 与旧
+  content 形态的题干提取一致；讲解 token 门槛仍为 500，错因分析仍为 300；限额与
+  模型不可用响应保持原字段、空列表、`tokens_used=0`、`from_fallback=True` 和原
+  文案；模型成功路径仍先解析/补默认值、记录 `ai_explain` / `mistake_analysis`
+  用量，再返回模型 payload；错因 label 映射与缺省 `未知` 不变。
+- 相似推荐保持向量优先：仅当向量结果 `enabled` 且非空时返回
+  `strategy="vector_plus_rule"`；禁用、空结果或异常均回退规则推荐，异常日志仍为
+  `向量推荐异常，回退到规则推荐`。规则路径仍排除已答题目和源题，候选仍要求同
+  subject family、active、approved；评分仍为 `kp_overlap * 2 + difficulty_match`
+  且仅保留 `score > 0`，先按分数降序取前 N，再 `random.shuffle`；响应字段、
+  `strategy="rule_based"`、`tokens_used=0` 与“同知识点 / 同难度 / 同科目”投影
+  保持不变。
+- 新增 `tests/test_services/test_ai_learning_detail_contract.py` 8 项契约，覆盖讲解
+  成功/限额/回退、错因成功/限额、向量 envelope 与异常回退、规则查询评分投影，以及
+  `_similar_recommendation_payload` 的历史“同科目”分支。该分支在公共规则入口因
+  `score > 0` 前置条件实际不可达，测试直接锁定 helper 边界，不虚构公共入口行为。
+- 原实现对照差分 9 组通过（`/tmp/ail-batch/differential-results.json`），覆盖讲解
+  成功/限额/回退、错因成功/限额、向量命中/异常回退、规则排序与题目缺失；每组在固定
+  随机种子下比较响应、异常和端口调用轨迹。8 个语义变体均产生可观察差异或异常
+  （`/tmp/ail-batch/mutant-results.json`），覆盖讲解/错因文案、向量策略与回退日志、
+  已答排除、评分公式、排序方向和推荐理由。AST 证明 17 个未拆分定义完全不变，原 38
+  个模块语句保持原相对顺序（`/tmp/ail-batch/ast-proof.json`）。
+- `tests/architecture/test_ai_learning_report_boundaries.py` 扩展为 4 项门禁，约束
+  三个入口与全部新增 helper 的 50 行预算、入口委托顺序、讲解/错因/推荐入口不内联
+  查询或 prompt 构造、向量开关与异常回退、已答排除、候选过滤、评分公式、排序与
+  shuffle、投影字段和规则 envelope；并含内联查询、缺失 shuffle 两项反向自检。
+  新契约已加入 `.github/workflows/ci.yml` 静态清单。
+- 本批为本地替身契约与 AST 门禁验证，不调用真实外部模型、Redis 或生产服务；第 5
+  节的外部 AI、生产 PostgreSQL/Redis、完整 worker 和真实多模态验收仍保留。

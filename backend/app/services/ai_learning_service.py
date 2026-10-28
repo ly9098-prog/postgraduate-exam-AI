@@ -138,6 +138,62 @@ def _parse_json_response(content: str) -> dict | None:
 # ============================================================
 
 
+# ============================================================
+# 共享题目装载
+# ============================================================
+
+
+async def _load_active_question(db: AsyncSession, question_id: int):
+    """Load an active question or raise the historical not-found error."""
+    result = await db.execute(
+        select(Question).where(Question.id == question_id, Question.is_active)
+    )
+    question = result.scalar_one_or_none()
+    if not question:
+        raise ValueError("题目不存在")
+    return question
+
+
+def _question_stem(question) -> str:
+    """Return the raw stem text for dict and legacy content shapes."""
+    if isinstance(question.content, dict):
+        return question.content.get("text", "")
+    return str(question.content or "")
+
+
+_EXPLAIN_LIMIT_COPY = "今日 AI 调用额度已用尽，请明天再试。"
+
+
+def _explain_unavailable_payload(
+    question_id: int,
+    knowledge_points: list,
+    explanation: str,
+) -> dict:
+    """Return the quota/fallback explain payload."""
+    return {
+        "question_id": question_id,
+        "explanation": explanation,
+        "solution_steps": [],
+        "key_knowledge_points": knowledge_points,
+        "common_mistakes": [],
+        "tokens_used": 0,
+        "from_fallback": True,
+    }
+
+
+def _explain_success_payload(question_id: int, parsed: dict, tokens_used: int) -> dict:
+    """Return the model-backed explain payload."""
+    return {
+        "question_id": question_id,
+        "explanation": parsed.get("explanation", ""),
+        "solution_steps": parsed.get("solution_steps", []),
+        "key_knowledge_points": parsed.get("key_knowledge_points", []),
+        "common_mistakes": parsed.get("common_mistakes", []),
+        "tokens_used": tokens_used,
+        "from_fallback": False,
+    }
+
+
 async def ai_explain(
     db: AsyncSession,
     user_id: int,
@@ -148,59 +204,25 @@ async def ai_explain(
 ) -> dict:
     """AI 题目讲解。"""
 
-    q = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active)
-    )
-    q = q.scalar_one_or_none()
-    if not q:
-        raise ValueError("题目不存在")
-
+    q = await _load_active_question(db, question_id)
     kp_map = await load_question_kps(db, [q.id])
     q_kps = kp_map.get(q.id, [])
 
-    # 构造 context
-    stem = (
-        q.content.get("text", "")
-        if isinstance(q.content, dict)
-        else str(q.content or "")
-    )
-
-    messages = build_explain_prompt(
-        stem=stem,
-        options=q.options,
-        answer=q.answer,
-        analysis=q.analysis,
-        knowledge_points=q_kps,
-        user_answer=user_answer,
-        is_correct=is_correct,
-        focus=focus,
-    )
+    messages = _build_explain_messages(q, q_kps, user_answer, is_correct, focus)
 
     # 检查 token 限额
     if not await check_token_limit(db, user_id, 500):
-        return {
-            "question_id": question_id,
-            "explanation": "今日 AI 调用额度已用尽，请明天再试。",
-            "solution_steps": [],
-            "key_knowledge_points": q_kps,
-            "common_mistakes": [],
-            "tokens_used": 0,
-            "from_fallback": True,
-        }
+        return _explain_unavailable_payload(question_id, q_kps, _EXPLAIN_LIMIT_COPY)
 
     result = await _call_ai(messages, db)
 
     if result is None:
         fallback = get_fallback_explain()
-        return {
-            "question_id": question_id,
-            "explanation": fallback["explanation"],
-            "solution_steps": [],
-            "key_knowledge_points": q_kps,
-            "common_mistakes": [],
-            "tokens_used": 0,
-            "from_fallback": True,
-        }
+        return _explain_unavailable_payload(
+            question_id,
+            q_kps,
+            fallback["explanation"],
+        )
 
     parsed = _parse_json_response(result["content"])
     if parsed is None:
@@ -220,20 +242,82 @@ async def ai_explain(
         result,
     )
 
-    return {
-        "question_id": question_id,
-        "explanation": parsed.get("explanation", ""),
-        "solution_steps": parsed.get("solution_steps", []),
-        "key_knowledge_points": parsed.get("key_knowledge_points", []),
-        "common_mistakes": parsed.get("common_mistakes", []),
-        "tokens_used": result["tokens_used"],
-        "from_fallback": False,
-    }
+    return _explain_success_payload(question_id, parsed, result["tokens_used"])
+
+
+def _build_explain_messages(
+    question,
+    knowledge_points: list,
+    user_answer: str | None,
+    is_correct: bool | None,
+    focus: str,
+) -> list:
+    """Build the explain prompt from the loaded question projection."""
+    return build_explain_prompt(
+        stem=_question_stem(question),
+        options=question.options,
+        answer=question.answer,
+        analysis=question.analysis,
+        knowledge_points=knowledge_points,
+        user_answer=user_answer,
+        is_correct=is_correct,
+        focus=focus,
+    )
 
 
 # ============================================================
 # AI 错因分析
 # ============================================================
+
+
+_MISTAKE_ERROR_TYPE_LABELS = {
+    "概念理解错误": "概念理解错误",
+    "计算错误": "计算错误",
+    "审题错误": "审题错误",
+    "思路错误": "思路错误",
+    "concept_misunderstanding": "概念理解错误",
+    "calculation_error": "计算错误",
+    "misreading": "审题错误",
+    "approach_error": "思路错误",
+}
+
+_MISTAKE_LIMIT_PAYLOAD = (
+    "limit_exceeded",
+    "额度用尽",
+    "今日 AI 调用额度已用尽，请明天再试。",
+    "建议自行查看题目解析。",
+)
+
+
+def _mistake_unavailable_payload(
+    error_type: str,
+    error_type_label: str,
+    analysis: str,
+    suggestion: str,
+) -> dict:
+    """Return the quota/fallback mistake-analysis payload."""
+    return {
+        "error_type": error_type,
+        "error_type_label": error_type_label,
+        "analysis": analysis,
+        "suggestion": suggestion,
+        "tokens_used": 0,
+        "from_fallback": True,
+    }
+
+
+def _mistake_success_payload(error_type: str, parsed: dict, tokens_used: int) -> dict:
+    """Return the model-backed mistake-analysis payload."""
+    return {
+        "error_type": error_type,
+        "error_type_label": _MISTAKE_ERROR_TYPE_LABELS.get(
+            error_type, parsed.get("error_type", "未知")
+        ),
+        "analysis": parsed.get("analysis", ""),
+        "suggestion": parsed.get("suggestion", ""),
+        "tokens_used": tokens_used,
+        "from_fallback": False,
+    }
 
 
 async def ai_analyze_mistake(
@@ -245,49 +329,23 @@ async def ai_analyze_mistake(
 ) -> dict:
     """AI 错因分析。"""
 
-    q = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active)
-    )
-    q = q.scalar_one_or_none()
-    if not q:
-        raise ValueError("题目不存在")
+    q = await _load_active_question(db, question_id)
 
-    stem = (
-        q.content.get("text", "")
-        if isinstance(q.content, dict)
-        else str(q.content or "")
-    )
-
-    messages = build_mistake_analysis_prompt(
-        stem=stem,
-        options=q.options,
-        correct_answer=correct_answer,
-        user_answer=user_answer,
-        analysis=q.analysis,
-    )
+    messages = _build_mistake_messages(q, correct_answer, user_answer)
 
     if not await check_token_limit(db, user_id, 300):
-        return {
-            "error_type": "limit_exceeded",
-            "error_type_label": "额度用尽",
-            "analysis": "今日 AI 调用额度已用尽，请明天再试。",
-            "suggestion": "建议自行查看题目解析。",
-            "tokens_used": 0,
-            "from_fallback": True,
-        }
+        return _mistake_unavailable_payload(*_MISTAKE_LIMIT_PAYLOAD)
 
     result = await _call_ai(messages, db)
 
     if result is None:
         fallback = get_fallback_mistake_analysis()
-        return {
-            "error_type": fallback["error_type"],
-            "error_type_label": fallback["error_type_label"],
-            "analysis": fallback["analysis"],
-            "suggestion": fallback["suggestion"],
-            "tokens_used": 0,
-            "from_fallback": True,
-        }
+        return _mistake_unavailable_payload(
+            fallback["error_type"],
+            fallback["error_type_label"],
+            fallback["analysis"],
+            fallback["suggestion"],
+        )
 
     parsed = _parse_json_response(result["content"])
     if parsed is None:
@@ -298,16 +356,6 @@ async def ai_analyze_mistake(
         }
 
     error_type = parsed.get("error_type", "unknown")
-    label_map = {
-        "概念理解错误": "概念理解错误",
-        "计算错误": "计算错误",
-        "审题错误": "审题错误",
-        "思路错误": "思路错误",
-        "concept_misunderstanding": "概念理解错误",
-        "calculation_error": "计算错误",
-        "misreading": "审题错误",
-        "approach_error": "思路错误",
-    }
 
     await record_token_usage(
         db,
@@ -318,14 +366,18 @@ async def ai_analyze_mistake(
         result,
     )
 
-    return {
-        "error_type": error_type,
-        "error_type_label": label_map.get(error_type, parsed.get("error_type", "未知")),
-        "analysis": parsed.get("analysis", ""),
-        "suggestion": parsed.get("suggestion", ""),
-        "tokens_used": result["tokens_used"],
-        "from_fallback": False,
-    }
+    return _mistake_success_payload(error_type, parsed, result["tokens_used"])
+
+
+def _build_mistake_messages(question, correct_answer: str, user_answer: str) -> list:
+    """Build the mistake-analysis prompt from the loaded question."""
+    return build_mistake_analysis_prompt(
+        stem=_question_stem(question),
+        options=question.options,
+        correct_answer=correct_answer,
+        user_answer=user_answer,
+        analysis=question.analysis,
+    )
 
 
 # ============================================================
@@ -341,7 +393,38 @@ async def recommend_similar_questions(
 ) -> dict:
     """推荐相似题目（向量优先 + 规则兜底）。"""
 
-    # ── 向量优先 ──
+    vector_payload = await _vector_recommendation_payload(
+        db, user_id, question_id, count
+    )
+    if vector_payload is not None:
+        return vector_payload
+
+    # ── 规则推荐（原有逻辑） ──
+
+    q = await _load_active_question(db, question_id)
+    answered_ids = await _load_answered_question_ids(db, user_id, question_id)
+    candidates = await _load_similar_candidates(db, q)
+
+    kp_map = await load_question_kps(db, [q.id] + [c.id for c in candidates])
+    source_kps = set(kp_map.get(q.id, []))
+    scored = _score_similar_candidates(
+        candidates, answered_ids, kp_map, source_kps, q.difficulty
+    )
+    top = _select_top_scored(scored, count)
+
+    recommendations = [
+        _similar_recommendation_payload(
+            candidate, kp_map.get(candidate.id, []), source_kps, q.difficulty
+        )
+        for _, candidate in top
+    ]
+    return _rule_recommendation_payload(question_id, recommendations)
+
+
+async def _vector_recommendation_payload(
+    db: AsyncSession, user_id: int, question_id: int, count: int
+) -> dict | None:
+    """Return the vector result when it is enabled and non-empty."""
     try:
         from app.services import vector_retrieval_service
 
@@ -361,85 +444,87 @@ async def recommend_similar_questions(
             }
     except Exception:
         logger.warning("向量推荐异常，回退到规则推荐", exc_info=True)
+    return None
 
-    # ── 规则推荐（原有逻辑） ──
 
-    q = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active)
-    )
-    q = q.scalar_one_or_none()
-    if not q:
-        raise ValueError("题目不存在")
-
-    # 获取用户已做过的题目 ID
+async def _load_answered_question_ids(
+    db: AsyncSession, user_id: int, question_id: int
+) -> set:
+    """Load answered IDs and always exclude the source question."""
     answered_result = await db.execute(
         select(PracticeRecord.question_id).where(PracticeRecord.user_id == user_id)
     )
     answered_ids = {row[0] for row in answered_result.all()}
-    answered_ids.add(question_id)  # 排除自身
+    answered_ids.add(question_id)
+    return answered_ids
 
-    # 同 subject 候选
+
+async def _load_similar_candidates(db: AsyncSession, question) -> list:
+    """Load approved, active questions in the resolved subject family."""
     candidates_result = await db.execute(
         select(Question).where(
-            Question.subject_id.in_(await resolve_subject_ids(db, q.subject_id)),
+            Question.subject_id.in_(await resolve_subject_ids(db, question.subject_id)),
             Question.is_active,
             Question.review_status == "approved",
         )
     )
-    candidates = candidates_result.scalars().all()
+    return candidates_result.scalars().all()
 
-    kp_map = await load_question_kps(db, [q.id] + [c.id for c in candidates])
-    source_kps = set(kp_map.get(q.id, []))
 
-    # 按知识点重叠度 + 难度匹配打分排序
+def _score_similar_candidates(
+    candidates: list,
+    answered_ids: set,
+    kp_map: dict,
+    source_kps: set,
+    source_difficulty,
+) -> list:
+    """Score knowledge-point overlap twice as strongly as difficulty match."""
     scored = []
-    for c in candidates:
-        if c.id in answered_ids:
+    for candidate in candidates:
+        if candidate.id in answered_ids:
             continue
-        c_kps = set(kp_map.get(c.id, []))
-        kp_overlap = len(source_kps & c_kps)
-        difficulty_match = 1 if c.difficulty == q.difficulty else 0
+        candidate_kps = set(kp_map.get(candidate.id, []))
+        kp_overlap = len(source_kps & candidate_kps)
+        difficulty_match = 1 if candidate.difficulty == source_difficulty else 0
         score = kp_overlap * 2 + difficulty_match
         if score > 0:
-            scored.append((score, c))
+            scored.append((score, candidate))
+    return scored
 
-    # 按分数降序排列，取前 N
-    scored.sort(key=lambda x: x[0], reverse=True)
+
+def _select_top_scored(scored: list, count: int) -> list:
+    """Keep the highest scores, then preserve the historical random order."""
+    scored.sort(key=lambda item: item[0], reverse=True)
     top = scored[:count]
-
-    # 随机打乱前 N 的结果
     random.shuffle(top)
+    return top
 
-    recommendations = []
-    for _, c in top:
-        kps = kp_map.get(c.id, [])
-        match_reasons = []
-        if set(kps) & source_kps:
-            match_reasons.append("同知识点")
-        if c.difficulty == q.difficulty:
-            match_reasons.append("同难度")
-        if not match_reasons:
-            match_reasons.append("同科目")
 
-        stem = (
-            c.content.get("text", "")
-            if isinstance(c.content, dict)
-            else str(c.content or "")
-        )
+def _similar_recommendation_payload(
+    candidate, kps: list, source_kps: set, source_difficulty
+) -> dict:
+    """Project one rule-based recommendation and its match reasons."""
+    match_reasons = []
+    if set(kps) & source_kps:
+        match_reasons.append("同知识点")
+    if candidate.difficulty == source_difficulty:
+        match_reasons.append("同难度")
+    if not match_reasons:
+        match_reasons.append("同科目")
+    return {
+        "question_id": candidate.id,
+        "subject_id": candidate.subject_id,
+        "subject_code": candidate.subject_ref.code if candidate.subject_ref else "",
+        "subject_name": candidate.subject_ref.name if candidate.subject_ref else "",
+        "question_type": candidate.question_type,
+        "stem": _question_stem(candidate)[:200],
+        "knowledge_points": kps,
+        "match_reason": " + ".join(match_reasons),
+    }
 
-        recommendations.append(
-            {
-                "question_id": c.id,
-                "subject_id": c.subject_id,
-                "subject_code": c.subject_ref.code if c.subject_ref else "",
-                "subject_name": c.subject_ref.name if c.subject_ref else "",
-                "question_type": c.question_type,
-                "stem": stem[:200],
-                "knowledge_points": kps,
-                "match_reason": " + ".join(match_reasons),
-            }
-        )
 
+def _rule_recommendation_payload(question_id: int, recommendations: list) -> dict:
+    """Return the historical rule-based recommendation envelope."""
     return {
         "source_question_id": question_id,
         "recommendations": recommendations,
