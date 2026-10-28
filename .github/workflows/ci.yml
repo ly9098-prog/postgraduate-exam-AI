@@ -605,6 +605,8 @@ jobs:
             tests/test_services/test_wrong_question_compatibility.py \
             tests/test_services/test_wrong_question_service_contract.py \
             tests/architecture/test_wrong_question_projection_boundaries.py \
+            tests/test_services/test_review_scheduler_projection_contract.py \
+            tests/architecture/test_review_scheduler_projection_boundaries.py \
             tests/test_services/test_subject_resolution_compatibility.py \
             tests/test_services/test_upload_validator_compatibility.py \
             tests/test_services/test_study_hub_plan_token_compatibility.py \

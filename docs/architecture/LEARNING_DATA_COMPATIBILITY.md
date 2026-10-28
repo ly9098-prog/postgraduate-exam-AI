@@ -416,3 +416,127 @@
 - 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
   `wrong_question_service`，不覆盖 `review_scheduler`、`study_report_service`、任务队列、OCR 导入编排、
   AI 分析执行等学习域大函数，也不声称学习域整体完成。
+
+
+## 15. 复习调度服务（review_scheduler）入口拆分
+
+- 2026-10-28，`review_scheduler` 十一个超预算入口收敛：`grade_batch_review` 192 → 44 行、
+  `submit_review` 164 → 41 行、`_get_today_review_task_state` 149 → 50 行、`get_review_stats` 135 → 33 行、
+  `get_today_review_result` 115 → 45 行、`_prepare_latest_review_revisions` 88 → 50 行、
+  `_record_review_session` 83 → 31 行、`set_mastered_state` 75 → 49 行、`get_today_review_overview` 66 → 47 行、
+  `get_today_review` 65 → 23 行、`auto_schedule_wrong_question` 60 → 36 行；拆出 65 个 helper
+  （按行数降序）：
+  `_apply_review_grade` 41、`_today_mastered_schedules` 35
+  `_lock_and_rebind_latest_revision` 34、`_review_submit_payload` 34
+  `_today_result_subject_stats` 34、`_today_review_batch_metrics` 32
+  `_build_review_record` 31、`_batch_review_error_payload` 30
+  `_grade_batch_review_item` 30、`_add_review_session_rows` 28
+  `_batch_review_success_payload` 28、`_grade_batch_review_loop` 28
+  `_resolve_review_replay` 27、`_restore_review_schedule` 27
+  `_review_schedule_subject_rows` 26、`_load_locked_review_schedule` 24
+  `_prewarm_review_wrong_answers` 24、`_batch_review_missing_payload` 23
+  `_review_replay_payload` 23、`_maybe_update_user_question_state` 22
+  `_today_result_records` 22、`_reviewed_by_subject_today` 21
+  `_today_due_review_statement` 21、`_new_wrong_review_schedule` 20
+  `_review_stats_by_subject` 20、`_today_reviewed_schedules` 20
+  `_rebind_if_stale` 19、`_validate_review_replay` 19
+  `_apply_manual_mastery_to_schedule` 18、`_apply_sm2_update` 18
+  `_reset_wrong_review_schedule` 18、`_review_accuracy_since` 17
+  `_today_reviewed_context` 17、`_review_session_subject_map` 16
+  `_count_today_review_schedules` 15、`_review_session_stats_by_subject` 15
+  `_apply_manual_mastery_to_wrong_question` 14
+  `_load_today_review_schedules` 14、`_merge_today_task_schedules` 14
+  `_today_mastered_question_ids` 14、`_tomorrow_due_count` 14
+  `_batch_review_question_answer` 13、`_today_completion_metrics` 11
+  `_today_result_metrics` 11、`_today_review_overdue_split` 11
+  `_today_reviewed_rows` 11、`_dedupe_records_by_question` 10
+  `_latest_revision_candidates` 10、`_ordered_review_items` 10
+  `_review_session_already_recorded` 10、`_today_review_conditions` 10
+  `_count_reviews_between` 9、`_latest_revision_view` 9
+  `_log_missing_review_revision` 9、`_pending_today_schedules` 9
+  `_subject_code_names` 9、`_batch_review_prewarm_candidate` 8
+  `_count_overdue_reviews` 8、`_count_remaining_today` 8
+  `_load_wrong_question_revision` 8、`_toggle_schedule_mastery` 8
+  `_count_active_review_schedules` 5、`_today_due_review_schedules` 5
+  `_valid_revision_schedule_filters` 5、`_first_wrong_review_at` 3
+  全部满足 300/50 预算；模块 1653 → 2197 行，顶层定义 25 → 90；`get_review_history`、`mark_mastered`、
+  `unmark_mastered`、`get_next_today_review_batch`、`_normalize_review_session`、
+  `_allocate_review_session_duration` 等 14 个未触及函数逐字未动。
+- 提交语义保持：评分范围校验仍在取锁之前；仍先 `lock_review_request` 再 `lock_question_review_state`；
+  幂等重放仍在任何可变 schedule 读取之前解析，重放键仍是 `question_id`/`question_version_id`/`schedule_id`/
+  `occurrence_seq`/`rating`/`user_answer` 全字段相等，冲突时仍抛
+  `ValueError("复习 request_id 已用于不同提交")`，重放成功仍返回 `already_submitted=True` 且不触库；
+  锁行后的六类校验（不存在并带 schedule_id、题目不匹配、已移出队列、已标记掌握、版本已更新、
+  occurrence 已失效）文案与顺序不变，读取仍带 `with_for_update()`；SM-2 仍由 `calc_sm2`
+  （`rating`→quality、`efactor`/`interval`/`repetitions`/`review_date`）驱动并写回
+  `ease_factor`/`interval`/`repetitions`/`next_review_at`/`last_reviewed_at`；`is_correct` 仍是
+  `rating >= 3`、自动掌握仍是 `is_correct and review_auto_mastered(repetitions)`；仍只在
+  `latest_version_id == question_version_id` 时调用 `update_user_question_state_after_answer`；
+  仍构造同字段 `ReviewRecord` 并把 `occurrence_seq+1`；`auto_commit=False` 时仍不提交不 refresh，
+  提交时仍 `commit` + `refresh(schedule)`；返回键序不变，`wrong_question_id`/`wrong_review_count`/
+  `wrong_answer` 仍只在答错且同步到错题行时出现。
+- 批量批改语义保持：空列表仍抛 `ValueError("复习列表不能为空")`；仍先一次性预载不可变版本视图，再按
+  `(question_id, schedule_id, 原始下标)` 稳定排序逐条批改以规避交叉批次死锁；每条仍以
+  `auto_commit=False` 调 `submit_review`，仍只把 `ValueError` 转为条目错误载荷；版本缺失仍走
+  `REVIEW_VERSION_MISSING` 载荷而非错误载荷；批改后仍单次 `commit`，再做 AI 预热，最后按原下标还原
+  结果顺序并写复习时段；`total`/`correct_count`/`wrong_count` 仍只统计成功条目，错误条目仍携带
+  `error_code`/`retryable`/`refresh_required`/`correct_answer`/`rating`。
+- 统计语义保持：仍是四路去重计数（生效 schedule 数、今日 review 数、今日剩余
+  `next_review_at <= 今日结束` 且未掌握、逾期 `next_review_at < 今日开始` 且未掌握）+ 近 N 天准确率
+  （`rating >= 3` 记正确、四位小数）+ 科目维度（schedule 侧按可变 `subject_id` 分组、复习历史按不可变
+  revision 科目分组），缺失值仍回落 0 与空字符串，返回键序不变。
+- 今日任务语义保持：`_get_today_review_task_state` 仍是「当前到期 ∪ 今日已产生 review 记录的 schedule ∪
+  今日已手动掌握的 schedule」合并视图，仍排除
+  `question_versions.question_id != review_schedules.question_id` 的脏行，仍按
+  `(next_review_at or 今日结束, id)` 升序排序，仍以 `(已复习题目 ∪ 已掌握题目) ∩ 任务题目` 计算已完成集合，
+  未完成集合仍要求未掌握；入口页与结果页仍由该状态派生，`is_completed` 与完成率仍由同一纯函数给出
+  （本批把入口页内联的 `max(0, due - remaining)` 与 `is_completed` 表达式收敛到 `_today_completion_metrics`，
+  两者在模块内各只剩 1 处）；结果页仍按题目去重取最新一条 review，明日到期数仍是
+  `[tomorrow_start, tomorrow_end]` 区间，入口页仍用 10 条批量与 120 分钟上限。
+- 复习时段语义保持：`_normalize_review_session` 未改动（request_id 必填、时长必须 > 0、完成时间不得
+  超前 now + 容差、起点早于终点或超出上限时按 duration 回推、前台时长大于墙钟时扩展起点）；
+  `_record_review_session` 仍是尽力而为边界——窗口为空或无成功条目直接返回，同一 client segment
+  重复写入仍是 no-op，时长仍按成功条目数在最大组优先分配余数，异常仍只 `rollback` + `logger.warning`，
+  不抛出，不影响已提交的 SM-2 进度。
+- 掌握与到期重建语义保持：`set_mastered_state` 仍先取题目锁，再分别读错题行与 schedule；已是目标态仍
+  返回 `False`（元数据修复不算用户可见转换），`mastered_at` 仍只在本次请求真正造成转换且原来为空时打点；
+  schedule 侧仍是同态返回 `False`、异态切换并 `occurrence_seq+1`、缺行时仅在取消掌握且错题行仍生效
+  且有版本时重建；`auto_schedule_wrong_question` 仍先取锁、校验 revision 归属，按「错题首次复习 = 明日」
+  建新行（interval=1、ease_factor=2.5、repetitions=0、occurrence_seq=0）或重置既有行并
+  `occurrence_seq+1`，`commit=False` 仍只 `flush`。
+- 63 项固定契约（`tests/test_services/test_review_scheduler_projection_contract.py`）在拆分后与拆分前均可通过
+  （HEAD 原实现经 AST 提取后以 pytest 插件回放：63 passed），覆盖 SM-2 应用与掌握投影、幂等重放六字段
+  逐项冲突、重放载荷默认值与标志位、六类 schedule 校验错误文案、`rating=2` 判负、错题行回显规则、
+  锁行/提交/refresh 顺序、批改排序与三类载荷字段、统计四路计数与科目回落、今日任务合并与分页指标上限、
+  时段归一化与余数分配、掌握转换与重建守卫。
+- 7700 例随机差分（`/tmp/rs-batch/differential.py`，十一个入口各 700 例）比较返回值/异常、渲染 SQL 与绑定
+  参数序列、访问器序列、`commit`/`flush`/`rollback`/`refresh`/`add` 事件、日志、错题同步与 AI 预热间谍调用
+  以及全部状态快照：0 mismatch、0 harness gap、0 dead queue（22 个响应队列均被真实消费）。该差分工具
+  在本批中同步修正四处自身缺陷：`count(distinct(...))` 分类里 `<=`/`>=`/`<` 的优先级与 GROUP BY 行集被聚合
+  形状遮蔽、结果对象改为按访问器惰性取响应、每个入口的用例桩未在用例结束后还原（导致后续用例复用首个
+  用例的闭包）、以及把同步的 `_normalize_review_session` 用异步桩替换从而静默走异常分支。
+- 137 个故障变体全部被拒绝（日志 `/tmp/rs-batch/mutants.log`），每个变体仅作用于单个函数，覆盖 SM-2 字段
+  写回、正确性阈值与掌握判定、幂等键各字段与默认值、锁行与 `with_for_update`、用户题目状态镜像条件与
+  排序、批改排序/提交契约/载荷字段/异常边界/预热筛选、统计四路窗口与分组列、今日任务合并与脏行守卫、
+  入口页与结果页指标边界、时段上限与余数分配、掌握转换/修复/重建守卫、脏版本重建与提交条件；另有 5 个
+  变体经论证为观测等价（同一 patched 瞬时、`due > 0` 时批量上限恒 ≥ 1 的两处、失败载荷 `is_correct`
+  恒为 `False` 使 success 门不可观测、每条 review 恰好产出一个结果使 `len(results) == len(reviews)`），
+  单独登记在 `EQUIVALENT` 中而非计入幸存者。
+- AST 证明（`/tmp/rs-batch/verify_ast.py`、报告 `/tmp/rs-batch/ast-report.json`）：14 个未触及函数与 HEAD AST
+  完全一致（0 differing、0 old-only）；模块级语句 31/31 逐字保留、0 新增；十一个入口消失的 37 个表达式
+  全部解释（0 去重缺口 + 37 条并入 helper/重命名局部量/重写 docstring 的显式白名单），无未解释差异。
+- 8 项架构门禁（`tests/architecture/test_review_scheduler_projection_boundaries.py`）约束 76 个函数的预算、
+  十一个入口签名与默认值、委派顺序、15 个纯 helper 的冻结单行语义、SM-2/记录构造/复习时段边界的单点归属，
+  以及今日/逾期/明日窗口与统计窗口 SQL 的单点，并含「放宽 helper 预算」「把重放查询移到锁行读取之后」
+  「入口内联 SQL」「丢失复习时段尽力而为边界」「颠倒明日窗口比较」五项反向自检。
+- 定向回归：新增两文件合计 71 passed；既有 `test_review_scheduler`、`test_review_scheduler_service`、
+  `test_review_scheduler_compatibility`、`test_review_session_stats`、`test_review_overview_dirty_schedule`
+  加 `test_e2e_review_flow`、`test_review_service`、`test_phase2_mastery`、`test_review_api`、
+  `test_review_master_api`、`test_practice_service`、`test_recommendation_phase4` 合计 247 passed；
+  严格 Ruff 与模块 50 行预算扫描通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 420 个测试文件：7280 passed、0 failed、
+  64 条既有弃用 warning，422.94 秒；Mocked readiness boundary regression 69 passed；
+  Cloud OCR profile boundary regression 30 passed。这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
+  `review_scheduler`，不覆盖 `study_report_service`、任务队列、OCR 导入编排、AI 分析执行等学习域大函数，
+  也不声称学习域整体完成。
