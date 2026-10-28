@@ -26,6 +26,22 @@ test('running state migrator shell lazily reuses one controller', () => {
     .includes('running state migrator must lazily assign its controller'))
 })
 
+test('subject loading shell lazily reuses one controller', () => {
+  const detached = pageSource.replace(
+    'return this._getSubjectLoadController().load()',
+    'return undefined'
+  )
+  assert.ok(pageViolations(detached)
+    .includes('subject loading must delegate to its controller'))
+
+  const unassigned = pageSource.replace(
+    'this._subjectLoadController = createSubjectLoadController({',
+    'void createSubjectLoadController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('subject loading must lazily assign its controller'))
+})
+
 test('dependency injection examples cannot import page, API, storage or another package', () => {
   for (const dependency of ['../pomodoro', '../../../utils/api', '../../../utils/storage',
     '../../../subpackages/study/practice/practice', './show-recovery', 'node:fs']) {

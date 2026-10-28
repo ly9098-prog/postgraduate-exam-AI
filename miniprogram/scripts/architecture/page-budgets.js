@@ -7,7 +7,7 @@ const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typesc
 
 const PAGES = {
   'pages/pomodoro/pomodoro.js': 2186,
-  'subpackages/study/practice/practice.js': 1240,
+  'subpackages/study/practice/practice.js': 1212,
   'subpackages/study/practice-result/index.js': 897,
   'subpackages/study/wrong-book/wrong-book.js': 1547,
   'subpackages/study/wrong-detail/wrong-detail.js': 1653,
@@ -16,7 +16,7 @@ const PAGES = {
   'subpackages/exam/result/index.js': 302,
   'subpackages/exam/paper-list/index.js': 283,
   'subpackages/exam/history/index.js': 235,
-  'subpackages/productivity/pomodoro-stats/index.js': 1291,
+  'subpackages/productivity/pomodoro-stats/index.js': 1165,
 }
 
 const FUNCTION_BUDGET = 50

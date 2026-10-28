@@ -41,7 +41,6 @@ const { createPieLabelRevealController } = require('./pie-label-reveal-controlle
 const { createCancelWorkController } = require('./cancel-work-controller')
 const overviewMapping = require('./overview-mapping')
 const { buildLoadViewState } = require('./load-view-state')
-const { buildDateViewState } = require('./date-view-state')
 const { createStatsCanvasInitController } = require('./canvas-init-controller')
 const { createThemeSyncController } = require('./theme-sync-controller')
 const { createDeferredHistoryController } = require('./deferred-history-controller')
@@ -56,6 +55,27 @@ const { createDynamicRefreshController } = require('./dynamic-refresh-controller
 const { createLoadRequestController } = require('./load-request-controller')
 const { createLoadRequestControllerFactory } = require('./load-request-controller-factory')
 const { buildLoadRequestControllerCapabilities } = require('./load-request-controller-capabilities')
+const {
+  buildLoadRequestPageCapabilities,
+} = require('./load-request-page-adapter')
+const {
+  buildLoadCommitPageCapabilities,
+} = require('./load-commit-page-adapter')
+const {
+  buildLoadFailurePageCapabilities,
+} = require('./load-failure-page-adapter')
+const {
+  buildDateCommitPageCapabilities,
+} = require('./date-commit-page-adapter')
+const {
+  buildDateFailurePageCapabilities,
+} = require('./date-failure-page-adapter')
+const {
+  buildDateRequestPageCapabilities,
+} = require('./date-request-page-adapter')
+const {
+  buildStatsCanvasInitPageCapabilities,
+} = require('./stats-canvas-init-page-adapter')
 const { buildPieRenderCapabilities } = require('./pie-render-capabilities')
 const { createPageInitController } = require('./page-init-controller')
 const { createLifecycleController } = require('./lifecycle-controller')
@@ -676,48 +696,18 @@ var pageConfig = {
 
   _getLoadCommitController() {
     if (!this._loadCommitController) {
-      this._loadCommitController = createLoadCommitController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getRequestId: () => this._requestId,
-        setDisplayTodayDurationSec: value => { this._displayTodayDurationSec = value },
-        setDaySubjectsRaw: subjects => { this._daySubjectsRaw = subjects },
-        setRawTodayDuration: value => { this._rawTodayDur = value },
-        setRawWeekDuration: value => { this._rawWeekDur = value },
-        setData: (patch, callback) => this.setData(patch, callback),
-        queueDeferredHistory: (reqId, dateSeq, selectedDate, sessions, total) => {
-          this._queueDeferredHistory(reqId, dateSeq, selectedDate, sessions, total)
-        },
-        isCumulativeCustomized: () => this._cumulativeCustomized,
-        getCumulativeStartDate: () => this.data.cumulativeStartDate,
-        refreshCumulativeSummary: (startDate, silent) => this._refreshCumulativeSummary(startDate, silent),
-        getDistributionPeriod: () => this.data.distributionPeriod,
-        loadDistributionForPeriod: (period, animate) => this._loadDistributionForPeriod(period, animate),
-        getChartMode: () => this.data.chartMode,
-        initCanvases: callback => this._initCanvases(callback),
-        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
-        getPieCanvasNode: () => this._pieCanvasNode,
-        setTimeout,
-        startAnimations: reqId => this._startAnimations(reqId),
-        isBarMounted: () => !!this.data.barCanvasMounted,
-        initTrendCanvas: callback => this._initTrendCanvas(callback),
-        renderTrendBars: progress => this._renderTrendBars(progress),
-      })
+      this._loadCommitController = createLoadCommitController(
+        buildLoadCommitPageCapabilities(this)
+      )
     }
     return this._loadCommitController
   },
 
   _getLoadFailureController() {
     if (!this._loadFailureController) {
-      this._loadFailureController = createLoadFailureController({
-        isAlive: () => this._alive,
-        getRequestId: () => this._requestId,
-        getDateRequestSeq: () => this._dateRequestSeq,
-        getSelectedDate: () => this.data.selectedDate,
-        isContentReady: () => !!this.data.contentReady,
-        logError: (message, e) => console.error(message, e),
-        setData: patch => this.setData(patch),
-      })
+      this._loadFailureController = createLoadFailureController(
+        buildLoadFailurePageCapabilities(this)
+      )
     }
     return this._loadFailureController
   },
@@ -738,39 +728,10 @@ var pageConfig = {
   },
 
   _loadRequestControllerCapabilities() {
-    return {
-      isAlive: () => this._alive,
-      ensureSettings: () => this._ensureSettings(),
-      ensureSubjectMeta: () => this._ensureSubjectMeta(),
-      getRequestId: () => this._requestId,
-      getSelectedDate: () => this.data.selectedDate,
-      getTodayDate: () => this.data._todayDate,
-      incrementDateRequestSeq: () => { this._dateRequestSeq = (this._dateRequestSeq || 0) + 1 },
-      getDateRequestSeq: () => this._dateRequestSeq,
-      hasData: () => this._hasData,
-      setHasData: value => { this._hasData = value },
-      cancelDeferredHistory: clearPending => this._cancelDeferredHistory(clearPending),
-      setData: patch => this.setData(patch),
-      incrementStatsLoadInFlight: () => { this._statsLoadInFlight = (this._statsLoadInFlight || 0) + 1 },
-      decrementStatsLoadInFlight: () => {
-        this._statsLoadInFlight = Math.max(0, (this._statsLoadInFlight || 1) - 1)
-      },
-      getInitialResponses: (requestedDate, viewingToday) => Promise.all([
-        // 首屏只请求组合接口 + 当前日 history；柱状图 canvas 不在这里挂载。
-        api.get('/pomodoro/statistics-overview', viewingToday ? {} : { date: requestedDate }),
-        api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
-      ]),
-      getHistory: date => api.get('/pomodoro/history', { page: 1, page_size: 20, date }),
-      normalizeOverview: response => overviewMapping.normalizeOverview(response),
-      reconcileFromServer: (stats, summary) => this._reconcileFromServer(stats, summary),
-      logError: (message, e) => console.error(message, e),
-      getDistributionPeriod: () => this.data.distributionPeriod,
-      resetPieCache: () => this._resetPieCache(),
-      cancelDurationAnimation: resetState => this._cancelDurationAnimation(resetState),
-      buildLoadViewState: overrides => this._buildLoadViewState(overrides),
-      commitLoad: (viewState, context) => this._getLoadCommitController().commit(viewState, context),
-      handleLoadFailure: (error, context) => this._getLoadFailureController().handle(error, context),
-    }
+    return buildLoadRequestPageCapabilities(this, {
+      api,
+      normalizeOverview: overviewMapping.normalizeOverview,
+    })
   },
 
   _buildLoadViewState(overrides) {
@@ -915,84 +876,27 @@ var pageConfig = {
 
   _getDateCommitController() {
     if (!this._dateCommitController) {
-      this._dateCommitController = createDateCommitController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getDateRequestSeq: () => this._dateRequestSeq,
-        setRawTodayDuration: value => { this._rawTodayDur = value },
-        setDaySubjectsRaw: subjects => { this._daySubjectsRaw = subjects },
-        resetPieCache: () => this._resetPieCache(),
-        setData: (patch, callback) => this.setData(patch, callback),
-        animateSelectedDuration: (fromSec, toSec, fromSessions, toSessions) => {
-          this._animateSelectedDuration(fromSec, toSec, fromSessions, toSessions)
-        },
-        getDistributionPeriod: () => this.data.distributionPeriod,
-        loadDistributionForPeriod: (period, animate) => this._loadDistributionForPeriod(period, animate),
-        getChartMode: () => this.data.chartMode,
-        isPieReady: () => !!(this._pieCtx && this._pieRect),
-        initCanvases: callback => this._initCanvases(callback),
-        animatePieOnly: () => this._animatePieOnly(),
-      })
+      this._dateCommitController = createDateCommitController(
+        buildDateCommitPageCapabilities(this)
+      )
     }
     return this._dateCommitController
   },
 
   _getDateFailureController() {
     if (!this._dateFailureController) {
-      this._dateFailureController = createDateFailureController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getDateRequestSeq: () => this._dateRequestSeq,
-        logError: (message, e) => console.error(message, e),
-        setData: patch => this.setData(patch),
-        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
-      })
+      this._dateFailureController = createDateFailureController(
+        buildDateFailurePageCapabilities(this, { wx })
+      )
     }
     return this._dateFailureController
   },
 
   _getDateRequestController() {
     if (!this._dateRequestController) {
-      this._dateRequestController = createDateRequestController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getDateRequestSeq: () => this._dateRequestSeq,
-        incrementDateRequestSeq: () => { this._dateRequestSeq = (this._dateRequestSeq || 0) + 1 },
-        getSelectedDate: () => this.data.selectedDate,
-        getTodayDate: () => this.data._todayDate,
-        getDistributionPeriod: () => this.data.distributionPeriod,
-        setData: patch => this.setData(patch),
-        getInitialResponses: (requestDate, viewingToday) => Promise.all([
-          // 查看“今日”时不传 date，由后端返回权威当前学习日。
-          api.get('/pomodoro/daily-summary', viewingToday ? {} : { date: requestDate }),
-          api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestDate }),
-        ]),
-        getHistory: date => api.get('/pomodoro/history', { page: 1, page_size: 20, date }),
-        reconcileFromServer: (stats, summary) => this._reconcileFromServer(stats, summary),
-        logError: (message, e) => console.error(message, e),
-        buildDateViewState: overrides => buildDateViewState({
-          ...overrides,
-          currentDisplayDurationSec: this._displayTodayDurationSec,
-          currentRawDurationSec: this._rawTodayDur,
-          currentDisplaySessions: this.data._dispTodaySessions,
-          currentSubjects: this.data.subjects,
-          currentDistributionHasData: this.data.distributionHasData,
-          currentRangeStart: this.data.distributionRangeStart,
-          currentRangeEnd: this.data.distributionRangeEnd,
-          hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
-          buildSubjectItems: subjects => this._buildSubjectItems(subjects),
-          hasDistributionData: subjects => this._hasDistributionData(subjects),
-          formatMin: sec => this._fmtMin(sec),
-          formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
-          formatSession: item => this._formatSession(item),
-          formatPieDateLabel: date => this._formatPieDateLabel(date),
-        }),
-        setRawTodayDuration: value => { this._rawTodayDur = value },
-        setDaySubjectsRaw: value => { this._daySubjectsRaw = value },
-        resetPieCache: () => this._resetPieCache(),
-        commitDate: (viewState, context) => this._getDateCommitController().commit(viewState, context),
-        handleDateFailure: (error, context) => this._getDateFailureController().handle(error, context),
-      })
+      this._dateRequestController = createDateRequestController(
+        buildDateRequestPageCapabilities(this, { api })
+      )
     }
     return this._dateRequestController
   },
@@ -1094,38 +998,9 @@ var pageConfig = {
 
   _getStatsCanvasInitController() {
     if (!this._statsCanvasInitController) {
-      this._statsCanvasInitController = createStatsCanvasInitController({
-        isAlive: () => this._alive,
-        getPage: () => this,
-        createQuery: () => wx.createSelectorQuery(),
-        getWindowInfo: () => (wx.getWindowInfo ? wx.getWindowInfo() : {}),
-        pieSelector: () => '#pie-canvas',
-        trendSelector: () => '#trend-bars-canvas',
-        isPieReady: () => !!(this._pieCanvasNode && this._pieCtx && this._pieRect),
-        isPiePending: () => !!this._canvasInitPending,
-        setPiePending: value => { this._canvasInitPending = value },
-        getPieCallbacks: () => this._canvasInitCallbacks,
-        setPieCallbacks: value => { this._canvasInitCallbacks = value },
-        addPieCallback: callback => this._canvasInitCallbacks.push(callback),
-        commitPie: value => {
-          this._pieCanvasNode = value.node
-          this._pieCtx = value.ctx
-          this._pieRect = value.rect
-          this._pieDpr = value.dpr
-        },
-        isTrendMounted: () => !!this.data.barCanvasMounted,
-        isTrendReady: () => !!(this._trendCanvasNode && this._trendCtx && this._trendBarsRect),
-        isTrendPending: () => !!this._barInitPending,
-        setTrendPending: value => { this._barInitPending = value },
-        getTrendCallbacks: () => this._barInitCallbacks,
-        setTrendCallbacks: value => { this._barInitCallbacks = value },
-        addTrendCallback: callback => this._barInitCallbacks.push(callback),
-        commitTrend: value => {
-          this._trendCanvasNode = value.node
-          this._trendCtx = value.ctx
-          this._trendBarsRect = value.rect
-        },
-      })
+      this._statsCanvasInitController = createStatsCanvasInitController(
+        buildStatsCanvasInitPageCapabilities(this, { wx })
+      )
     }
     return this._statsCanvasInitController
   },

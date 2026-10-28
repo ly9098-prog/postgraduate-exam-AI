@@ -75,6 +75,15 @@ const {
   createQuestionTimerController,
 } = require('./utils/question-timer-controller')
 const {
+  createPracticeLifecyclePageController,
+} = require('./utils/practice-lifecycle-page-adapter')
+const {
+  createPracticeSessionTimerPageController,
+} = require('./utils/practice-session-timer-page-adapter')
+const {
+  createPracticeSubjectLoadPageController,
+} = require('./utils/practice-subject-load-page-adapter')
+const {
   createQuestionLoadController,
 } = require('./utils/question-load-controller')
 const {
@@ -360,25 +369,16 @@ _submittedResultController() {
   )
 },
 onShow() {
-const s = this._practiceSession
-if (s && s._timingPauseActive) return
-if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs !== null) {
-s.backgroundMs = (s.backgroundMs || 0) + (monotonicNow() - s._backgroundStartedMonoMs)
-s._backgroundStartedMonoMs = null
-}
-if (s && s.activeStartedMonoMs && this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
-s.currentQuestionStartedMonoMs = monotonicNow()
-}
+  this._practiceLifecycleController().show()
 },
 onHide() {
-const s = this._practiceSession
-if (s && s._timingPauseActive) return
-if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs === null) {
-if (this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
-this._settleQuestionTime(true)
-}
-s._backgroundStartedMonoMs = monotonicNow()
-}
+  this._practiceLifecycleController().hide()
+},
+_practiceLifecycleController() {
+  return this._practiceLifecycleControllerInstance || (
+    this._practiceLifecycleControllerInstance =
+      createPracticeLifecyclePageController(this, monotonicNow)
+  )
 },
 async onReady() {
 if (config.DEV) console.log('[LAYER6_ONREADY]', Date.now())
@@ -402,36 +402,18 @@ if (this.data.launchingPreset) this.setData({ launchingPreset: false })
 this.loadPracticeSubjects()
 },
 async loadPracticeSubjects(options = {}) {
-const requestSeq = ++this._subjectsRequestSeq
-try {
-const res = await api.get('/practice/subjects')
-if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
-const subjectTree = this.normalizeSubjectTree(filter408SubjectTree(res || []))
-this.setData({ subjectTree })
-if (options.preserveSelection && this.data.selectedSubjectId) {
-const available = this._flattenSelectableSubjects(subjectTree || [])
-const target = available.find(item => Number(item.subject_id) === Number(this.data.selectedSubjectId))
-if (target) {
-this.setData({
-selectedSubjectName: this.data.selectedSubjectName || target.display_name,
-selectedSubjectHasChildren: Boolean(target.has_children),
-expandedSubjectId: target.parent_subject_id || target.subject_id,
-})
-}
-} else {
-this.initDefaultSubject(subjectTree)
-}
-if (!options.skipAutostart) {
-const presetApplied = await this._applyLaunchPreset(subjectTree)
-if (presetApplied && this._launchPreset && this._launchPreset.autostart && this._pageAlive) {
-await this.startPractice()
-}
-}
-} catch (e) {
-if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
-console.error('加载科目树失败', e)
-if (!options.silent) wx.showToast({ title: '加载科目失败', icon: 'none' })
-}
+  return this._practiceSubjectLoadController().load(options)
+},
+_practiceSubjectLoadController() {
+  return this._practiceSubjectLoadControllerInstance || (
+    this._practiceSubjectLoadControllerInstance =
+      createPracticeSubjectLoadPageController(this, {
+        api,
+        filterSubjectTree,
+        normalizeSubjectTree,
+        wx,
+      })
+  )
 },
 _parseLaunchPreset(options) {
 return parseLaunchPreset(options, safeDecodeURIComponent)
@@ -717,19 +699,7 @@ loadQuestions: () => this._loadQuestions(),
 )
 },
 _startTimer() {
-this._clearTimer()
-this._timer = setInterval(() => {
-if (!this._pageAlive || !this._practiceSession.activeStartedMonoMs) return
-const now = monotonicNow()
-const backgroundMs = (this._practiceSession.backgroundMs || 0) + (
-this._practiceSession._backgroundStartedMonoMs !== null
-? Math.max(0, now - this._practiceSession._backgroundStartedMonoMs)
-: 0
-)
-const sec = Math.max(0, Math.floor((now - this._practiceSession.activeStartedMonoMs - backgroundMs) / 1000))
-this._practiceSession.elapsedSec = sec
-this.setData({ elapsedText: this._fmt(sec) })
-}, 1000)
+    this._practiceSessionTimerController().start()
 },
 _fmt(sec) {
 const s = Math.max(0, sec || 0)
@@ -738,10 +708,13 @@ const ss = s % 60
 return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 },
 _clearTimer() {
-if (this._timer) {
-clearInterval(this._timer)
-this._timer = null
-}
+    this._practiceSessionTimerController().stop()
+  },
+  _practiceSessionTimerController() {
+    return this._practiceSessionTimerControllerInstance || (
+      this._practiceSessionTimerControllerInstance =
+        createPracticeSessionTimerPageController(this, monotonicNow)
+    )
 },
 _setPracticeUnloadGuard(enabled, message) {
   this._exitGuardController().setUnloadGuard(enabled, message)

@@ -139,7 +139,7 @@ const PAGE_METHODS = new Set([
   // Lifecycle and routing
   'onLoad', '_createTimerState',
   // Subject selection and migration
-  '_loadSubjects', '_applySubjects', '_lookupSubjectIdByCode',
+  '_getSubjectLoadController', '_loadSubjects', '_applySubjects', '_lookupSubjectIdByCode',
   '_migrateRunningStateCache', 'selectSubject', 'selectTaskType',
   // Preset / duration / touch UI handlers
   'selectPreset', 'onWorkChange', 'onBreakChange', 'noop', 'onCustomAreaTouch',
@@ -338,6 +338,18 @@ function pageViolations(source) {
               '_runningStateMigrationController',
             )) {
           errors.push('running state migrator must lazily assign its controller')
+        }
+        if (methodName === '_getSubjectLoadController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createSubjectLoadController',
+              '_subjectLoadController',
+            )) {
+          errors.push('subject loading must lazily assign its controller')
+        }
+        if (methodName === '_loadSubjects' &&
+            !returnsControllerCall(node, '_getSubjectLoadController', 'load', [])) {
+          errors.push('subject loading must delegate to its controller')
         }
         if (methodName === 'startSession' &&
             !returnsStartControllerCall(node, 'start')) {

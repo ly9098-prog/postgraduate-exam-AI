@@ -16,7 +16,10 @@ const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
 const { buildSubjectChoices, subjectIconByCode } = require('./utils/subject-options')
-const { buildApplySubjectsPlan } = require('./utils/apply-subjects-controller')
+const {
+  buildApplySubjectsPlan,
+  createSubjectLoadController,
+} = require('./utils/apply-subjects-controller')
 const { buildEffectivePausedMs } = require('./utils/effective-paused-ms')
 const { createCountdownController } = require('./utils/countdown-controller')
 const { createFreeTimerController } = require('./utils/free-timer-controller')
@@ -268,6 +271,7 @@ Page({
   _unknownStartController: null,
   _pendingSyncController: null,
   _terminalConflictController: null,
+  _subjectLoadController: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -560,29 +564,24 @@ Page({
 
   /* ==================== Subject Loading ==================== */
 
-  async _loadSubjects() {
-    // Local 24h cache: the pomodoro page only needs a stable subject list and
-    // the backend invalidates its own cache on Admin subject writes.
-    const cached = readSubjectCache()
-    if (cached && cached.length > 0) {
-      this._applySubjects(cached)
-      return
+  _getSubjectLoadController() {
+    if (!this._subjectLoadController) {
+      this._subjectLoadController = createSubjectLoadController({
+        readSubjectCache,
+        fetchSubjects: () => api.get('/practice/subjects'),
+        filterSubjectTree: filter408SubjectTree,
+        buildSubjectChoices,
+        writeSubjectCache,
+        applySubjects: flat => this._applySubjects(flat),
+        setSubjectsState: patch => this.setData(patch),
+        logError: (message, error) => console.error(message, error),
+      })
     }
+    return this._subjectLoadController
+  },
 
-    this.setData({ subjectsLoading: true, subjectsError: '' })
-    try {
-      const rawTree = await api.get('/practice/subjects')
-      const tree = filter408SubjectTree(rawTree)
-      if (!tree || !Array.isArray(tree)) {
-        throw new Error('科目数据格式错误')
-      }
-      const { choices } = buildSubjectChoices(tree)
-      writeSubjectCache(choices)
-      this._applySubjects(choices)
-    } catch (e) {
-      console.error('加载科目失败', e)
-      this.setData({ subjectsLoading: false, subjectsError: '科目加载失败，请稍后重试' })
-    }
+  async _loadSubjects() {
+    return this._getSubjectLoadController().load()
   },
 
   _applySubjects(flat) {
