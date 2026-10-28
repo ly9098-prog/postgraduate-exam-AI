@@ -6,7 +6,7 @@ confidence 随 answer_count 增加，低置信度时不做过强判断。
 """
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -83,9 +83,7 @@ async def _reload_knowledge_state(
         )
     )
     if state is None:
-        raise RuntimeError(
-            "user knowledge state disappeared after unique conflict"
-        )
+        raise RuntimeError("user knowledge state disappeared after unique conflict")
     return state
 
 
@@ -188,30 +186,18 @@ def get_mastery_label(mastery_score: float, confidence: float) -> str:
 # ── V3 核心：答题后更新知识点掌握度 ──
 
 
-async def update_user_knowledge_state_after_answer(
-    db: AsyncSession,
-    user_id: int,
-    question_id: int,
-    is_correct: bool,
-    question_version_id: int,
-    used_time: int | None = None,
-) -> dict:
-    """答题后更新相关知识点掌握度（V3 增量模型）。
+def _empty_mastery_update_summary() -> dict:
+    return {
+        "updated": 0,
+        "created": 0,
+        "mastery_before": None,
+        "mastery_after": None,
+        "mastery_delta": None,
+    }
 
-    流程：
-    1. 查找题目的知识点映射（QuestionKnowledgePoint → KnowledgePoint，唯一事实源）。
-    2. 遍历每个知识点，创建或更新 UserKnowledgeState。
-    3. 使用 compute_mastery_delta 计算增量，更新 mastery_score。
-    4. 更新 confidence、recent_* 系列统计。
 
-    返回: {"updated": int, "created": int, "mastery_before": float | None,
-           "mastery_after": float | None, "mastery_delta": float | None}
-    mastery_* 为本题关联知识点掌握度的平均值，用于推荐效果闭环指标。
-    """
-    now = utcnow()
-
-    # Knowledge evidence is always attributed to the immutable revision that was
-    # actually answered. Current Question mappings are never used for historical data.
+async def _load_version_knowledge_mappings(db: AsyncSession, question_version_id: int):
+    """Load the answered revision's immutable knowledge-point mappings in order."""
     result = await db.execute(
         select(QuestionVersionKnowledgePoint, KnowledgePoint)
         .join(
@@ -224,32 +210,23 @@ async def update_user_knowledge_state_after_answer(
             QuestionVersionKnowledgePoint.id,
         )
     )
-    mappings = result.all()
-    difficulty = await db.scalar(
+    return result.all()
+
+
+async def _load_version_difficulty(
+    db: AsyncSession, question_version_id: int
+) -> int | None:
+    return await db.scalar(
         select(QuestionVersion.difficulty).where(
             QuestionVersion.id == question_version_id
         )
     )
 
-    if not mappings:
-        return {
-            "updated": 0,
-            "created": 0,
-            "mastery_before": None,
-            "mastery_after": None,
-            "mastery_delta": None,
-        }
 
-    if difficulty is None:
-        return {
-            "updated": 0,
-            "created": 0,
-            "mastery_before": None,
-            "mastery_after": None,
-            "mastery_delta": None,
-        }
-
-    # 批量查询现有 UserKnowledgeState（替代每 KP 一次 SELECT）
+async def _ensure_knowledge_states(
+    db: AsyncSession, user_id: int, mappings: list
+) -> tuple[dict[int, UserKnowledgeState], set[int]]:
+    """Claim missing knowledge states and reload the winners of a unique race."""
     kp_ids = [kp.id for _, kp in mappings]
     states_result = await db.execute(
         select(UserKnowledgeState).where(
@@ -279,75 +256,96 @@ async def update_user_knowledge_state_after_answer(
         else:
             missing_claim_states.add(state.id)
         existing_states[kp.id] = state
+    return existing_states, missing_claim_states
 
+
+def _apply_answer_to_knowledge_state(
+    state: UserKnowledgeState,
+    *,
+    is_correct: bool,
+    used_time: int | None,
+    difficulty: int | None,
+    now,
+) -> tuple[float, float]:
+    """Apply one answer to one state and return its mastery before/after pair."""
+    mastery_before = float(
+        state.mastery_score
+        if state.mastery_score is not None
+        else MASTERY_INITIAL_SCORE
+    )
+    delta = compute_mastery_delta(
+        is_correct=is_correct,
+        used_time=used_time,
+        difficulty=difficulty,
+        recent_wrong_count=state.recent_wrong_count or 0,
+    )
+
+    state.attempt_count = (state.attempt_count or 0) + 1
+    if is_correct:
+        state.correct_count = (state.correct_count or 0) + 1
+        state.recent_correct_count = (state.recent_correct_count or 0) + 1
+        state.recent_wrong_count = 0
+    else:
+        state.wrong_count = (state.wrong_count or 0) + 1
+        state.recent_wrong_count = (state.recent_wrong_count or 0) + 1
+        state.recent_correct_count = 0
+        state.last_wrong_at = now
+
+    state.recent_answer_count = (state.recent_answer_count or 0) + 1
+    state.accuracy = (
+        state.correct_count / state.attempt_count if state.attempt_count > 0 else 0.0
+    )
+
+    state.mastery_score = clamp_mastery_score(mastery_before + delta)
+    state.confidence = compute_confidence(state.attempt_count)
+    state.weakness_level = get_mastery_label(state.mastery_score, state.confidence)
+    state.last_is_correct = is_correct
+    state.last_answer_time_seconds = used_time
+    state.last_practiced_at = now
+    return mastery_before, float(state.mastery_score)
+
+
+def _apply_answer_to_mappings(
+    mappings: list,
+    existing_states: dict[int, UserKnowledgeState],
+    missing_claim_states: set[int],
+    *,
+    is_correct: bool,
+    used_time: int | None,
+    difficulty: int | None,
+    now,
+) -> tuple[int, int, list[float], list[float]]:
+    """Apply the answer to every mapped state, counting created vs updated rows."""
     updated = 0
     created = 0
     mastery_before_values: list[float] = []
     mastery_after_values: list[float] = []
-
     for _qkp, kp in mappings:
         state = existing_states.get(kp.id)
-
         if not state:
-            raise RuntimeError(
-                "user knowledge state missing after claim/reload"
-            )
+            raise RuntimeError("user knowledge state missing after claim/reload")
         if state.id in missing_claim_states:
             created += 1
-
-        mastery_before = float(
-            state.mastery_score
-            if state.mastery_score is not None
-            else MASTERY_INITIAL_SCORE
-        )
-        mastery_before_values.append(mastery_before)
-
-        # V3: 计算掌握度增量
-        old_recent_wrong = state.recent_wrong_count or 0
-        delta = compute_mastery_delta(
+        mastery_before, mastery_after = _apply_answer_to_knowledge_state(
+            state,
             is_correct=is_correct,
             used_time=used_time,
             difficulty=difficulty,
-            recent_wrong_count=old_recent_wrong,
+            now=now,
         )
-
-        # 更新统计
-        state.attempt_count = (state.attempt_count or 0) + 1
-        if is_correct:
-            state.correct_count = (state.correct_count or 0) + 1
-            state.recent_correct_count = (state.recent_correct_count or 0) + 1
-            state.recent_wrong_count = 0
-        else:
-            state.wrong_count = (state.wrong_count or 0) + 1
-            state.recent_wrong_count = (state.recent_wrong_count or 0) + 1
-            state.recent_correct_count = 0
-            state.last_wrong_at = now
-
-        state.recent_answer_count = (state.recent_answer_count or 0) + 1
-        state.accuracy = (
-            state.correct_count / state.attempt_count
-            if state.attempt_count > 0
-            else 0.0
-        )
-
-        # V3: 增量更新 mastery_score (0-100)
-        state.mastery_score = clamp_mastery_score(mastery_before + delta)
-        mastery_after_values.append(float(state.mastery_score))
-
-        # V3: 更新 confidence
-        state.confidence = compute_confidence(state.attempt_count)
-
-        # V3: 更新 weakness_level（使用新标签体系）
-        state.weakness_level = get_mastery_label(state.mastery_score, state.confidence)
-
-        # V3: 记录最近答题信息
-        state.last_is_correct = is_correct
-        state.last_answer_time_seconds = used_time
-        state.last_practiced_at = now
+        mastery_before_values.append(mastery_before)
+        mastery_after_values.append(mastery_after)
         updated += 1
+    return updated, created, mastery_before_values, mastery_after_values
 
-    await db.flush()
 
+def _build_mastery_update_summary(
+    updated: int,
+    created: int,
+    mastery_before_values: list[float],
+    mastery_after_values: list[float],
+) -> dict:
+    """Average this question's per-knowledge-point mastery movement."""
     mastery_before_avg = (
         sum(mastery_before_values) / len(mastery_before_values)
         if mastery_before_values
@@ -378,23 +376,58 @@ async def update_user_knowledge_state_after_answer(
     }
 
 
+async def update_user_knowledge_state_after_answer(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+    is_correct: bool,
+    question_version_id: int,
+    used_time: int | None = None,
+) -> dict:
+    """答题后更新相关知识点掌握度（V3 增量模型）。
+
+    映射使用实际作答的不可变版本（Current Question 映射不参与历史归属）；
+    mastery_* 为本题关联知识点掌握度的平均值，用于推荐效果闭环指标。
+    """
+    now = utcnow()
+    # Knowledge evidence is always attributed to the immutable revision that was
+    # actually answered. Current Question mappings are never used for historical data.
+    mappings = await _load_version_knowledge_mappings(db, question_version_id)
+    difficulty = await _load_version_difficulty(db, question_version_id)
+    if not mappings or difficulty is None:
+        return _empty_mastery_update_summary()
+
+    existing_states, missing_claim_states = await _ensure_knowledge_states(
+        db, user_id, mappings
+    )
+    updated, created, mastery_before_values, mastery_after_values = (
+        _apply_answer_to_mappings(
+            mappings,
+            existing_states,
+            missing_claim_states,
+            is_correct=is_correct,
+            used_time=used_time,
+            difficulty=difficulty,
+            now=now,
+        )
+    )
+
+    await db.flush()
+    return _build_mastery_update_summary(
+        updated,
+        created,
+        mastery_before_values,
+        mastery_after_values,
+    )
+
+
 # ── 查询接口 ──
 
 
-async def get_user_weak_knowledge_points(
-    db: AsyncSession,
-    user_id: int,
-    subject: str | int | None,
-    limit: int = 5,
-) -> list[dict]:
-    """获取用户薄弱知识点。
-
-    优先从 user_knowledge_states 读取，数据不足时 fallback 到近 30 天 PracticeRecord。
-    """
-    # 1. 从 UserKnowledgeState 查找
-    subject_ids = await resolve_subject_ids(db, subject)
-    if not subject_ids:
-        return []
+async def _load_weak_state_rows(
+    db: AsyncSession, user_id: int, subject_ids: list[int], limit: int
+):
+    """Weak-first candidate rows; the caller truncates to the requested limit."""
     result = await db.execute(
         select(UserKnowledgeState, KnowledgePoint.name)
         .join(
@@ -411,24 +444,43 @@ async def get_user_weak_knowledge_points(
         )
         .limit(limit * 2)
     )
-    rows = result.all()
+    return result.all()
+
+
+def _weak_point_from_state(state: UserKnowledgeState, kp_name: str) -> dict:
+    return {
+        "knowledge_point_id": state.knowledge_point_id,
+        "name": kp_name,
+        "subject_id": state.subject_id,
+        "mastery_score": state.mastery_score,
+        "confidence": state.confidence,
+        "accuracy": state.accuracy,
+        "attempt_count": state.attempt_count,
+        "weakness_level": state.weakness_level,
+    }
+
+
+async def get_user_weak_knowledge_points(
+    db: AsyncSession,
+    user_id: int,
+    subject: str | int | None,
+    limit: int = 5,
+) -> list[dict]:
+    """获取用户薄弱知识点。
+
+    优先从 user_knowledge_states 读取，数据不足时 fallback 到近 30 天 PracticeRecord。
+    """
+    # 1. 从 UserKnowledgeState 查找
+    subject_ids = await resolve_subject_ids(db, subject)
+    if not subject_ids:
+        return []
+    rows = await _load_weak_state_rows(db, user_id, subject_ids, limit)
 
     weak_points = []
     for state, kp_name in rows:
         # V3: 使用新阈值判断薄弱（mastery_score < 70 即 weak 或 normal）
         if state.mastery_score < MASTERY_NORMAL_THRESHOLD:
-            weak_points.append(
-                {
-                    "knowledge_point_id": state.knowledge_point_id,
-                    "name": kp_name,
-                    "subject_id": state.subject_id,
-                    "mastery_score": state.mastery_score,
-                    "confidence": state.confidence,
-                    "accuracy": state.accuracy,
-                    "attempt_count": state.attempt_count,
-                    "weakness_level": state.weakness_level,
-                }
-            )
+            weak_points.append(_weak_point_from_state(state, kp_name))
         if len(weak_points) >= limit:
             break
 
@@ -440,18 +492,10 @@ async def get_user_weak_knowledge_points(
     return await _fallback_weak_kps(db, user_id, subject, limit)
 
 
-async def _fallback_weak_kps(
-    db: AsyncSession,
-    user_id: int,
-    subject: str | int | None,
-    limit: int = 5,
-) -> list[dict]:
-    """Fallback: 从近 30 天做题记录统计薄弱知识点。"""
-    subject_ids = await resolve_subject_ids(db, subject)
-    if not subject_ids:
-        return []
-    cutoff = utcnow() - timedelta(days=30)
-
+async def _load_recent_practice_rows(
+    db: AsyncSession, user_id: int, subject_ids: list[int], cutoff: datetime
+):
+    """Recent practice rows projected to (is_correct, kp_id, snapshot name)."""
     result = await db.execute(
         select(
             PracticeRecord.is_correct,
@@ -478,11 +522,10 @@ async def _fallback_weak_kps(
             PracticeRecord.subject_id.in_(subject_ids),
         )
     )
-    rows = result.all()
+    return result.all()
 
-    if not rows:
-        return []
 
+def _aggregate_practice_rows(rows) -> dict[int, dict]:
     kp_stats: dict[int, dict] = {}
     for is_correct, kp_id, kp_name in rows:
         stats = kp_stats.setdefault(
@@ -491,40 +534,58 @@ async def _fallback_weak_kps(
         stats["total"] += 1
         if bool(is_correct):
             stats["correct"] += 1
+    return kp_stats
+
+
+def _weak_point_from_practice_stats(kp_id: int, stats: dict) -> dict | None:
+    """Project one aggregated practice bucket, keeping the V1 thresholds."""
+    total = stats["total"]
+    if total < 2:
+        return None
+    correct = stats["correct"]
+    accuracy = correct / total
+    if accuracy >= 0.65:
+        return None
+    return {
+        "knowledge_point_id": kp_id,
+        "name": stats["name"],
+        "mastery_score": round(accuracy * 100, 2),
+        "confidence": round(min(1.0, total / 10.0), 2),
+        "accuracy": round(accuracy, 4),
+        "attempt_count": total,
+        "weakness_level": "weak" if accuracy < 0.45 else "normal",
+    }
+
+
+async def _fallback_weak_kps(
+    db: AsyncSession,
+    user_id: int,
+    subject: str | int | None,
+    limit: int = 5,
+) -> list[dict]:
+    """Fallback: 从近 30 天做题记录统计薄弱知识点。"""
+    subject_ids = await resolve_subject_ids(db, subject)
+    if not subject_ids:
+        return []
+    cutoff = utcnow() - timedelta(days=30)
+    rows = await _load_recent_practice_rows(db, user_id, subject_ids, cutoff)
+
+    if not rows:
+        return []
 
     weak = []
-    for kp_id, stats in kp_stats.items():
-        kp_name = stats["name"]
-        total = stats["total"]
-        correct = stats["correct"]
-        if total >= 2:
-            accuracy = correct / total
-            if accuracy < 0.65:
-                weak.append(
-                    {
-                        "knowledge_point_id": kp_id,
-                        "name": kp_name,
-                        "mastery_score": round(accuracy * 100, 2),
-                        "confidence": round(min(1.0, total / 10.0), 2),
-                        "accuracy": round(accuracy, 4),
-                        "attempt_count": total,
-                        "weakness_level": "weak" if accuracy < 0.45 else "normal",
-                    }
-                )
+    for kp_id, stats in _aggregate_practice_rows(rows).items():
+        projected = _weak_point_from_practice_stats(kp_id, stats)
+        if projected is not None:
+            weak.append(projected)
 
     weak.sort(key=lambda x: (x["accuracy"], -x["attempt_count"]))
     return weak[:limit]
 
 
-async def get_user_knowledge_states(
-    db: AsyncSession,
-    user_id: int,
-    subject: str | int | None,
-) -> list[dict]:
-    """获取用户某科目下所有知识点掌握状态。"""
-    subject_ids = await resolve_subject_ids(db, subject)
-    if not subject_ids:
-        return []
+async def _load_knowledge_state_rows(
+    db: AsyncSession, user_id: int, subject_ids: list[int]
+):
     result = await db.execute(
         select(UserKnowledgeState, KnowledgePoint.name)
         .join(
@@ -536,40 +597,57 @@ async def get_user_knowledge_states(
         )
         .order_by(KnowledgePoint.name)
     )
-    rows = result.all()
+    return result.all()
 
-    # Bulk-load subject labels (single query, avoid N+1)
+
+async def _load_subject_label_map(db: AsyncSession, rows) -> dict[int, Subject]:
+    """Bulk-load subject labels for the projected rows (single query, no N+1)."""
     subject_ids_used = {state.subject_id for state, _ in rows}
-    subject_map: dict[int, Subject] = {}
-    if subject_ids_used:
-        subj_result = await db.execute(
-            select(Subject).where(Subject.id.in_(subject_ids_used))
-        )
-        subject_map = {s.id: s for s in subj_result.scalars().all()}
+    if not subject_ids_used:
+        return {}
+    subj_result = await db.execute(
+        select(Subject).where(Subject.id.in_(subject_ids_used))
+    )
+    return {s.id: s for s in subj_result.scalars().all()}
 
-    items = []
-    for state, kp_name in rows:
-        subj = subject_map.get(state.subject_id)
-        items.append(
-            {
-                "knowledge_point_id": state.knowledge_point_id,
-                "name": kp_name,
-                "subject_id": state.subject_id,
-                "subject_name": subj.name if subj else "",
-                "attempt_count": state.attempt_count,
-                "correct_count": state.correct_count,
-                "wrong_count": state.wrong_count,
-                "accuracy": round(state.accuracy, 4),
-                "mastery_score": round(state.mastery_score, 2),
-                "confidence": round(state.confidence, 2),
-                "weakness_level": state.weakness_level,
-                "recent_wrong_count": state.recent_wrong_count,
-                "last_practiced_at": serialize_utc_datetime(state.last_practiced_at)
-                if state.last_practiced_at
-                else None,
-                "last_wrong_at": serialize_utc_datetime(state.last_wrong_at)
-                if state.last_wrong_at
-                else None,
-            }
-        )
-    return items
+
+def _knowledge_state_view(
+    state: UserKnowledgeState, kp_name: str, subject_map: dict[int, Subject]
+) -> dict:
+    subj = subject_map.get(state.subject_id)
+    return {
+        "knowledge_point_id": state.knowledge_point_id,
+        "name": kp_name,
+        "subject_id": state.subject_id,
+        "subject_name": subj.name if subj else "",
+        "attempt_count": state.attempt_count,
+        "correct_count": state.correct_count,
+        "wrong_count": state.wrong_count,
+        "accuracy": round(state.accuracy, 4),
+        "mastery_score": round(state.mastery_score, 2),
+        "confidence": round(state.confidence, 2),
+        "weakness_level": state.weakness_level,
+        "recent_wrong_count": state.recent_wrong_count,
+        "last_practiced_at": serialize_utc_datetime(state.last_practiced_at)
+        if state.last_practiced_at
+        else None,
+        "last_wrong_at": serialize_utc_datetime(state.last_wrong_at)
+        if state.last_wrong_at
+        else None,
+    }
+
+
+async def get_user_knowledge_states(
+    db: AsyncSession,
+    user_id: int,
+    subject: str | int | None,
+) -> list[dict]:
+    """获取用户某科目下所有知识点掌握状态。"""
+    subject_ids = await resolve_subject_ids(db, subject)
+    if not subject_ids:
+        return []
+    rows = await _load_knowledge_state_rows(db, user_id, subject_ids)
+    subject_map = await _load_subject_label_map(db, rows)
+    return [
+        _knowledge_state_view(state, kp_name, subject_map) for state, kp_name in rows
+    ]
