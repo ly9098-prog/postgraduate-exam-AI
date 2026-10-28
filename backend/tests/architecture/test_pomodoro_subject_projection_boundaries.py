@@ -55,7 +55,7 @@ def test_real_snapshot_consumes_projection_without_duplicate_implementations():
     snapshot = next(
         node
         for node in tree.body
-        if getattr(node, "name", "") == "build_pomodoro_statistics_snapshot"
+        if getattr(node, "name", "") == "_accumulate_snapshot_sessions"
     )
     calls = {
         node.func.id: node

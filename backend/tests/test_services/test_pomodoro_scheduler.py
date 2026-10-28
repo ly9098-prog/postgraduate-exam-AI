@@ -339,3 +339,80 @@ class TestServiceLayer:
         assert row.paused_at is None
         # 未暂停的 resume 不应改 expected_end_time
         assert row.expected_end_time == original_eet
+
+
+class TestTimelineBoundaries:
+    @pytest.mark.asyncio
+    async def test_complete_terminal_without_end_time_keeps_not_ready_error(
+        self, isolated_db, clock
+    ):
+        from app.models.pomodoro import PomodoroSession
+        from app.services import pomodoro_service as svc
+
+        start = datetime(2026, 8, 8, 0, 0)
+        clock.now = start + timedelta(minutes=1)
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_terminal_missing_end")
+            subj_id = await _make_subject(db)
+            session = PomodoroSession(
+                user_id=uid,
+                subject_id=subj_id,
+                preset="standard",
+                work_duration=25,
+                break_duration=5,
+                start_time=start,
+                expected_end_time=start + timedelta(minutes=25),
+                end_time=None,
+                actual_duration=5,
+                status="completed",
+                notification_enabled=False,
+                notification_sent=True,
+                total_paused_sec=0,
+            )
+            db.add(session)
+            await db.flush()
+            session_id = session.id
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            with pytest.raises(svc.PomodoroNotReadyError, match="POMODORO_NOT_READY"):
+                await svc.complete_session(
+                    db,
+                    session_id=session_id,
+                    user_id=uid,
+                    client_action_at=start + timedelta(seconds=5),
+                )
+
+    def test_resolve_client_action_time_keeps_floor_ahead_of_server(self):
+        from app.services import pomodoro_service as svc
+
+        start = datetime(2026, 8, 8, 0, 0)
+        server_now = start + timedelta(minutes=1)
+        floor = server_now + timedelta(seconds=1)
+        session = SimpleNamespace(start_time=start, pause_intervals=[])
+
+        assert (
+            svc._resolve_client_action_time(session, None, server_now, floor=floor)
+            == floor
+        )
+
+    def test_delayed_resume_before_latest_pause_start_is_rejected(self):
+        from app.services import pomodoro_service as svc
+
+        start = datetime(2026, 8, 8, 0, 0)
+        latest = SimpleNamespace(
+            started_at=start + timedelta(seconds=10),
+            ended_at=start + timedelta(seconds=20),
+        )
+        session = SimpleNamespace(start_time=start, pause_intervals=[latest])
+
+        with pytest.raises(svc.PomodoroStaleActionError):
+            svc._shorten_latest_closed_pause(
+                session,
+                latest,
+                start + timedelta(seconds=5),
+                start + timedelta(seconds=30),
+            )
+
+        assert latest.ended_at == start + timedelta(seconds=20)

@@ -37,6 +37,8 @@ from app.services.pomodoro_attribution import (
     split_duration_excluding_intervals,
     split_session_duration_by_study_day,
 )
+from app.services.pomodoro_history_projection import build_history_item
+from app.services.pomodoro_start_request import PomodoroStartRequest
 from app.services.pomodoro_statistics_accumulation import (
     StatisticsAccumulationState,
     accumulate_focus_sessions,
@@ -47,7 +49,6 @@ from app.services.pomodoro_statistics_window import (
     StatisticsWindowRequest,
     requested_statistics_period,
 )
-from app.services.pomodoro_history_projection import build_history_item
 from app.services.pomodoro_subject_projection import (
     allocate_seconds_by_weight,
     allocation_group_key,
@@ -211,43 +212,51 @@ def _resolve_client_action_time(
     latest canonical event is rejected rather than silently pushed forward. That
     prevents a late cross-device pause/resume from reversing the user's newer state.
     """
-    explicit_client_time = client_action_at is not None
-    if not explicit_client_time:
-        candidate = server_now
-    else:
-        try:
-            candidate = normalize_to_naive_utc(client_action_at)
-        except (TypeError, ValueError):
-            candidate = server_now
-            explicit_client_time = False
-
-    if explicit_client_time and candidate > server_now + timedelta(
-        seconds=CLIENT_ACTION_FUTURE_TOLERANCE_SEC
-    ):
-        raise PomodoroClockSkewError("POMODORO_CLOCK_SKEW")
-
-    if explicit_client_time and candidate < session.start_time - timedelta(
-        seconds=CLIENT_ACTION_PAST_TOLERANCE_SEC
-    ):
-        raise PomodoroClockSkewError("POMODORO_CLOCK_SKEW")
-
-    if (
-        explicit_client_time
-        and reject_stale_before is not None
-        and candidate < reject_stale_before
-    ):
-        raise PomodoroStaleActionError("POMODORO_STALE_ACTION")
-
+    candidate, explicit_client_time = _normalize_explicit_action_time(
+        client_action_at, server_now
+    )
+    _reject_implausible_client_time(
+        session,
+        candidate,
+        server_now,
+        explicit_client_time=explicit_client_time,
+        reject_stale_before=reject_stale_before,
+    )
     lower = session.start_time
     if floor is not None and floor > lower:
         lower = floor
-    if candidate < lower:
-        candidate = lower
-    if candidate > server_now:
-        candidate = server_now
-    if candidate < lower:
-        candidate = lower
-    return candidate
+    return max(lower, min(max(candidate, lower), server_now))
+
+
+def _normalize_explicit_action_time(
+    client_action_at: datetime | None, server_now: datetime
+) -> tuple[datetime, bool]:
+    if client_action_at is None:
+        return server_now, False
+    try:
+        return normalize_to_naive_utc(client_action_at), True
+    except (TypeError, ValueError):
+        return server_now, False
+
+
+def _reject_implausible_client_time(
+    session,
+    candidate: datetime,
+    server_now: datetime,
+    *,
+    explicit_client_time: bool,
+    reject_stale_before: datetime | None,
+) -> None:
+    if not explicit_client_time:
+        return
+    if candidate > server_now + timedelta(seconds=CLIENT_ACTION_FUTURE_TOLERANCE_SEC):
+        raise PomodoroClockSkewError("POMODORO_CLOCK_SKEW")
+    if candidate < session.start_time - timedelta(
+        seconds=CLIENT_ACTION_PAST_TOLERANCE_SEC
+    ):
+        raise PomodoroClockSkewError("POMODORO_CLOCK_SKEW")
+    if reject_stale_before is not None and candidate < reject_stale_before:
+        raise PomodoroStaleActionError("POMODORO_STALE_ACTION")
 
 
 async def _get_session_by_client_start_id(
@@ -291,9 +300,8 @@ def _start_payload_matches(
         and int(session.work_duration or 0) == int(expected_work or 0)
         and int(session.break_duration or 0) == int(expected_break or 0)
         and bool(session.notification_enabled) == expected_notification
-        and (
-            len(getattr(session, "subject_allocations", []) or []) > 1
-        ) == (allocation_mode == EQUAL_408_MODE)
+        and (len(getattr(session, "subject_allocations", []) or []) > 1)
+        == (allocation_mode == EQUAL_408_MODE)
     )
 
 
@@ -311,49 +319,132 @@ async def start_session(
 ) -> PomodoroSession:
     if allocation_mode not in ("single", EQUAL_408_MODE):
         raise ValueError("不支持的科目分配模式")
-
-    # True idempotency must be checked before the active-session guard. If the
-    # original /start committed but its response was lost, retrying the same key
-    # returns that exact row instead of colliding with the row it just created.
+    request = PomodoroStartRequest(
+        subject_id=subject_id,
+        chapter_id=chapter_id,
+        preset=preset,
+        work_duration=work_duration,
+        break_duration=break_duration,
+        notification_enabled=notification_enabled,
+    )
     existing = await _get_session_by_client_start_id(db, user_id, client_start_id)
     if existing is not None:
-        if not _start_payload_matches(
-            existing,
-            subject_id=subject_id,
-            chapter_id=chapter_id,
-            preset=preset,
-            work_duration=work_duration,
-            break_duration=break_duration,
-            notification_enabled=notification_enabled,
-            allocation_mode=allocation_mode,
-        ):
-            raise PomodoroStartIdempotencyConflictError(
-                "POMODORO_START_IDEMPOTENCY_CONFLICT"
-            )
+        _require_matching_start_payload(existing, request, allocation_mode)
         return existing
-
-    # Check for active session first — don't auto-cancel another device's timer.
-    active = await get_active_session(db, user_id)
-    if active is not None:
+    if await get_active_session(db, user_id) is not None:
         raise ValueError("当前已有进行中的专注，请先结束后再开始")
-
-    user_row = await db.execute(select(User.openid).where(User.id == user_id))
-    openid_snapshot = user_row.scalar_one_or_none()
-
-    # Free timer overrides: no countdown, no notification
-    if preset == "free":
-        work_duration = 0
-        break_duration = 0
-        notification_enabled = False
-    elif work_duration <= 0:
-        raise ValueError("非自由计时模式需要设置学习时长")
-
-    start = utcnow()
-    expected_end = (
-        start + timedelta(minutes=max(0, work_duration)) if work_duration > 0 else None
+    return await _create_start_session(
+        db,
+        user_id=user_id,
+        client_start_id=client_start_id,
+        allocation_mode=allocation_mode,
+        request=request,
     )
 
-    # Resolve the selected subject and the immutable attribution snapshot.
+
+async def _create_start_session(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    client_start_id: str | None,
+    allocation_mode: str,
+    request: PomodoroStartRequest,
+) -> PomodoroSession:
+    start_payload = await _prepare_new_start(db, user_id, request, allocation_mode)
+    session = _new_pomodoro_session(
+        client_start_id=client_start_id,
+        allocation_mode=allocation_mode,
+        start_payload=start_payload,
+        request=request,
+    )
+    try:
+        async with db.begin_nested():
+            db.add(session)
+            await db.flush()
+    except IntegrityError as exc:
+        return await _handle_start_integrity_race(
+            db,
+            user_id,
+            request,
+            client_start_id=client_start_id,
+            allocation_mode=allocation_mode,
+            exc=exc,
+        )
+
+    await db.refresh(session, attribute_names=["created_at"])
+    session.subject_ref = start_payload["subject"]
+    return session
+
+
+async def _prepare_new_start(
+    db: AsyncSession, user_id: int, request: PomodoroStartRequest, allocation_mode: str
+):
+    user_row = await db.execute(select(User.openid).where(User.id == user_id))
+    openid_snapshot = user_row.scalar_one_or_none()
+    work_duration, break_duration, notification_enabled = _normalize_start_preset(
+        request.preset,
+        request.work_duration,
+        request.break_duration,
+        request.notification_enabled,
+    )
+    start = utcnow()
+    expected_end = _initial_expected_end(start, work_duration)
+    subj, _, allocation_subjects = await _resolve_start_subjects(
+        db, request.subject_id, allocation_mode
+    )
+    return {
+        "openid_snapshot": openid_snapshot,
+        "work_duration": work_duration,
+        "break_duration": break_duration,
+        "notification_enabled": notification_enabled,
+        "start": start,
+        "expected_end": expected_end,
+        "subject": subj,
+        "allocation_subjects": allocation_subjects,
+        "user_id": user_id,
+    }
+
+
+def _require_matching_start_payload(
+    existing: PomodoroSession,
+    request: PomodoroStartRequest,
+    allocation_mode: str,
+) -> None:
+    if not _start_payload_matches(
+        existing,
+        subject_id=request.subject_id,
+        chapter_id=request.chapter_id,
+        preset=request.preset,
+        work_duration=request.work_duration,
+        break_duration=request.break_duration,
+        notification_enabled=request.notification_enabled,
+        allocation_mode=allocation_mode,
+    ):
+        raise PomodoroStartIdempotencyConflictError(
+            "POMODORO_START_IDEMPOTENCY_CONFLICT"
+        )
+
+
+def _normalize_start_preset(
+    preset: str, work_duration: int, break_duration: int, notification_enabled: bool
+):
+    # Free timer overrides: no countdown, no notification.
+    if preset == "free":
+        return 0, 0, False
+    if work_duration <= 0:
+        raise ValueError("非自由计时模式需要设置学习时长")
+    return work_duration, break_duration, notification_enabled
+
+
+def _initial_expected_end(start: datetime, work_duration: int) -> datetime | None:
+    if work_duration <= 0:
+        return None
+    return start + timedelta(minutes=max(0, work_duration))
+
+
+async def _resolve_start_subjects(
+    db: AsyncSession, subject_id: int, allocation_mode: str
+):
     subj = await db.get(Subject, subject_id)
     if subj is None:
         raise ValueError(f"科目不存在: subject_id={subject_id}")
@@ -361,50 +452,76 @@ async def start_session(
         raise ValueError(f"科目不可用: {subj.name}")
     all_subjects = list((await db.execute(select(Subject))).scalars().all())
     enabled_ids = {item.id for item in select_study_subject_records(all_subjects)}
-    allocation_subjects: list[Subject]
     if allocation_mode == EQUAL_408_MODE:
-        if subj.code != "exam408":
-            raise ValueError("四科均分模式只能选择 408 父级科目")
-        children_by_code = {
-            item.code: item
-            for item in all_subjects
-            if item.parent_id == subj.id
-            and item.code in EXAM408_CORE_CODES
-            and item.id in enabled_ids
-        }
-        if set(children_by_code) != set(EXAM408_CORE_CODES):
-            raise ValueError("408 四科配置不完整或不可用，暂不能使用四科均分")
-        allocation_subjects = [children_by_code[code] for code in EXAM408_CORE_CODES]
-        if any(
-            item.parent_id != subj.id
-            or any(child.parent_id == item.id and child.id in enabled_ids for child in all_subjects)
-            for item in allocation_subjects
-        ):
-            raise ValueError("408 四科配置无效，暂不能使用四科均分")
-    elif allocation_mode == "single":
-        if any(
-            item.parent_id == subject_id and item.id in enabled_ids
-            for item in all_subjects
-        ):
-            raise ValueError(f"请选择具体子科目，不能选择父级科目: {subj.name}")
-        allocation_subjects = [subj]
+        allocation_subjects = _equal_408_subjects(subj, all_subjects, enabled_ids)
     else:
-        raise ValueError("不支持的科目分配模式")
+        allocation_subjects = _single_start_subjects(
+            subj, all_subjects, enabled_ids, subject_id
+        )
+    return subj, all_subjects, allocation_subjects
 
+
+def _equal_408_subjects(
+    subj: Subject, all_subjects: list[Subject], enabled_ids: set[int]
+) -> list[Subject]:
+    if subj.code != "exam408":
+        raise ValueError("四科均分模式只能选择 408 父级科目")
+    children_by_code = {
+        item.code: item
+        for item in all_subjects
+        if item.parent_id == subj.id
+        and item.code in EXAM408_CORE_CODES
+        and item.id in enabled_ids
+    }
+    if set(children_by_code) != set(EXAM408_CORE_CODES):
+        raise ValueError("408 四科配置不完整或不可用，暂不能使用四科均分")
+    allocation_subjects = [children_by_code[code] for code in EXAM408_CORE_CODES]
+    if any(
+        item.parent_id != subj.id
+        or any(
+            child.parent_id == item.id and child.id in enabled_ids
+            for child in all_subjects
+        )
+        for item in allocation_subjects
+    ):
+        raise ValueError("408 四科配置无效，暂不能使用四科均分")
+    return allocation_subjects
+
+
+def _single_start_subjects(
+    subj: Subject,
+    all_subjects: list[Subject],
+    enabled_ids: set[int],
+    subject_id: int,
+) -> list[Subject]:
+    if any(
+        item.parent_id == subject_id and item.id in enabled_ids for item in all_subjects
+    ):
+        raise ValueError(f"请选择具体子科目，不能选择父级科目: {subj.name}")
+    return [subj]
+
+
+def _new_pomodoro_session(
+    *,
+    client_start_id: str | None,
+    allocation_mode: str,
+    start_payload: dict,
+    request: PomodoroStartRequest,
+) -> PomodoroSession:
     session = PomodoroSession(
-        user_id=user_id,
-        subject_id=subject_id,
-        chapter_id=chapter_id,
+        user_id=start_payload["user_id"],
+        subject_id=request.subject_id,
+        chapter_id=request.chapter_id,
         client_start_id=client_start_id,
-        preset=preset,
-        work_duration=work_duration,
-        break_duration=break_duration,
-        start_time=start,
-        expected_end_time=expected_end,
+        preset=request.preset,
+        work_duration=start_payload["work_duration"],
+        break_duration=start_payload["break_duration"],
+        start_time=start_payload["start"],
+        expected_end_time=start_payload["expected_end"],
         status="running",
-        notification_enabled=bool(notification_enabled),
+        notification_enabled=bool(start_payload["notification_enabled"]),
         notification_sent=False,
-        openid_snapshot=openid_snapshot,
+        openid_snapshot=start_payload["openid_snapshot"],
     )
     session.subject_allocations = [
         PomodoroSubjectAllocation(
@@ -413,44 +530,35 @@ async def start_session(
             subject_code_snapshot=item.code,
             subject_name_snapshot=item.name,
         )
-        for item in allocation_subjects
+        for item in start_payload["allocation_subjects"]
     ]
-    try:
-        async with db.begin_nested():
-            db.add(session)
-            await db.flush()
-    except IntegrityError as exc:
-        # First check the idempotency key: concurrent retries with the same key can
-        # lose either the client-key index race or the one-active-session race.
-        existing = await _get_session_by_client_start_id(db, user_id, client_start_id)
-        if existing is not None:
-            if not _start_payload_matches(
-                existing,
-                subject_id=subject_id,
-                chapter_id=chapter_id,
-                preset=preset,
-                work_duration=work_duration,
-                break_duration=break_duration,
-                notification_enabled=notification_enabled,
-                allocation_mode=allocation_mode,
-            ):
-                raise PomodoroStartIdempotencyConflictError(
-                    "POMODORO_START_IDEMPOTENCY_CONFLICT"
-                ) from exc
-            return existing
-
-        conflict = await get_active_session(db, user_id)
-        if conflict is not None:
-            logger.info(
-                "pomodoro start_session: active-session uniqueness race for user %s",
-                user_id,
-            )
-            raise ValueError("当前已有进行中的专注，请先结束后再开始") from exc
-        raise
-
-    await db.refresh(session, attribute_names=["created_at"])
-    session.subject_ref = subj
     return session
+
+
+async def _handle_start_integrity_race(
+    db: AsyncSession,
+    user_id: int,
+    request: PomodoroStartRequest,
+    *,
+    client_start_id: str | None,
+    allocation_mode: str,
+    exc: IntegrityError,
+):
+    # First check the idempotency key: concurrent retries with the same key can
+    # lose either the client-key index race or the one-active-session race.
+    existing = await _get_session_by_client_start_id(db, user_id, client_start_id)
+    if existing is not None:
+        _require_matching_start_payload(existing, request, allocation_mode)
+        return existing
+
+    conflict = await get_active_session(db, user_id)
+    if conflict is not None:
+        logger.info(
+            "pomodoro start_session: active-session uniqueness race for user %s",
+            user_id,
+        )
+        raise ValueError("当前已有进行中的专注，请先结束后再开始") from exc
+    raise
 
 
 def _countdown_completion_ready(session, action_time: datetime) -> bool:
@@ -546,33 +654,23 @@ async def complete_session(
     user_id: int,
     client_action_at: datetime | None = None,
 ) -> PomodoroSession | None:
-    result = await db.execute(
-        select(PomodoroSession)
-        .options(
-            joinedload(PomodoroSession.subject_ref),
-            selectinload(PomodoroSession.pause_intervals),
-            selectinload(PomodoroSession.subject_allocations),
-        )
-        .where(
-            PomodoroSession.id == session_id,
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(
-                ["running", "paused", "completed", "interrupted"]
-            ),
-        )
-        .with_for_update(of=PomodoroSession)
+    session = await _locked_session_with_state(
+        db,
+        session_id,
+        user_id,
+        ["running", "paused", "completed", "interrupted"],
     )
-    session = result.scalar_one_or_none()
     if not session:
         return None
+    return await _apply_completed_terminal_action(db, session, client_action_at)
 
+
+async def _apply_completed_terminal_action(
+    db: AsyncSession, session: PomodoroSession, client_action_at: datetime | None
+) -> PomodoroSession | None:
     now = utcnow()
-    # Legacy retries without an explicit event time are purely idempotent once a
-    # terminal row exists. Modern clients can provide an earlier timestamp, in
-    # which case the earliest valid terminal event wins.
     if session.status in ("completed", "interrupted") and client_action_at is None:
         return session
-
     try:
         action_time = _resolve_terminal_action_time(session, client_action_at, now)
     except PomodoroClockSkewError:
@@ -596,6 +694,26 @@ async def complete_session(
     await db.flush()
     await _refresh_session_state(db, session)
     return session
+
+
+async def _locked_session_with_state(
+    db: AsyncSession, session_id: int, user_id: int, statuses: list[str]
+) -> PomodoroSession | None:
+    result = await db.execute(
+        select(PomodoroSession)
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            selectinload(PomodoroSession.pause_intervals),
+            selectinload(PomodoroSession.subject_allocations),
+        )
+        .where(
+            PomodoroSession.id == session_id,
+            PomodoroSession.user_id == user_id,
+            PomodoroSession.status.in_(statuses),
+        )
+        .with_for_update(of=PomodoroSession)
+    )
+    return result.scalar_one_or_none()
 
 
 async def interrupt_session(
@@ -655,58 +773,54 @@ async def pause_session(
     user_id: int,
     client_action_at: datetime | None = None,
 ) -> PomodoroSession | None:
-    result = await db.execute(
-        select(PomodoroSession)
-        .options(
-            joinedload(PomodoroSession.subject_ref),
-            selectinload(PomodoroSession.pause_intervals),
-            selectinload(PomodoroSession.subject_allocations),
-        )
-        .where(
-            PomodoroSession.id == session_id,
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["running", "paused"]),
-        )
-        .with_for_update(of=PomodoroSession)
+    session = await _locked_session_with_state(
+        db, session_id, user_id, ["running", "paused"]
     )
-    session = result.scalar_one_or_none()
     if not session:
         return None
-
-    now = utcnow()
     if session.status == "paused":
-        # State-idempotent is not timeline-idempotent. If an earlier pause from
-        # another device arrives after a later pause already committed, move the
-        # open interval back so those seconds are not falsely counted as focus.
-        open_interval = next(
-            (i for i in session.pause_intervals if i.ended_at is None), None
-        )
-        if client_action_at is None or open_interval is None:
-            await _refresh_session_state(db, session)
-            return session
+        return await _repair_delayed_pause(db, session, client_action_at, utcnow())
+    return await _open_new_pause_interval(db, session, client_action_at, utcnow())
 
-        prior_latest = session.start_time
-        for interval in session.pause_intervals:
-            if interval is open_interval:
-                continue
-            if interval.started_at is not None:
-                prior_latest = max(prior_latest, interval.started_at)
-            if interval.ended_at is not None:
-                prior_latest = max(prior_latest, interval.ended_at)
-        action_time = _resolve_client_action_time(
-            session,
-            client_action_at,
-            now,
-            floor=prior_latest,
-            reject_stale_before=prior_latest,
-        )
-        if action_time < open_interval.started_at:
-            open_interval.started_at = action_time
-            session.paused_at = action_time
-            await db.flush()
-            await _refresh_session_state(db, session)
+
+async def _repair_delayed_pause(
+    db: AsyncSession,
+    session: PomodoroSession,
+    client_action_at: datetime | None,
+    now: datetime,
+) -> PomodoroSession:
+    # State-idempotent is not timeline-idempotent. If an earlier pause from
+    # another device arrives after a later pause already committed, move the
+    # open interval back so those seconds are not falsely counted as focus.
+    open_interval = next(
+        (i for i in session.pause_intervals if i.ended_at is None), None
+    )
+    if client_action_at is None or open_interval is None:
+        await _refresh_session_state(db, session)
         return session
 
+    prior_latest = _prior_event_time(session, excluded=open_interval)
+    action_time = _resolve_client_action_time(
+        session,
+        client_action_at,
+        now,
+        floor=prior_latest,
+        reject_stale_before=prior_latest,
+    )
+    if action_time < open_interval.started_at:
+        open_interval.started_at = action_time
+        session.paused_at = action_time
+        await db.flush()
+        await _refresh_session_state(db, session)
+    return session
+
+
+async def _open_new_pause_interval(
+    db: AsyncSession,
+    session: PomodoroSession,
+    client_action_at: datetime | None,
+    now: datetime,
+) -> PomodoroSession:
     latest_event = _latest_session_event_time(session)
     action_time = _resolve_client_action_time(
         session,
@@ -727,17 +841,36 @@ async def pause_session(
         async with db.begin_nested():
             await db.flush()
     except IntegrityError:
-        logger.warning(
-            "pomodoro pause_session: concurrent open pause interval for session %s; treating as idempotent",
-            session.id,
-        )
-        session.pause_intervals[:] = [
-            i for i in session.pause_intervals if i.id is not None
-        ]
-        session.paused_at = None
-        session.status = "running"
-        await _refresh_session_state(db, session)
+        return await _rollback_concurrent_pause(db, session)
     return session
+
+
+async def _rollback_concurrent_pause(
+    db: AsyncSession, session: PomodoroSession
+) -> PomodoroSession:
+    logger.warning(
+        "pomodoro pause_session: concurrent open pause interval for session %s; treating as idempotent",
+        session.id,
+    )
+    session.pause_intervals[:] = [
+        i for i in session.pause_intervals if i.id is not None
+    ]
+    session.paused_at = None
+    session.status = "running"
+    await _refresh_session_state(db, session)
+    return session
+
+
+def _prior_event_time(session, excluded=None) -> datetime:
+    prior_latest = session.start_time
+    for interval in session.pause_intervals:
+        if interval is excluded:
+            continue
+        if interval.started_at is not None:
+            prior_latest = max(prior_latest, interval.started_at)
+        if interval.ended_at is not None:
+            prior_latest = max(prior_latest, interval.ended_at)
+    return prior_latest
 
 
 async def resume_session(
@@ -746,77 +879,75 @@ async def resume_session(
     user_id: int,
     client_action_at: datetime | None = None,
 ) -> PomodoroSession | None:
-    result = await db.execute(
-        select(PomodoroSession)
-        .options(
-            joinedload(PomodoroSession.subject_ref),
-            selectinload(PomodoroSession.pause_intervals),
-            selectinload(PomodoroSession.subject_allocations),
-        )
-        .where(
-            PomodoroSession.id == session_id,
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["running", "paused"]),
-        )
-        .with_for_update(of=PomodoroSession)
+    session = await _locked_session_with_state(
+        db, session_id, user_id, ["running", "paused"]
     )
-    session = result.scalar_one_or_none()
     if not session:
         return None
-
     now = utcnow()
     open_interval = next(
         (i for i in session.pause_intervals if i.ended_at is None), None
     )
-
     if session.status == "running" and open_interval is None:
-        # Symmetric timeline idempotency for a delayed resume: when the most recent
-        # canonical event is the end of a pause interval, an earlier duplicate
-        # resume may shorten that pause without changing the current running state.
-        closed = [i for i in session.pause_intervals if i.ended_at is not None]
-        latest_closed = max(closed, key=lambda i: i.ended_at) if closed else None
-        latest_event = _latest_session_event_time(session)
-        if (
-            client_action_at is not None
-            and latest_closed is not None
-            and latest_closed.ended_at == latest_event
-        ):
-            prior_latest = session.start_time
-            for interval in session.pause_intervals:
-                if interval.started_at is not None:
-                    prior_latest = max(prior_latest, interval.started_at)
-                if interval is not latest_closed and interval.ended_at is not None:
-                    prior_latest = max(prior_latest, interval.ended_at)
-            floor = max(
-                prior_latest, latest_closed.started_at + timedelta(microseconds=1)
-            )
-            action_time = _resolve_client_action_time(
-                session,
-                client_action_at,
-                now,
-                floor=floor,
-                reject_stale_before=prior_latest,
-            )
-            if action_time < latest_closed.ended_at:
-                latest_closed.ended_at = action_time
-        elif client_action_at is not None:
-            # Validate obvious future skew, but a duplicate resume with no pause
-            # history has no timeline effect and can remain idempotent.
-            _resolve_client_action_time(
-                session, client_action_at, now, floor=session.start_time
-            )
+        return await _repair_delayed_resume(db, session, client_action_at, now)
+    return await _resume_open_pause(db, session, open_interval, client_action_at, now)
 
-        session.total_paused_sec = _effective_paused_sec(session, now)
-        if session.expected_end_time is not None:
-            session.expected_end_time = (
-                session.start_time
-                + timedelta(minutes=session.work_duration)
-                + timedelta(seconds=session.total_paused_sec)
-            )
-        await db.flush()
-        await _refresh_session_state(db, session)
-        return session
 
+async def _repair_delayed_resume(
+    db: AsyncSession,
+    session: PomodoroSession,
+    client_action_at: datetime | None,
+    now: datetime,
+) -> PomodoroSession:
+    # Symmetric timeline idempotency for a delayed resume: when the most recent
+    # canonical event is the end of a pause interval, an earlier duplicate
+    # resume may shorten that pause without changing the current running state.
+    closed = [i for i in session.pause_intervals if i.ended_at is not None]
+    latest_closed = max(closed, key=lambda i: i.ended_at) if closed else None
+    latest_event = _latest_session_event_time(session)
+    if (
+        client_action_at is not None
+        and latest_closed is not None
+        and latest_closed.ended_at == latest_event
+    ):
+        _shorten_latest_closed_pause(session, latest_closed, client_action_at, now)
+    elif client_action_at is not None:
+        # Validate obvious future skew; a duplicate resume with no pause history
+        # has no timeline effect and can remain idempotent.
+        _resolve_client_action_time(
+            session, client_action_at, now, floor=session.start_time
+        )
+    return await _recompute_running_state(db, session, now)
+
+
+def _shorten_latest_closed_pause(
+    session: PomodoroSession,
+    latest_closed,
+    client_action_at: datetime | None,
+    now: datetime,
+) -> None:
+    prior_latest = _prior_event_time(session, excluded=latest_closed)
+    if latest_closed.started_at is not None:
+        prior_latest = max(prior_latest, latest_closed.started_at)
+    floor = max(prior_latest, latest_closed.started_at + timedelta(microseconds=1))
+    action_time = _resolve_client_action_time(
+        session,
+        client_action_at,
+        now,
+        floor=floor,
+        reject_stale_before=prior_latest,
+    )
+    if action_time < latest_closed.ended_at:
+        latest_closed.ended_at = action_time
+
+
+async def _resume_open_pause(
+    db: AsyncSession,
+    session: PomodoroSession,
+    open_interval,
+    client_action_at: datetime | None,
+    now: datetime,
+) -> PomodoroSession:
     floor = _latest_session_event_time(session)
     if open_interval is not None:
         floor = max(floor, open_interval.started_at + timedelta(microseconds=1))
@@ -830,22 +961,34 @@ async def resume_session(
 
     if open_interval is not None:
         _close_open_pause_interval(session, action_time)
-
     if session.status == "paused":
         session.paused_at = None
         session.status = "running"
 
     session.total_paused_sec = _effective_paused_sec(session, action_time)
+    _extend_expected_end(session)
+    await db.flush()
+    await _refresh_session_state(db, session)
+    return session
+
+
+async def _recompute_running_state(
+    db: AsyncSession, session: PomodoroSession, now: datetime
+) -> PomodoroSession:
+    session.total_paused_sec = _effective_paused_sec(session, now)
+    _extend_expected_end(session)
+    await db.flush()
+    await _refresh_session_state(db, session)
+    return session
+
+
+def _extend_expected_end(session: PomodoroSession) -> None:
     if session.status == "running" and session.expected_end_time is not None:
         session.expected_end_time = (
             session.start_time
             + timedelta(minutes=session.work_duration)
             + timedelta(seconds=session.total_paused_sec)
         )
-
-    await db.flush()
-    await _refresh_session_state(db, session)
-    return session
 
 
 async def get_active_session(
@@ -971,51 +1114,58 @@ async def _load_overlapping_sessions(
         PomodoroSession.end_time > period_start,
     )
     if with_subject:
-        result = await db.execute(
-            select(PomodoroSession)
-            .options(
-                joinedload(PomodoroSession.subject_ref),
-                joinedload(PomodoroSession.subject_allocations),
-                selectinload(PomodoroSession.pause_intervals),
-            )
-            .where(*overlap)
+        return await _load_sessions_with_subject(db, overlap)
+
+    return await _load_sessions_without_subject(db, overlap)
+
+
+async def _load_sessions_with_subject(db: AsyncSession, overlap) -> list[_LiteSession]:
+    result = await db.execute(
+        select(PomodoroSession)
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            joinedload(PomodoroSession.subject_allocations),
+            selectinload(PomodoroSession.pause_intervals),
         )
-        out: list[_LiteSession] = []
-        for s in result.unique().scalars().all():
-            ref = s.subject_ref
-            pause_intervals = [
-                SimpleNamespace(started_at=i.started_at, ended_at=i.ended_at)
-                for i in s.pause_intervals
-            ]
-            out.append(
-                _LiteSession(
-                    start_time=s.start_time,
-                    end_time=s.end_time,
-                    actual_duration=s.actual_duration,
-                    status=s.status,
-                    subject_id=s.subject_id,
-                    subject_ref=(
-                        SimpleNamespace(
-                            code=ref.code or "",
-                            name=ref.name or "",
-                            is_active=ref.is_active,
-                        )
-                        if ref is not None
-                        else None
-                    ),
-                    pause_intervals=pause_intervals,
-                    subject_allocations=[
-                        SimpleNamespace(
-                            subject_id=a.subject_id,
-                            subject_code=a.subject_code_snapshot,
-                            subject_name=a.subject_name_snapshot,
-                            weight_basis_points=a.weight_basis_points,
-                        )
-                        for a in (s.subject_allocations or [])
-                    ],
-                )
+        .where(*overlap)
+    )
+    return [_subject_lite_session(s) for s in result.unique().scalars().all()]
+
+
+def _subject_lite_session(s: PomodoroSession) -> _LiteSession:
+    ref = s.subject_ref
+    return _LiteSession(
+        start_time=s.start_time,
+        end_time=s.end_time,
+        actual_duration=s.actual_duration,
+        status=s.status,
+        subject_id=s.subject_id,
+        subject_ref=(
+            SimpleNamespace(
+                code=ref.code or "",
+                name=ref.name or "",
+                is_active=ref.is_active,
             )
-        return out
+            if ref is not None
+            else None
+        ),
+        pause_intervals=[
+            SimpleNamespace(started_at=i.started_at, ended_at=i.ended_at)
+            for i in s.pause_intervals
+        ],
+        subject_allocations=[
+            SimpleNamespace(
+                subject_id=a.subject_id,
+                subject_code=a.subject_code_snapshot,
+                subject_name=a.subject_name_snapshot,
+                weight_basis_points=a.weight_basis_points,
+            )
+            for a in (s.subject_allocations or [])
+        ],
+    )
+
+
+async def _load_sessions_without_subject(db, overlap) -> list[_LiteSession]:
 
     result = await db.execute(
         select(
@@ -1029,19 +1179,7 @@ async def _load_overlapping_sessions(
     rows = result.all()
     if not rows:
         return []
-    pauses: dict[int, list] = {}
-    for chunk in _chunks([r.id for r in rows], 500):
-        presult = await db.execute(
-            select(
-                PomodoroPauseInterval.session_id,
-                PomodoroPauseInterval.started_at,
-                PomodoroPauseInterval.ended_at,
-            ).where(PomodoroPauseInterval.session_id.in_(chunk))
-        )
-        for sid, started_at, ended_at in presult.all():
-            pauses.setdefault(sid, []).append(
-                SimpleNamespace(started_at=started_at, ended_at=ended_at)
-            )
+    pauses = await _load_chunked_pauses(db, [r.id for r in rows])
     return [
         _LiteSession(
             start_time=r.start_time,
@@ -1052,6 +1190,25 @@ async def _load_overlapping_sessions(
         )
         for r in rows
     ]
+
+
+async def _load_chunked_pauses(
+    db: AsyncSession, session_ids: list[int]
+) -> dict[int, list]:
+    pauses: dict[int, list] = {}
+    for chunk in _chunks(session_ids, 500):
+        result = await db.execute(
+            select(
+                PomodoroPauseInterval.session_id,
+                PomodoroPauseInterval.started_at,
+                PomodoroPauseInterval.ended_at,
+            ).where(PomodoroPauseInterval.session_id.in_(chunk))
+        )
+        for sid, started_at, ended_at in result.all():
+            pauses.setdefault(sid, []).append(
+                SimpleNamespace(started_at=started_at, ended_at=ended_at)
+            )
+    return pauses
 
 
 async def _load_overlapping_practice_sessions(
@@ -1076,11 +1233,21 @@ async def _load_overlapping_practice_sessions(
     statement so the snapshot query budget stays fixed.
     """
 
-    def _cols(model):
-        # Select only attribution columns. PracticeSession carries a potentially
-        # large submission_response JSON used for idempotent result replay; loading
-        # full ORM rows here would deserialize that payload for every stats query
-        # even though attribution never reads it.
+    merged = _merged_practice_review_subquery(user_id, period_start, period_end)
+    if not with_subject:
+        return await _load_practice_lite_sessions(db, merged)
+
+    return await _load_practice_subject_sessions(db, merged)
+
+
+def _merged_practice_review_subquery(
+    user_id: int, period_start: datetime, period_end: datetime
+):
+    # Select only attribution columns. PracticeSession carries a potentially
+    # large submission_response JSON used for idempotent result replay; loading
+    # full ORM rows here would deserialize that payload for every stats query
+    # even though attribution never reads it.
+    def cols(model):
         return select(
             model.started_at.label("started_at"),
             model.finished_at.label("finished_at"),
@@ -1093,21 +1260,27 @@ async def _load_overlapping_practice_sessions(
             model.finished_at > period_start,
         )
 
-    merged = _cols(PracticeSession).union_all(_cols(ReviewSession)).subquery()
-    if not with_subject:
-        result = await db.execute(
-            select(merged.c.started_at, merged.c.finished_at, merged.c.duration_sec)
-        )
-        return [
-            _LiteSession(
-                start_time=r.started_at,
-                end_time=r.finished_at,
-                actual_duration=r.duration_sec,
-                pause_intervals=[],
-            )
-            for r in result.all()
-        ]
+    return cols(PracticeSession).union_all(cols(ReviewSession)).subquery()
 
+
+async def _load_practice_lite_sessions(db: AsyncSession, merged) -> list[_LiteSession]:
+    result = await db.execute(
+        select(merged.c.started_at, merged.c.finished_at, merged.c.duration_sec)
+    )
+    return [
+        _LiteSession(
+            start_time=r.started_at,
+            end_time=r.finished_at,
+            actual_duration=r.duration_sec,
+            pause_intervals=[],
+        )
+        for r in result.all()
+    ]
+
+
+async def _load_practice_subject_sessions(
+    db: AsyncSession, merged
+) -> list[_LiteSession]:
     result = await db.execute(
         select(
             merged.c.started_at,
@@ -1119,30 +1292,29 @@ async def _load_overlapping_practice_sessions(
             Subject.is_active,
         ).outerjoin(Subject, Subject.id == merged.c.subject_id)
     )
-    out: list[_LiteSession] = []
-    for row in result.all():
-        has_subject = (
-            row.code is not None or row.name is not None or row.is_active is not None
-        )
-        out.append(
-            _LiteSession(
-                start_time=row.started_at,
-                end_time=row.finished_at,
-                actual_duration=row.duration_sec,
-                subject_id=row.subject_id,
-                subject_ref=(
-                    SimpleNamespace(
-                        code=row.code or "",
-                        name=row.name or "",
-                        is_active=bool(row.is_active),
-                    )
-                    if has_subject
-                    else None
-                ),
-                pause_intervals=[],
+    return [_practice_subject_lite_session(row) for row in result.all()]
+
+
+def _practice_subject_lite_session(row) -> _LiteSession:
+    has_subject = (
+        row.code is not None or row.name is not None or row.is_active is not None
+    )
+    return _LiteSession(
+        start_time=row.started_at,
+        end_time=row.finished_at,
+        actual_duration=row.duration_sec,
+        subject_id=row.subject_id,
+        subject_ref=(
+            SimpleNamespace(
+                code=row.code or "",
+                name=row.name or "",
+                is_active=bool(row.is_active),
             )
-        )
-    return out
+            if has_subject
+            else None
+        ),
+        pause_intervals=[],
+    )
 
 
 async def build_pomodoro_statistics_snapshot(
@@ -1159,74 +1331,227 @@ async def build_pomodoro_statistics_snapshot(
     need_range_summary: bool = False,
     range_include_subjects: bool = True,
 ) -> dict:
-    """One bounded window load + one attribution pass → the requested stats dims.
-
-    All pomodoro statistics endpoints share this single computation.  Sessions in
-    the union of the requested windows are loaded once, attributed once per session,
-    and each session's per-study-day split feeds stats / trends / daily-summary
-    together — the statistics page never pays N overlapping window loads + N
-    attribution runs.  ``pomodoro_attribution`` stays the single source of truth;
-    SQL only fetches the bounded window.
-    """
-    settings = await get_pomodoro_settings(db, user_id)
-    dsm = settings["day_start_minute"]
-    today = current_study_day(dsm)
-    target = target_date or today
-
-    period = requested_statistics_period(
-        StatisticsWindowRequest(
-            day_start_minute=dsm,
-            today=today,
-            target=target,
-            trends_days=trends_days,
-            need_stats=need_stats,
-            need_trends=need_trends,
-            need_daily_summary=need_daily_summary,
-            range_start=range_start,
-            range_end=range_end,
-            need_range_summary=need_range_summary,
-        ),
-        day_range=study_day_utc_range,
-        week_range=study_week_utc_range,
-    )
-    if period is None:
-        return {}
-    period_start, period_end = period
-    pomodoro_sessions = await _load_overlapping_sessions(
+    """One bounded window load and one attribution pass for requested dimensions."""
+    settings, today, target, needs, sessions, state = await _build_snapshot_state(
         db,
         user_id,
-        period_start,
-        period_end,
-        with_subject=(
-            need_daily_summary or (need_range_summary and range_include_subjects)
-        ),
+        target_date=target_date,
+        trends_days=trends_days,
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+        range_start=range_start,
+        range_end=range_end,
+        range_include_subjects=range_include_subjects,
+    )
+    if state is None:
+        return {}
+    _accumulate_snapshot_sessions(state, sessions, settings["day_start_minute"])
+    return _snapshot_response(
+        settings=settings,
+        state=state,
+        needs=needs,
+        today=today,
+        target=target,
+        range_start=range_start,
+        range_end=range_end,
+    )
+
+
+async def _build_snapshot_state(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    target_date: date | None,
+    trends_days: int,
+    need_stats: bool,
+    need_trends: bool,
+    need_daily_summary: bool,
+    need_range_summary: bool,
+    range_start: date | None,
+    range_end: date | None,
+    range_include_subjects: bool,
+):
+    settings = await get_pomodoro_settings(db, user_id)
+    today, target = _snapshot_dates(settings, target_date)
+    needs = (need_stats, need_trends, need_daily_summary, need_range_summary)
+    period = _snapshot_period(
+        settings=settings,
+        today=today,
+        target=target,
+        trends_days=trends_days,
+        needs=needs,
+        range_start=range_start,
+        range_end=range_end,
+    )
+    if period is None:
+        return settings, today, target, needs, None, None
+    sessions, state = await _prepare_snapshot_state(
+        db,
+        user_id,
+        settings=settings,
+        today=today,
+        target=target,
+        trends_days=trends_days,
+        needs=needs,
+        period=period,
+        range_include_subjects=range_include_subjects,
+        range_start=range_start,
+        range_end=range_end,
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+    )
+    return settings, today, target, needs, sessions, state
+
+
+def _snapshot_dates(settings, target_date: date | None) -> tuple[date, date]:
+    today = current_study_day(settings["day_start_minute"])
+    return today, target_date or today
+
+
+def _snapshot_with_subject(needs, range_include_subjects: bool) -> bool:
+    _, _, need_daily_summary, need_range_summary = needs
+    return need_daily_summary or (need_range_summary and range_include_subjects)
+
+
+def _snapshot_period(
+    *,
+    settings,
+    today,
+    target,
+    trends_days,
+    needs,
+    range_start,
+    range_end,
+):
+    need_stats, need_trends, need_daily_summary, need_range_summary = needs
+    return _requested_snapshot_period(
+        dsm=settings["day_start_minute"],
+        today=today,
+        target=target,
+        trends_days=trends_days,
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        range_start=range_start,
+        range_end=range_end,
+        need_range_summary=need_range_summary,
+    )
+
+
+def _snapshot_accumulation_state(
+    *,
+    settings,
+    today,
+    target,
+    trends_days,
+    need_stats,
+    need_trends,
+    need_daily_summary,
+    need_range_summary,
+    range_include_subjects,
+    range_start,
+    range_end,
+) -> StatisticsAccumulationState:
+    state, _, _, _ = _initial_snapshot_state(
+        dsm=settings["day_start_minute"],
+        today=today,
+        target=target,
+        trends_days=trends_days,
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+        range_include_subjects=range_include_subjects,
+        range_start=range_start,
+        range_end=range_end,
+    )
+    return state
+
+
+async def _load_snapshot_sessions(
+    db: AsyncSession,
+    user_id: int,
+    period_start: datetime,
+    period_end: datetime,
+    *,
+    needs,
+    range_include_subjects: bool,
+) -> tuple[list[_LiteSession], list[_LiteSession]]:
+    with_subject = _snapshot_with_subject(needs, range_include_subjects)
+    pomodoro_sessions = await _load_overlapping_sessions(
+        db, user_id, period_start, period_end, with_subject=with_subject
     )
     # 今日复习（ReviewSession）与刷题会话同口径并入：仅补充时长，不计番茄次数。
     practice_sessions = await _load_overlapping_practice_sessions(
+        db, user_id, period_start, period_end, with_subject=with_subject
+    )
+    return pomodoro_sessions, practice_sessions
+
+
+async def _prepare_snapshot_state(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    settings,
+    today,
+    target,
+    trends_days: int,
+    needs,
+    period,
+    range_include_subjects: bool,
+    range_start,
+    range_end,
+    need_stats: bool,
+    need_trends: bool,
+    need_daily_summary: bool,
+    need_range_summary: bool,
+) -> tuple[tuple[list[_LiteSession], list[_LiteSession]], StatisticsAccumulationState]:
+    period_start, period_end = period
+    sessions = await _load_snapshot_sessions(
         db,
         user_id,
         period_start,
         period_end,
-        with_subject=(
-            need_daily_summary or (need_range_summary and range_include_subjects)
-        ),
+        needs=needs,
+        range_include_subjects=range_include_subjects,
     )
-
-    week_start_date = study_day_for_utc(study_week_utc_range(dsm)[0], dsm)
-    week_end_date = week_start_date + timedelta(days=7)
-
-    trend_agg = (
-        {
-            today - timedelta(days=trends_days - 1 - i): {
-                "sessions": 0,
-                "duration_sec": 0,
-            }
-            for i in range(trends_days)
-        }
-        if need_trends
-        else {}
+    state = _snapshot_accumulation_state(
+        settings=settings,
+        today=today,
+        target=target,
+        trends_days=trends_days,
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+        range_include_subjects=range_include_subjects,
+        range_start=range_start,
+        range_end=range_end,
     )
-    state = StatisticsAccumulationState(
+    return sessions, state
+
+
+def _initial_snapshot_state(
+    *,
+    dsm: int,
+    today: date,
+    target: date,
+    trends_days: int,
+    need_stats: bool,
+    need_trends: bool,
+    need_daily_summary: bool,
+    need_range_summary: bool,
+    range_include_subjects: bool,
+    range_start: date | None,
+    range_end: date | None,
+) -> tuple[StatisticsAccumulationState, dict[date, dict[str, int]], date, date]:
+    week_start_date, week_end_date = _statistics_week_dates(dsm)
+    trend_agg = _initial_trends(today, trends_days) if need_trends else {}
+    state = _initial_accumulation_state(
         need_stats=need_stats,
         need_trends=need_trends,
         need_daily_summary=need_daily_summary,
@@ -1239,20 +1564,16 @@ async def build_pomodoro_statistics_snapshot(
         week_start_date=week_start_date,
         week_end_date=week_end_date,
         trends=trend_agg,
-        stats={
-            "today_sessions": 0,
-            "today_duration": 0,
-            "week_sessions": 0,
-            "week_duration": 0,
-        },
-        daily={"sessions": 0, "duration_sec": 0, "groups": {}},
-        range={
-            "sessions": 0,
-            "duration_sec": 0,
-            "groups": {},
-            "active_days_set": set(),
-        },
     )
+    return state, trend_agg, week_start_date, week_end_date
+
+
+def _accumulate_snapshot_sessions(
+    state: StatisticsAccumulationState,
+    sessions: tuple[list[_LiteSession], list[_LiteSession]],
+    dsm: int,
+) -> None:
+    pomodoro_sessions, practice_sessions = sessions
     accumulate_focus_sessions(
         pomodoro_sessions,
         state,
@@ -1274,6 +1595,51 @@ async def build_pomodoro_statistics_snapshot(
         resolve_subject=resolve_subject,
     )
 
+
+def _snapshot_response(
+    *,
+    settings,
+    state,
+    needs,
+    today,
+    target,
+    range_start,
+    range_end,
+):
+    need_stats, need_trends, need_daily_summary, need_range_summary = needs
+    week_start_date = state.week_start_date
+    trend_agg = state.trends if need_trends else None
+    return _statistics_response(
+        settings=settings,
+        state=state,
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+        today=today,
+        week_start_date=week_start_date,
+        target=target,
+        trend_agg=trend_agg,
+        range_start=range_start,
+        range_end=range_end,
+    )
+
+
+def _statistics_response(
+    *,
+    settings,
+    state,
+    need_stats,
+    need_trends,
+    need_daily_summary,
+    need_range_summary,
+    today,
+    week_start_date,
+    target,
+    trend_agg,
+    range_start,
+    range_end,
+):
     return build_statistics_response(
         need_stats=need_stats,
         need_trends=need_trends,
@@ -1282,15 +1648,11 @@ async def build_pomodoro_statistics_snapshot(
         today=today,
         week_start_date=week_start_date,
         target=target,
-        day_start_minute=dsm,
+        day_start_minute=settings["day_start_minute"],
         day_start_time=settings["day_start_time"],
         trends=trend_agg if need_trends else None,
-        stats_values={
-            **state.stats,
-        },
-        daily_values={
-            **state.daily,
-        },
+        stats_values={**state.stats},
+        daily_values={**state.daily},
         range_values={
             "start_date": range_start,
             "end_date": range_end,
@@ -1298,6 +1660,96 @@ async def build_pomodoro_statistics_snapshot(
             "duration_sec": state.range["duration_sec"],
             "active_days": len(state.range["active_days_set"]),
             "groups": state.range["groups"],
+        },
+    )
+
+
+def _requested_snapshot_period(
+    *,
+    dsm: int,
+    today: date,
+    target: date,
+    trends_days: int,
+    need_stats: bool,
+    need_trends: bool,
+    need_daily_summary: bool,
+    range_start: date | None,
+    range_end: date | None,
+    need_range_summary: bool,
+):
+    return requested_statistics_period(
+        StatisticsWindowRequest(
+            day_start_minute=dsm,
+            today=today,
+            target=target,
+            trends_days=trends_days,
+            need_stats=need_stats,
+            need_trends=need_trends,
+            need_daily_summary=need_daily_summary,
+            range_start=range_start,
+            range_end=range_end,
+            need_range_summary=need_range_summary,
+        ),
+        day_range=study_day_utc_range,
+        week_range=study_week_utc_range,
+    )
+
+
+def _statistics_week_dates(dsm: int) -> tuple[date, date]:
+    week_start_date = study_day_for_utc(study_week_utc_range(dsm)[0], dsm)
+    return week_start_date, week_start_date + timedelta(days=7)
+
+
+def _initial_trends(today: date, trends_days: int) -> dict[date, dict[str, int]]:
+    return {
+        today - timedelta(days=trends_days - 1 - i): {
+            "sessions": 0,
+            "duration_sec": 0,
+        }
+        for i in range(trends_days)
+    }
+
+
+def _initial_accumulation_state(
+    *,
+    need_stats: bool,
+    need_trends: bool,
+    need_daily_summary: bool,
+    need_range_summary: bool,
+    range_include_subjects: bool,
+    today: date,
+    target: date,
+    range_start: date | None,
+    range_end: date | None,
+    week_start_date: date,
+    week_end_date: date,
+    trends: dict[date, dict[str, int]],
+) -> StatisticsAccumulationState:
+    return StatisticsAccumulationState(
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+        range_include_subjects=range_include_subjects,
+        today=today,
+        target=target,
+        range_start=range_start,
+        range_end=range_end,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+        trends=trends,
+        stats={
+            "today_sessions": 0,
+            "today_duration": 0,
+            "week_sessions": 0,
+            "week_duration": 0,
+        },
+        daily={"sessions": 0, "duration_sec": 0, "groups": {}},
+        range={
+            "sessions": 0,
+            "duration_sec": 0,
+            "groups": {},
+            "active_days_set": set(),
         },
     )
 
@@ -1362,33 +1814,7 @@ async def get_lifetime_summary(db: AsyncSession, user_id: int) -> dict:
     settings = await get_pomodoro_settings(db, user_id)
     dsm = settings["day_start_minute"]
     today = current_study_day(dsm)
-
-    pomo_first = await db.scalar(
-        select(func.min(PomodoroSession.start_time)).where(
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(POMODORO_STATS_STATUSES),
-        )
-    )
-    practice_first = await db.scalar(
-        select(func.min(PracticeSession.started_at)).where(
-            PracticeSession.user_id == user_id,
-            PracticeSession.status == "completed",
-        )
-    )
-    review_first = await db.scalar(
-        select(func.min(ReviewSession.started_at)).where(
-            ReviewSession.user_id == user_id,
-            ReviewSession.status == "completed",
-        )
-    )
-    first_candidates = [
-        value
-        for value in (pomo_first, practice_first, review_first)
-        if value is not None
-    ]
-    start_date = (
-        study_day_for_utc(min(first_candidates), dsm) if first_candidates else today
-    )
+    start_date = await _first_lifetime_study_day(db, user_id, dsm, today)
 
     snapshot = await build_pomodoro_statistics_snapshot(
         db,
@@ -1408,6 +1834,35 @@ async def get_lifetime_summary(db: AsyncSession, user_id: int) -> dict:
     }
 
 
+async def _first_lifetime_study_day(
+    db: AsyncSession, user_id: int, dsm: int, today: date
+) -> date:
+    pomo_first = await _min_session_start(db, PomodoroSession, user_id)
+    practice_first = await _min_session_start(db, PracticeSession, user_id)
+    review_first = await _min_session_start(db, ReviewSession, user_id)
+    first_candidates = [
+        value
+        for value in (pomo_first, practice_first, review_first)
+        if value is not None
+    ]
+    return study_day_for_utc(min(first_candidates), dsm) if first_candidates else today
+
+
+async def _min_session_start(db: AsyncSession, model, user_id: int):
+    return await db.scalar(
+        select(
+            func.min(
+                model.started_at if model is not PomodoroSession else model.start_time
+            )
+        ).where(
+            model.user_id == user_id,
+            model.status.in_(
+                POMODORO_STATS_STATUSES if model is PomodoroSession else ["completed"]
+            ),
+        )
+    )
+
+
 async def get_history(
     db: AsyncSession,
     user_id: int,
@@ -1422,129 +1877,16 @@ async def get_history(
     - 按 start_time / started_at 对应的统计日过滤（遵守用户 day_start_minute）。
     - 每条记录带唯一 record_key（``pomodoro:<id>`` / ``practice:<id>`` / ``review:<id>``）。
     """
-    pomo_where = [
-        PomodoroSession.user_id == user_id,
-        ~PomodoroSession.status.in_(["running", "paused"]),
-    ]
-    practice_where = [
-        PracticeSession.user_id == user_id,
-        PracticeSession.status == "completed",
-    ]
-    review_where = [
-        ReviewSession.user_id == user_id,
-        ReviewSession.status == "completed",
-    ]
-    if filter_date is not None:
-        dsm = (await get_pomodoro_settings(db, user_id))["day_start_minute"]
-        start_utc, end_utc = study_day_utc_range(filter_date, dsm)
-        pomo_where.extend(
-            [
-                PomodoroSession.start_time >= start_utc,
-                PomodoroSession.start_time < end_utc,
-            ]
-        )
-        practice_where.extend(
-            [
-                PracticeSession.started_at >= start_utc,
-                PracticeSession.started_at < end_utc,
-            ]
-        )
-        review_where.extend(
-            [
-                ReviewSession.started_at >= start_utc,
-                ReviewSession.started_at < end_utc,
-            ]
-        )
+    pomo_where, practice_where, review_where = await _history_where_clauses(
+        db, user_id, filter_date
+    )
 
-    pomo_cols = select(
-        literal("pomodoro").label("record_type"),
-        PomodoroSession.id.label("id"),
-        PomodoroSession.user_id.label("user_id"),
-        PomodoroSession.subject_id.label("subject_id"),
-        PomodoroSession.start_time.label("start_time"),
-        PomodoroSession.end_time.label("end_time"),
-        PomodoroSession.actual_duration.label("actual_duration"),
-        PomodoroSession.status.label("status"),
-        PomodoroSession.preset.label("preset"),
-    ).where(*pomo_where)
+    merged = _merged_history_subquery(pomo_where, practice_where, review_where)
 
-    practice_cols = select(
-        literal("practice").label("record_type"),
-        PracticeSession.id.label("id"),
-        PracticeSession.user_id.label("user_id"),
-        PracticeSession.subject_id.label("subject_id"),
-        PracticeSession.started_at.label("start_time"),
-        PracticeSession.finished_at.label("end_time"),
-        PracticeSession.duration_sec.label("actual_duration"),
-        PracticeSession.status.label("status"),
-        null().label("preset"),
-    ).where(*practice_where)
+    total, rows = await _load_history_page(db, merged, page, page_size)
 
-    review_cols = select(
-        literal("review").label("record_type"),
-        ReviewSession.id.label("id"),
-        ReviewSession.user_id.label("user_id"),
-        ReviewSession.subject_id.label("subject_id"),
-        ReviewSession.started_at.label("start_time"),
-        ReviewSession.finished_at.label("end_time"),
-        ReviewSession.duration_sec.label("actual_duration"),
-        ReviewSession.status.label("status"),
-        null().label("preset"),
-    ).where(*review_where)
-
-    merged = pomo_cols.union_all(practice_cols, review_cols).subquery()
-
-    total = (await db.execute(select(func.count()).select_from(merged))).scalar() or 0
-
-    rows = (
-        await db.execute(
-            select(merged)
-            .order_by(
-                merged.c.start_time.desc(),
-                merged.c.record_type.desc(),
-                merged.c.id.desc(),
-            )
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        )
-    ).all()
-
-    subject_ids = {r.subject_id for r in rows if r.subject_id is not None}
-    subject_map: dict[int, "Subject"] = {}
-    if subject_ids:
-        subj_result = await db.execute(
-            select(Subject).where(Subject.id.in_(subject_ids))
-        )
-        subject_map = {s.id: s for s in subj_result.scalars().all()}
-
-    pomodoro_ids = [r.id for r in rows if r.record_type == "pomodoro"]
-    allocation_map: dict[int, list[dict]] = {}
-    if pomodoro_ids:
-        allocation_rows = (
-            await db.execute(
-                select(
-                    PomodoroSubjectAllocation.session_id,
-                    PomodoroSubjectAllocation.subject_id,
-                    PomodoroSubjectAllocation.subject_code_snapshot,
-                    PomodoroSubjectAllocation.subject_name_snapshot,
-                    PomodoroSubjectAllocation.weight_basis_points,
-                )
-                .where(PomodoroSubjectAllocation.session_id.in_(pomodoro_ids))
-                .order_by(
-                    PomodoroSubjectAllocation.session_id,
-                    PomodoroSubjectAllocation.subject_code_snapshot,
-                )
-            )
-        ).all()
-        for allocation in allocation_rows:
-            allocation_map.setdefault(allocation.session_id, []).append(
-                {
-                    "subject_id": allocation.subject_id,
-                    "subject_code": allocation.subject_code_snapshot,
-                    "subject_name": allocation.subject_name_snapshot,
-                    "weight_basis_points": allocation.weight_basis_points,
-                }
-            )
+    subject_map = await _history_subject_map(db, rows)
+    allocation_map = await _history_allocation_map(db, rows)
 
     items: list[dict] = []
     for r in rows:
@@ -1558,3 +1900,136 @@ async def get_history(
             )
         )
     return items, total
+
+
+def _merged_history_subquery(pomo_where, practice_where, review_where):
+    pomo_cols = select(
+        literal("pomodoro").label("record_type"),
+        PomodoroSession.id.label("id"),
+        PomodoroSession.user_id.label("user_id"),
+        PomodoroSession.subject_id.label("subject_id"),
+        PomodoroSession.start_time.label("start_time"),
+        PomodoroSession.end_time.label("end_time"),
+        PomodoroSession.actual_duration.label("actual_duration"),
+        PomodoroSession.status.label("status"),
+        PomodoroSession.preset.label("preset"),
+    ).where(*pomo_where)
+    practice_cols = select(
+        literal("practice").label("record_type"),
+        PracticeSession.id.label("id"),
+        PracticeSession.user_id.label("user_id"),
+        PracticeSession.subject_id.label("subject_id"),
+        PracticeSession.started_at.label("start_time"),
+        PracticeSession.finished_at.label("end_time"),
+        PracticeSession.duration_sec.label("actual_duration"),
+        PracticeSession.status.label("status"),
+        null().label("preset"),
+    ).where(*practice_where)
+    review_cols = select(
+        literal("review").label("record_type"),
+        ReviewSession.id.label("id"),
+        ReviewSession.user_id.label("user_id"),
+        ReviewSession.subject_id.label("subject_id"),
+        ReviewSession.started_at.label("start_time"),
+        ReviewSession.finished_at.label("end_time"),
+        ReviewSession.duration_sec.label("actual_duration"),
+        ReviewSession.status.label("status"),
+        null().label("preset"),
+    ).where(*review_where)
+    return pomo_cols.union_all(practice_cols, review_cols).subquery()
+
+
+async def _load_history_page(db: AsyncSession, merged, page: int, page_size: int):
+    total = (await db.execute(select(func.count()).select_from(merged))).scalar() or 0
+    rows = (
+        await db.execute(
+            select(merged)
+            .order_by(
+                merged.c.start_time.desc(),
+                merged.c.record_type.desc(),
+                merged.c.id.desc(),
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+    return total, rows
+
+
+async def _history_subject_map(db: AsyncSession, rows) -> dict[int, "Subject"]:
+    subject_ids = {r.subject_id for r in rows if r.subject_id is not None}
+    if not subject_ids:
+        return {}
+    result = await db.execute(select(Subject).where(Subject.id.in_(subject_ids)))
+    return {s.id: s for s in result.scalars().all()}
+
+
+async def _history_allocation_map(db: AsyncSession, rows) -> dict[int, list[dict]]:
+    pomodoro_ids = [r.id for r in rows if r.record_type == "pomodoro"]
+    if not pomodoro_ids:
+        return {}
+    allocation_rows = (
+        await db.execute(
+            select(
+                PomodoroSubjectAllocation.session_id,
+                PomodoroSubjectAllocation.subject_id,
+                PomodoroSubjectAllocation.subject_code_snapshot,
+                PomodoroSubjectAllocation.subject_name_snapshot,
+                PomodoroSubjectAllocation.weight_basis_points,
+            )
+            .where(PomodoroSubjectAllocation.session_id.in_(pomodoro_ids))
+            .order_by(
+                PomodoroSubjectAllocation.session_id,
+                PomodoroSubjectAllocation.subject_code_snapshot,
+            )
+        )
+    ).all()
+    allocation_map: dict[int, list[dict]] = {}
+    for allocation in allocation_rows:
+        allocation_map.setdefault(allocation.session_id, []).append(
+            {
+                "subject_id": allocation.subject_id,
+                "subject_code": allocation.subject_code_snapshot,
+                "subject_name": allocation.subject_name_snapshot,
+                "weight_basis_points": allocation.weight_basis_points,
+            }
+        )
+    return allocation_map
+
+
+async def _history_where_clauses(db: AsyncSession, user_id: int, filter_date):
+    pomo_where = [
+        PomodoroSession.user_id == user_id,
+        ~PomodoroSession.status.in_(["running", "paused"]),
+    ]
+    practice_where = [
+        PracticeSession.user_id == user_id,
+        PracticeSession.status == "completed",
+    ]
+    review_where = [
+        ReviewSession.user_id == user_id,
+        ReviewSession.status == "completed",
+    ]
+    if filter_date is None:
+        return pomo_where, practice_where, review_where
+    dsm = (await get_pomodoro_settings(db, user_id))["day_start_minute"]
+    start_utc, end_utc = study_day_utc_range(filter_date, dsm)
+    pomo_where.extend(
+        [
+            PomodoroSession.start_time >= start_utc,
+            PomodoroSession.start_time < end_utc,
+        ]
+    )
+    practice_where.extend(
+        [
+            PracticeSession.started_at >= start_utc,
+            PracticeSession.started_at < end_utc,
+        ]
+    )
+    review_where.extend(
+        [
+            ReviewSession.started_at >= start_utc,
+            ReviewSession.started_at < end_utc,
+        ]
+    )
+    return pomo_where, practice_where, review_where

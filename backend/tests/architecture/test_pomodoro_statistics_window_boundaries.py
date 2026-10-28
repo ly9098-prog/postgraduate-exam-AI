@@ -13,6 +13,15 @@ RESPONSE = "app.services.pomodoro_statistics_response"
 ACCUMULATION = "app.services.pomodoro_statistics_accumulation"
 
 
+def _function(tree, name):
+    return next(
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == name
+    )
+
+
 def test_window_dependencies_and_budgets():
     graph, _ = scan_application(APP)
     assert graph[MODULE] == set()
@@ -40,24 +49,17 @@ def test_snapshot_passes_original_policy_and_time_ports():
         is pomodoro_statistics_window.requested_statistics_period
     )
     tree = ast.parse((APP / "services/pomodoro_service.py").read_text())
-    entry = next(
-        node
-        for node in tree.body
-        if getattr(node, "name", "") == "build_pomodoro_statistics_snapshot"
-    )
-    calls = [node for node in ast.walk(entry) if isinstance(node, ast.Call)]
+    planning_entry = _function(tree, "_snapshot_period")
+    calls = [node for node in ast.walk(planning_entry) if isinstance(node, ast.Call)]
     planning = [
         node
         for node in calls
-        if getattr(node.func, "id", "") == "requested_statistics_period"
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") == "_requested_snapshot_period"
     ]
     assert len(planning) == 1
-    assert len(planning[0].args) == 1
-    request = planning[0].args[0]
-    assert isinstance(request, ast.Call) and isinstance(request.func, ast.Name)
-    assert request.func.id == "StatisticsWindowRequest"
-    assert {kw.arg: ast.unparse(kw.value) for kw in request.keywords} == {
-        "day_start_minute": "dsm",
+    assert {kw.arg: ast.unparse(kw.value) for kw in planning[0].keywords} == {
+        "dsm": "settings['day_start_minute']",
         "today": "today",
         "target": "target",
         "trends_days": "trends_days",
@@ -68,28 +70,41 @@ def test_snapshot_passes_original_policy_and_time_ports():
         "range_end": "range_end",
         "need_range_summary": "need_range_summary",
     }
-    assert {kw.arg: ast.unparse(kw.value) for kw in planning[0].keywords} == {
-        "day_range": "study_day_utc_range",
-        "week_range": "study_week_utc_range",
-    }
+    snapshot_helpers = [
+        _function(tree, name)
+        for name in (
+            "build_pomodoro_statistics_snapshot",
+            "_snapshot_period",
+            "_initial_snapshot_state",
+            "_snapshot_response",
+            "_accumulate_snapshot_sessions",
+        )
+    ]
     assert "ranges" not in {
-        node.id for node in ast.walk(entry) if isinstance(node, ast.Name)
+        node.id
+        for helper in snapshot_helpers
+        for node in ast.walk(helper)
+        if isinstance(node, ast.Name)
     }
     assert (
         len(
             [
                 node
-                for node in calls
-                if getattr(node.func, "id", "") == "study_week_utc_range"
+                for helper in snapshot_helpers
+                for node in ast.walk(helper)
+                if isinstance(node, ast.Call)
+                if getattr(node.func, "id", "") == "_statistics_week_dates"
             ]
         )
         == 1
     )
+    load_entry = _function(tree, "_load_snapshot_sessions")
+    load_calls = [node for node in ast.walk(load_entry) if isinstance(node, ast.Call)]
     assert (
         len(
             [
                 node
-                for node in calls
+                for node in load_calls
                 if getattr(node.func, "id", "") == "_load_overlapping_sessions"
             ]
         )
@@ -99,7 +114,7 @@ def test_snapshot_passes_original_policy_and_time_ports():
         len(
             [
                 node
-                for node in calls
+                for node in load_calls
                 if getattr(node.func, "id", "") == "_load_overlapping_practice_sessions"
             ]
         )
@@ -159,18 +174,46 @@ def test_response_builder_is_pure_and_consumed_by_snapshot():
                 "create_task",
             }
     snapshot_tree = ast.parse((APP / "services/pomodoro_service.py").read_text())
-    entry = next(
+    response_entry = _function(snapshot_tree, "_snapshot_response")
+    calls = [
         node
-        for node in snapshot_tree.body
-        if getattr(node, "name", "") == "build_pomodoro_statistics_snapshot"
-    )
+        for node in ast.walk(response_entry)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") == "_statistics_response"
+    ]
+    assert len(calls) == 1
+    snapshot_entry = _function(snapshot_tree, "build_pomodoro_statistics_snapshot")
+    wrapper_calls = [
+        node
+        for node in ast.walk(snapshot_entry)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") == "_snapshot_response"
+    ]
+    assert len(wrapper_calls) == 1
+
+
+def test_public_snapshot_wrapper_keeps_load_accumulate_and_response_wiring():
+    tree = ast.parse((APP / "services/pomodoro_service.py").read_text())
+    entry = _function(tree, "build_pomodoro_statistics_snapshot")
+    assert entry.end_lineno - entry.lineno + 1 <= 50
     calls = [
         node
         for node in ast.walk(entry)
-        if isinstance(node, ast.Call)
-        and getattr(node.func, "id", "") == "build_statistics_response"
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     ]
-    assert len(calls) == 1
+    called = [node.func.id for node in calls]
+    assert called.count("_build_snapshot_state") == 1
+    assert called.count("_accumulate_snapshot_sessions") == 1
+    assert called.count("_snapshot_response") == 1
+
+    builder = _function(tree, "_build_snapshot_state")
+    builder_calls = [
+        node.func.id
+        for node in ast.walk(builder)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    ]
+    assert builder_calls.count("_snapshot_period") == 1
+    assert builder_calls.count("_prepare_snapshot_state") == 1
 
 
 def test_response_order_is_nonmutating_and_stable_for_ties():
@@ -275,11 +318,7 @@ def test_accumulation_dependencies_and_function_budgets():
 
 def test_snapshot_calls_accumulators_in_source_order_with_shared_state():
     tree = ast.parse((APP / "services/pomodoro_service.py").read_text())
-    entry = next(
-        node
-        for node in tree.body
-        if getattr(node, "name", "") == "build_pomodoro_statistics_snapshot"
-    )
+    entry = _function(tree, "_accumulate_snapshot_sessions")
     calls = [
         node.value.func.id
         for node in entry.body

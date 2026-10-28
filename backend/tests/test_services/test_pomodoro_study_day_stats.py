@@ -609,6 +609,32 @@ class TestStatsAndTrends:
         assert lifetime["duration_sec"] == 600
 
     @pytest.mark.asyncio
+    async def test_lifetime_start_date_includes_interrupted_session(self, isolated_db):
+        from app.services import pomodoro_service as svc
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_lifetime_interrupted")
+            subj = await _make_subject(db)
+            db.add(
+                _make_session(
+                    uid,
+                    subj,
+                    _utc(2026, 8, 7, 8, 0),
+                    _utc(2026, 8, 7, 8, 10),
+                    600,
+                    status="interrupted",
+                )
+            )
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            lifetime = await svc.get_lifetime_summary(db, uid)
+
+        assert lifetime["start_date"] == "2026-08-07"
+        assert lifetime["sessions"] == 1
+        assert lifetime["duration_sec"] == 600
+
+    @pytest.mark.asyncio
     async def test_stats_today_contribution(self, isolated_db, monkeypatch):
         from app.core import time_utils
         # 固定"当前"为 08-07 18:00 中国（UTC 08-07 10:00）-> 当前学习日 = 08-07
