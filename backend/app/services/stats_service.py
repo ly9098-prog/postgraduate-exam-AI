@@ -1,24 +1,15 @@
 import logging
 from datetime import date, timedelta
 
-from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.subject_scope import selected_408_subject_ids
 from app.core.time_utils import serialize_utc_datetime, shanghai_today, utcnow
-from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
-from app.models.answer_behavior import AnswerBehavior
-from app.models.knowledge_point import KnowledgePoint
-from app.models.practice_record import PracticeRecord
-from app.models.question import Question
-from app.models.review_scheduler import ReviewSchedule
-from app.models.syllabus import SyllabusKnowledgePoint
-from app.models.wrong_question import WrongQuestion
+from app.services import stats_query_service
 from app.services.learning_time_projection import (
-    china_date_expr as _china_date_expr,
+    china_date_expr as _china_date_expr,  # noqa: F401 - compatibility alias
 )
 from app.services.learning_time_projection import (
-    china_hour_expr as _china_hour_expr,
+    china_hour_expr as _china_hour_expr,  # noqa: F401 - compatibility alias
 )
 from app.services.learning_time_projection import (
     coerce_date as _coerce_date,
@@ -28,6 +19,18 @@ from app.services.learning_time_projection import (
 )
 from app.services.learning_time_projection import (
     today_utc as _today_utc,
+)
+from app.services.stats_ai_projection import (
+    build_dashboard_ai_payload,
+    build_dashboard_ai_prompt,
+    build_dashboard_ai_response,
+    build_knowledge_point_stats,
+    build_local_ai_diagnosis,
+    build_rule_based_dashboard_analysis,
+    extract_json_object,
+    normalize_dashboard_actions,
+    normalize_knowledge_points,
+    normalize_text_list,
 )
 from app.services.stats_dashboard_projection import (
     build_dashboard_adaptive,
@@ -39,17 +42,11 @@ from app.services.stats_dashboard_projection import (
     build_dashboard_yearly_summary,
     previous_trend_start,
 )
-from app.services.stats_ai_projection import (
-    build_knowledge_point_stats,
-    build_local_ai_diagnosis,
-    build_dashboard_ai_payload,
-    build_dashboard_ai_prompt,
-    build_dashboard_ai_response,
-    build_rule_based_dashboard_analysis,
-    extract_json_object,
-    normalize_dashboard_actions,
-    normalize_knowledge_points,
-    normalize_text_list,
+from app.services.stats_growth_projection import build_growth_profile
+from app.services.stats_recommendation_projection import (
+    build_adaptive_summary,
+    build_dashboard_recommendation,
+    build_subject_items_with_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,62 +60,34 @@ _DASHBOARD_AI_MAX_TOKENS = 1000
 _extract_json_object = extract_json_object
 _normalize_text_list = normalize_text_list
 _normalize_dashboard_actions = normalize_dashboard_actions
+_subject_items_with_label = build_subject_items_with_label
+_build_recommendation = build_dashboard_recommendation
+_adaptive_summary = build_adaptive_summary
 
 
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
     """学习总览统计"""
     today_start = _today_utc()
-
-    pr_result = await db.execute(
-        select(
-            func.count(PracticeRecord.id),
-            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
-            func.coalesce(func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0),
-            func.coalesce(func.sum(PracticeRecord.used_time), 0),
-        ).where(PracticeRecord.user_id == user_id)
-    )
-    total_practices, total_correct, total_wrong, total_duration = pr_result.one()
+    (
+        total_practices,
+        total_correct,
+        total_wrong,
+        total_duration,
+    ) = await stats_query_service.load_practice_totals(db, user_id)
     total_questions = total_correct + total_wrong
 
-    today_result = await db.execute(
-        select(
-            func.count(PracticeRecord.id),
-            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
-            func.coalesce(func.sum(PracticeRecord.used_time), 0),
-        ).where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.answered_at >= today_start,
-        )
-    )
-    today_count, today_correct, today_duration = today_result.one()
-
+    (
+        today_count,
+        today_correct,
+        today_duration,
+    ) = await stats_query_service.load_today_practice_totals(db, user_id, today_start)
     consecutive_days = await _calc_consecutive_days(db, user_id)
-
-    wq_result = await db.execute(
-        select(
-            func.count(WrongQuestion.id),
-            func.coalesce(func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0),
-        ).where(WrongQuestion.user_id == user_id, WrongQuestion.is_active)
+    total_wq, mastered_count = await stats_query_service.load_wrong_question_totals(
+        db, user_id
     )
-    total_wq, mastered_count = wq_result.one()
-
-    subject_result = await db.execute(select(Subject))
-    active_408_ids = selected_408_subject_ids(subject_result.scalars().all())
-    due_count = await db.execute(
-        select(func.count(func.distinct(ReviewSchedule.question_id)))
-        .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
-        .where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.is_active,
-            ~ReviewSchedule.mastered,
-            ReviewSchedule.next_review_at <= utcnow(),
-            QuestionVersion.question_id == ReviewSchedule.question_id,
-            (QuestionVersion.subject_id.in_(active_408_ids))
-            | (
-                QuestionVersion.subject_id.is_(None)
-                & ReviewSchedule.subject_id.in_(active_408_ids)
-            ),
-        )
+    active_408_ids = await stats_query_service.load_active_408_subject_ids(db)
+    due_count = await stats_query_service.count_due_reviews(
+        db, user_id, active_408_ids, utcnow()
     )
 
     return {
@@ -134,7 +103,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
         "today_correct": today_correct,
         "today_duration_sec": today_duration or 0,
         "mastered_count": mastered_count or 0,
-        "due_review_count": due_count.scalar() or 0,
+        "due_review_count": due_count,
         "wrong_question_count": total_wq or 0,
     }
 
@@ -142,67 +111,40 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
 async def _calc_consecutive_days(db: AsyncSession, user_id: int) -> int:
     today = shanghai_today()
     since = _date_utc_range(today - timedelta(days=364))[0]
-    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
+    rows = await stats_query_service.load_answer_days(db, user_id, since)
+    return _count_consecutive_days(today, rows)
 
-    result = await db.execute(
-        select(day_expr)
-        .where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.answered_at >= since,
-        )
-        .distinct()
-        .order_by(day_expr.desc())
-    )
-    dates = {d for row in result.all() if (d := _coerce_date(row[0])) is not None}
 
+def _count_consecutive_days(today: date, rows) -> int:
+    dates = {d for row in rows if (d := _coerce_date(row[0])) is not None}
     days = 0
-    for i in range(365):
-        d = today - timedelta(days=i)
-        if d in dates:
-            days += 1
-        else:
+    for index in range(365):
+        if today - timedelta(days=index) not in dates:
             break
+        days += 1
     return days
 
 
 async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
     """学科维度统计 — 按 PracticeRecord.subject_id 分组。"""
-    from app.models.admin import Subject
+    rows = await stats_query_service.load_subject_stat_rows(db, user_id)
+    return [_subject_stat_row(row) for row in rows]
 
-    result = await db.execute(
-        select(
-            PracticeRecord.subject_id.label("subject_id"),
-            Subject.code.label("subject_code"),
-            Subject.name.label("subject_name"),
-            func.count(PracticeRecord.id),
-            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
-            func.coalesce(func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0),
-            func.coalesce(func.sum(PracticeRecord.used_time), 0),
-        )
-        .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
-        .where(PracticeRecord.user_id == user_id)
-        .group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
-    )
-    rows = []
-    for r in result.all():
-        total_q = r[3]
-        correct = r[4]
-        rows.append(
-            {
-                "subject_id": r[0],
-                "subject_code": r[1] or "",
-                "subject_name": r[2] or "",
-                "total_questions": total_q,
-                "correct_count": correct,
-                "wrong_count": r[5],
-                "accuracy": round(correct / total_q, 4) if total_q > 0 else 0.0,
-                "total_duration_sec": r[6] or 0,
-                "avg_duration_sec": round((r[6] or 0) / total_q, 1)
-                if total_q > 0
-                else 0.0,
-            }
-        )
-    return rows
+
+def _subject_stat_row(row) -> dict:
+    total_q = row[3]
+    correct = row[4]
+    return {
+        "subject_id": row[0],
+        "subject_code": row[1] or "",
+        "subject_name": row[2] or "",
+        "total_questions": total_q,
+        "correct_count": correct,
+        "wrong_count": row[5],
+        "accuracy": round(correct / total_q, 4) if total_q > 0 else 0.0,
+        "total_duration_sec": row[6] or 0,
+        "avg_duration_sec": round((row[6] or 0) / total_q, 1) if total_q > 0 else 0.0,
+    }
 
 
 async def get_trends(
@@ -221,35 +163,23 @@ async def get_trends(
 
     since = _date_utc_range(start_date)[0]
     until = _date_utc_range(start_date + timedelta(days=days))[0]
-    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
-
-    result = await db.execute(
-        select(
-            day_expr,
-            func.count(PracticeRecord.id),
-            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
-            func.coalesce(func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0),
-        )
-        .where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.answered_at >= since,
-            PracticeRecord.answered_at < until,
-        )
-        .group_by(day_expr)
-        .order_by(day_expr)
-    )
+    rows = await stats_query_service.load_trend_rows(db, user_id, since, until)
     data = {
-        str(r[0]): {"count": r[1], "correct": r[2], "wrong": r[3]} for r in result.all()
+        str(row[0]): {"count": row[1], "correct": row[2], "wrong": row[3]}
+        for row in rows
     }
+    return _fill_trend_points(start_date, days, data)
 
+
+def _fill_trend_points(start_date: date, days: int, data: dict) -> list[dict]:
     points = []
-    for i in range(days):
-        d = (start_date + timedelta(days=i)).isoformat()
-        entry = data.get(d, {"count": 0, "correct": 0, "wrong": 0})
+    for index in range(days):
+        day = (start_date + timedelta(days=index)).isoformat()
+        entry = data.get(day, {"count": 0, "correct": 0, "wrong": 0})
         total = entry["count"]
         points.append(
             {
-                "date": d,
+                "date": day,
                 "questions": total,
                 "correct": entry["correct"],
                 "accuracy": round(entry["correct"] / total, 4) if total > 0 else 0.0,
@@ -260,47 +190,21 @@ async def get_trends(
 
 async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
     """学习行为分析"""
-    base = await db.execute(
-        select(
-            func.coalesce(func.avg(AnswerBehavior.time_spent_sec), 0),
-            func.count(AnswerBehavior.id),
-            func.coalesce(func.sum(AnswerBehavior.view_answer_count), 0),
-            func.coalesce(func.sum(case((AnswerBehavior.is_abandoned, 1), else_=0)), 0),
-        ).where(
-            AnswerBehavior.user_id == user_id,
-            AnswerBehavior.time_spent_sec > 0,
-        )
-    )
-    avg_time, total_ans, view_cnt, abandon_cnt = base.one()
-
-    err_result = await db.execute(
-        select(
-            WrongQuestion.error_type,
-            func.count(WrongQuestion.id),
-        )
-        .where(WrongQuestion.user_id == user_id)
-        .group_by(WrongQuestion.error_type)
-        .order_by(func.count(WrongQuestion.id).desc())
-    )
-    error_dist = [{"type": r[0], "count": r[1]} for r in err_result.all()]
-
-    hourly = []
-    for h in range(24):
-        hourly.append({"hour": h, "count": 0})
-
-    hour_expr = await _china_hour_expr(db, AnswerBehavior.created_at)
-    ab_result = await db.execute(
-        select(
-            hour_expr,
-            func.count(AnswerBehavior.id),
-        )
-        .where(AnswerBehavior.user_id == user_id)
-        .group_by(hour_expr)
-    )
-    for r in ab_result.all():
-        h = int(r[0])
-        if 0 <= h < 24:
-            hourly[h]["count"] = r[1]
+    (
+        avg_time,
+        total_ans,
+        view_cnt,
+        abandon_cnt,
+    ) = await stats_query_service.load_behavior_totals(db, user_id)
+    error_dist = [
+        {"type": row[0], "count": row[1]}
+        for row in await stats_query_service.load_error_type_distribution(db, user_id)
+    ]
+    hourly = _empty_hourly_activity()
+    for row in await stats_query_service.load_hourly_activity(db, user_id):
+        hour = int(row[0])
+        if 0 <= hour < 24:
+            hourly[hour]["count"] = row[1]
 
     return {
         "avg_time_sec": round(float(avg_time), 1) if avg_time else 0.0,
@@ -308,118 +212,47 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
         "view_answer_rate": round(view_cnt / total_ans, 4) if total_ans > 0 else 0.0,
         "abandon_rate": round(abandon_cnt / total_ans, 4) if total_ans > 0 else 0.0,
         "error_type_distribution": error_dist,
-        "hourly_activity": [h for h in hourly if h["count"] > 0],
+        "hourly_activity": [item for item in hourly if item["count"] > 0],
     }
+
+
+def _empty_hourly_activity() -> list[dict]:
+    return [{"hour": hour, "count": 0} for hour in range(24)]
 
 
 async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     """遗忘趋势分析（基于 SM-2 数据，SM-2 状态源为 ReviewSchedule）"""
     today = shanghai_today()
-
-    stuck = await db.execute(
-        select(func.count(WrongQuestion.id)).where(
-            WrongQuestion.user_id == user_id,
-            ~WrongQuestion.mastered,
-            WrongQuestion.review_count >= 3,
-        )
+    high_forget_count = await stats_query_service.count_stuck_questions(db, user_id)
+    pseudo_rows = await stats_query_service.load_pseudo_mastered_rows(
+        db, user_id, _date_utc_range(today + timedelta(days=3))[0]
     )
-
-    # Pseudo-mastered: mastered with upcoming review in next 3 days
-    pseudo = await db.execute(
-        select(
-            WrongQuestion.id,
-            WrongQuestion.question_id,
-            WrongQuestion.review_count,
-            ReviewSchedule.interval,
-            ReviewSchedule.ease_factor,
-            ReviewSchedule.next_review_at,
-        )
-        .join(
-            ReviewSchedule,
-            (ReviewSchedule.user_id == WrongQuestion.user_id)
-            & (ReviewSchedule.question_id == WrongQuestion.question_id)
-            & (ReviewSchedule.question_version_id == WrongQuestion.question_version_id),
-        )
-        .where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.is_active,
-            WrongQuestion.mastered,
-            ReviewSchedule.is_active,
-            WrongQuestion.review_count >= 1,
-            ReviewSchedule.next_review_at
-            <= _date_utc_range(today + timedelta(days=3))[0],
-        )
-        .order_by(ReviewSchedule.next_review_at)
-        .limit(10)
+    stuck_questions = await stats_query_service.count_long_unmastered(
+        db, user_id, _date_utc_range(today - timedelta(days=7))[0]
     )
-    pseudo_items = []
-    for row in pseudo.all():
-        pseudo_items.append(
-            {
-                "id": row[0],
-                "question_id": row[1],
-                "review_count": row[2],
-                "interval": row[3],
-                "efactor": row[4],
-                "next_review_date": str(row[5].date()) if row[5] else "",
-            }
-        )
-
-    long_unmastered = await db.execute(
-        select(func.count(func.distinct(ReviewSchedule.question_id))).where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.is_active,
-            ~ReviewSchedule.mastered,
-            ReviewSchedule.next_review_at
-            <= _date_utc_range(today - timedelta(days=7))[0],
-        )
-    )
-
-    # Aggregate forgotten topics from the immutable revision the user actually
-    # got wrong.  Historical attribution must not move when Question's current
-    # knowledge-point mapping is later edited.
-    frozen_name = func.coalesce(
-        SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name
-    )
-    kp_result = await db.execute(
-        select(frozen_name, func.count(func.distinct(WrongQuestion.id)))
-        .select_from(QuestionVersionKnowledgePoint)
-        .join(
-            KnowledgePoint,
-            KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
-        )
-        .outerjoin(
-            SyllabusKnowledgePoint,
-            SyllabusKnowledgePoint.id
-            == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
-        )
-        .join(
-            WrongQuestion,
-            WrongQuestion.question_version_id
-            == QuestionVersionKnowledgePoint.question_version_id,
-        )
-        .where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.is_active,
-            ~WrongQuestion.mastered,
-        )
-        .group_by(KnowledgePoint.id, frozen_name)
-        .order_by(
-            func.count(func.distinct(WrongQuestion.id)).desc(), KnowledgePoint.id.asc()
-        )
-        .limit(8)
-    )
-    top_forgotten_topics = [
-        {"topic": str(name), "count": int(count or 0)}
-        for name, count in kp_result.all()
-    ]
-
+    topic_rows = await stats_query_service.load_top_forgotten_topic_rows(db, user_id)
     return {
-        "high_forget_count": stuck.scalar() or 0,
-        "stuck_questions": long_unmastered.scalar() or 0,
-        "pseudo_mastered": pseudo_items,
-        "top_forgotten_topics": top_forgotten_topics,
+        "high_forget_count": high_forget_count,
+        "stuck_questions": stuck_questions,
+        "pseudo_mastered": _pseudo_mastered_items(pseudo_rows),
+        "top_forgotten_topics": [
+            {"topic": str(name), "count": int(count or 0)} for name, count in topic_rows
+        ],
     }
+
+
+def _pseudo_mastered_items(rows) -> list[dict]:
+    return [
+        {
+            "id": row[0],
+            "question_id": row[1],
+            "review_count": row[2],
+            "interval": row[3],
+            "efactor": row[4],
+            "next_review_date": str(row[5].date()) if row[5] else "",
+        }
+        for row in rows
+    ]
 
 
 async def get_growth_profile(
@@ -430,145 +263,7 @@ async def get_growth_profile(
     """成长体系：经验值、等级、徽章，全部基于真实统计数据。"""
     if overview is None:
         overview = await get_overview(db, user_id)
-
-    total_q = overview["total_questions"]
-    accuracy = overview["accuracy"]
-    streak = overview["consecutive_days"]
-    mastered = overview["mastered_count"]
-    today_q = overview["today_questions"]
-    overview["due_review_count"]
-
-    total_exp = total_q * 10 + mastered * 20 + streak * 5
-    if accuracy >= 0.7 and total_q >= 10:
-        total_exp += int(total_q * accuracy * 5)
-
-    levels = [
-        (0, 200, 1, "Lv1 起步"),
-        (200, 600, 2, "Lv2 坚持者"),
-        (600, 1500, 3, "Lv3 刷题达人"),
-        (1500, 3500, 4, "Lv4 高效进阶"),
-        (3500, None, 5, "Lv5 上岸冲刺"),
-    ]
-    current_level = levels[0]
-    for lo, hi, lv, title in levels:
-        if total_exp >= lo:
-            current_level = (lo, hi, lv, title)
-
-    lo, hi, lv, title = current_level
-    if hi is None:
-        level_pct = 100
-        exp_current = total_exp - lo
-        exp_to_next = 0
-    else:
-        level_pct = min(100, round((total_exp - lo) / (hi - lo) * 100))
-        exp_current = total_exp - lo
-        exp_to_next = hi - lo
-
-    if streak >= 30:
-        streak_title = "连续学习 30 天以上，习惯已成"
-    elif streak >= 15:
-        streak_title = "连续学习 15 天，节奏渐稳"
-    elif streak >= 7:
-        streak_title = "连续学习 7 天，势头正盛"
-    elif streak > 0:
-        streak_title = f"连续学习 {streak} 天，继续加油"
-    else:
-        streak_title = "开始今天的学习，点亮第一天"
-
-    if today_q > 0 and total_q > 0:
-        daily_boost = f"今日已练 {today_q} 题，连续 {streak} 天，累计 {total_q} 题"
-    elif total_q > 0:
-        daily_boost = f"累计 {total_q} 题，连续 {streak} 天，今日本站首练"
-    else:
-        daily_boost = "完成第一道题，开启成长之旅"
-
-    badges = [
-        {
-            "key": "first_learn",
-            "title": "首次学习",
-            "desc": "完成第一道题",
-            "unlocked": total_q > 0,
-            "progress": 100 if total_q > 0 else 0,
-            "progress_text": "已解锁" if total_q > 0 else "0/1",
-        },
-        {
-            "key": "streak_7",
-            "title": "连续7天",
-            "desc": "保持一周学习节奏",
-            "unlocked": streak >= 7,
-            "progress": min(100, round(streak / 7 * 100)),
-            "progress_text": f"{min(streak, 7)}/7天",
-        },
-        {
-            "key": "streak_30",
-            "title": "连续30天",
-            "desc": "形成长期学习习惯",
-            "unlocked": streak >= 30,
-            "progress": min(100, round(streak / 30 * 100)),
-            "progress_text": f"{min(streak, 30)}/30天",
-        },
-        {
-            "key": "hundred",
-            "title": "百题积累",
-            "desc": "累计完成100题",
-            "unlocked": total_q >= 100,
-            "progress": min(100, round(total_q / 100 * 100)),
-            "progress_text": f"{min(total_q, 100)}/100题",
-        },
-        {
-            "key": "five_hundred",
-            "title": "500题达人",
-            "desc": "累计完成500题",
-            "unlocked": total_q >= 500,
-            "progress": min(100, round(total_q / 500 * 100)),
-            "progress_text": f"{min(total_q, 500)}/500题",
-        },
-        {
-            "key": "thousand",
-            "title": "千题斩",
-            "desc": "累计完成1000题",
-            "unlocked": total_q >= 1000,
-            "progress": min(100, round(total_q / 1000 * 100)),
-            "progress_text": f"{min(total_q, 1000)}/1000题",
-        },
-        {
-            "key": "accuracy_90",
-            "title": "正确率90%",
-            "desc": "稳定高质量输出",
-            "unlocked": accuracy >= 0.9 and total_q >= 30,
-            "progress": min(100, round(accuracy / 0.9 * 100)) if total_q >= 10 else 0,
-            "progress_text": f"{round(accuracy * 100)}%",
-        },
-        {
-            "key": "master_50",
-            "title": "掌握50题",
-            "desc": "错题转化为能力",
-            "unlocked": mastered >= 50,
-            "progress": min(100, round(mastered / 50 * 100)),
-            "progress_text": f"{min(mastered, 50)}/50题",
-        },
-        {
-            "key": "master_100",
-            "title": "掌握100题",
-            "desc": "突破核心知识点",
-            "unlocked": mastered >= 100,
-            "progress": min(100, round(mastered / 100 * 100)),
-            "progress_text": f"{min(mastered, 100)}/100题",
-        },
-    ]
-
-    return {
-        "total_exp": total_exp,
-        "level": lv,
-        "level_title": title,
-        "level_progress_pct": level_pct,
-        "exp_current": exp_current,
-        "exp_to_next": exp_to_next,
-        "streak_days": streak,
-        "streak_title": streak_title,
-        "daily_boost": daily_boost,
-        "badges": badges,
-    }
+    return build_growth_profile(overview)
 
 
 async def get_dashboard_v2(
@@ -588,211 +283,97 @@ async def get_dashboard_v2(
     if cached is not None:
         return cached
 
-    # 1. Overview
     overview = await get_overview(db, user_id)
     ov = build_dashboard_overview(overview)
-
-    # 2. Recommendation
     forgetting_data = await get_forgetting_trends(db, user_id)
-    subjects_raw = await get_subject_stats(db, user_id)
-    subj_items = _subject_items_with_label(subjects_raw)
-    weak_subj = min(subj_items, key=lambda s: s["accuracy"]) if subj_items else None
+    subject_items = _subject_items_with_label(await get_subject_stats(db, user_id))
+    weak_subject = (
+        min(subject_items, key=lambda item: item["accuracy"]) if subject_items else None
+    )
+    recommendation = _build_recommendation(ov, forgetting_data, weak_subject)
+    trends = await _load_dashboard_trends(db, user_id, trend_days)
+    subjects = build_dashboard_subjects(subject_items)
+    review_risk = build_dashboard_review_risk(forgetting_data)
+    growth_data = await _dashboard_growth(db, user_id, overview, include=include_growth)
+    adaptive_data = await _dashboard_adaptive(db, user_id, include=include_adaptive)
+    yearly_data = await _dashboard_yearly(db, user_id, include=include_yearly_summary)
 
-    rec = _build_recommendation(ov, forgetting_data, weak_subj)
+    result = {
+        "overview": ov,
+        "recommendation": recommendation,
+        "trends": trends,
+        "subjects": subjects,
+        "review_risk": review_risk,
+        "growth": growth_data,
+        "adaptive": adaptive_data,
+        "yearly_summary": yearly_data,
+    }
+    await cache.set(cache_key, result, ttl=120)
+    return result
 
-    # 3. Trends (current + previous period)
+
+async def _load_dashboard_trends(db: AsyncSession, user_id: int, trend_days: int):
     trend_points = await get_trends(db, user_id, trend_days)
-    today = shanghai_today()
-    previous_start = previous_trend_start(today, trend_days)
+    previous_start = previous_trend_start(shanghai_today(), trend_days)
     previous_points = await get_trends(
         db, user_id, trend_days, start_date=previous_start
     )
-
-    tr = build_dashboard_trends(
+    return build_dashboard_trends(
         trend_days=trend_days,
         trend_points=trend_points,
         previous_points=previous_points,
     )
 
-    # 4. Subjects
-    sa = build_dashboard_subjects(subj_items)
 
-    # 5. Review risk
-    rr = build_dashboard_review_risk(forgetting_data)
-
-    # 6. Growth (best-effort)
-    growth_data = None
-    if include_growth:
-        try:
-            g = await get_growth_profile(db, user_id, overview=overview)
-            growth_data = build_dashboard_growth(g)
-        except Exception:
-            pass
-
-    # 7. Adaptive (best-effort)
-    adaptive_data = None
-    if include_adaptive:
-        try:
-            from app.services.adaptive_learning_service import get_adaptive_overview
-
-            a = await get_adaptive_overview(db, user_id)
-            if a:
-                adaptive_data = build_dashboard_adaptive(a)
-                adaptive_data["summary"] = _adaptive_summary(
-                    adaptive_data["interval_status"],
-                    adaptive_data["recent_due_recall_rate"],
-                    adaptive_data["target_recall_rate"],
-                )
-        except Exception:
-            pass
-
-    # 8. Yearly summary
-    yearly_data = None
-    if include_yearly_summary:
-        try:
-            yearly_trends = await get_trends(db, user_id, 365)
-            yearly_data = build_dashboard_yearly_summary(yearly_trends)
-        except Exception:
-            pass
-
-    result = {
-        "overview": ov,
-        "recommendation": rec,
-        "trends": tr,
-        "subjects": sa,
-        "review_risk": rr,
-        "growth": growth_data,
-        "adaptive": adaptive_data,
-        "yearly_summary": yearly_data,
-    }
-
-    await cache.set(cache_key, result, ttl=120)
-    return result
+async def _dashboard_growth(
+    db: AsyncSession, user_id: int, overview: dict, *, include: bool
+):
+    if not include:
+        return None
+    try:
+        growth = await get_growth_profile(db, user_id, overview=overview)
+        return build_dashboard_growth(growth)
+    except Exception:
+        return None
 
 
-def _subject_items_with_label(subjects_raw: list[dict]) -> list[dict]:
-    """带科目展示信息的学科统计项（subject_id + code/name）。"""
-    items = []
-    for s in subjects_raw:
-        subject_name = s.get("subject_name", "")
-        items.append(
-            {
-                "subject_id": s.get("subject_id"),
-                "subject_code": s.get("subject_code", ""),
-                "subject_name": subject_name,
-                "label": subject_name,
-                "total_questions": s.get("total_questions", 0),
-                "correct_count": s.get("correct_count", 0),
-                "wrong_count": s.get("wrong_count", 0),
-                "accuracy": s.get("accuracy", 0.0),
-                "total_duration_sec": s.get("total_duration_sec", 0),
-            }
+async def _dashboard_adaptive(db: AsyncSession, user_id: int, *, include: bool):
+    if not include:
+        return None
+    try:
+        from app.services.adaptive_learning_service import get_adaptive_overview
+
+        adaptive = await get_adaptive_overview(db, user_id)
+        if not adaptive:
+            return None
+        data = build_dashboard_adaptive(adaptive)
+        data["summary"] = _adaptive_summary(
+            data["interval_status"],
+            data["recent_due_recall_rate"],
+            data["target_recall_rate"],
         )
-    return items
+        return data
+    except Exception:
+        return None
 
 
-def _build_recommendation(ov: dict, forgetting: dict, weak_subj: dict | None) -> dict:
-    """根据数据生成智能建议。"""
-    due = ov.get("due_review_count", 0)
-    high_forget = forgetting.get("high_forget_count", 0)
-    total_q = ov.get("total_questions", 0)
-    today_q = ov.get("today_questions", 0)
-    streak = ov.get("consecutive_days", 0)
-
-    if total_q == 0:
-        return {
-            "priority": "practice",
-            "title": "完成第一次练习",
-            "desc": "练习、复习和错题数据会在这里汇总。先开始第一道题吧！",
-            "tags": ["数据不足"],
-            "cta_text": "开始练习",
-            "cta_type": "practice",
-        }
-
-    if due > 0:
-        return {
-            "priority": "review",
-            "title": "优先复习到期题",
-            "desc": f"建议先完成 {due} 道到期复习，再进行新题练习。",
-            "tags": ["待复习", "优先处理"],
-            "cta_text": "去复习",
-            "cta_type": "review",
-        }
-
-    if high_forget > 0:
-        return {
-            "priority": "wrong",
-            "title": "巩固高频遗忘题",
-            "desc": f"有 {high_forget} 道高频遗忘题目，建议集中复盘。",
-            "tags": ["高频遗忘", "需要复盘"],
-            "cta_text": "查看错题",
-            "cta_type": "wrong",
-        }
-
-    if weak_subj and weak_subj["accuracy"] < 0.5 and weak_subj["total_questions"] >= 3:
-        return {
-            "priority": "subject",
-            "title": "巩固薄弱学科",
-            "desc": f"{weak_subj['label']}正确率仅{round(weak_subj['accuracy'] * 100)}%，建议优先复盘该学科错题。",
-            "tags": ["薄弱学科", "需要补强"],
-            "cta_text": "查看学科错题",
-            "cta_type": "subject",
-        }
-
-    if streak >= 3 and today_q > 0:
-        return {
-            "priority": "keep",
-            "title": "节奏稳定，继续保持",
-            "desc": f"已连续学习 {streak} 天，今日完成 {today_q} 题，保持节奏。",
-            "tags": ["节奏稳定", "状态良好"],
-            "cta_text": "继续练习",
-            "cta_type": "practice",
-        }
-
-    return {
-        "priority": "practice",
-        "title": "保持每日练习",
-        "desc": f"累计 {total_q} 题，连续 {streak} 天。每天进步一点点。",
-        "tags": ["保持节奏"],
-        "cta_text": "开始练习",
-        "cta_type": "practice",
-    }
-
-
-def _adaptive_summary(status: str, recall_rate: float, target: float) -> str:
-    if status == "fast_forgetting":
-        return "系统已自动缩短复习间隔，帮助巩固记忆"
-    if status == "slightly_fast_forgetting":
-        return "系统已略微缩短复习间隔"
-    if status == "stable_memory":
-        return "记忆保持良好，间隔适当拉长"
-    return "复习节奏合理，继续保持"
+async def _dashboard_yearly(db: AsyncSession, user_id: int, *, include: bool):
+    if not include:
+        return None
+    try:
+        yearly_trends = await get_trends(db, user_id, 365)
+        return build_dashboard_yearly_summary(yearly_trends)
+    except Exception:
+        return None
 
 
 async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     """AI 错题诊断：优先使用后台模型，超时/异常时快速降级为数据诊断。"""
-    from app.ai.client import llm
-    from app.ai.gateway import resolve_llm_runtime_config
-    from app.ai.prompts_learning import build_report_prompt
-
     today = shanghai_today()
     since = _date_utc_range(today - timedelta(days=60))[0]
-
-    result = await db.execute(
-        select(
-            Subject.code,
-            func.count(WrongQuestion.id),
-            func.coalesce(func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0),
-        )
-        .join(Question, WrongQuestion.question_id == Question.id)
-        .join(Subject, Question.subject_id == Subject.id)
-        .where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.created_at >= since,
-        )
-        .group_by(Subject.id, Subject.code)
+    subject_rows = await stats_query_service.load_ai_diagnosis_subject_rows(
+        db, user_id, since
     )
-    subject_rows = result.all()
     if not subject_rows:
         return {
             "weak_points": [],
@@ -805,85 +386,26 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     overview = await get_overview(db, user_id)
     total_q = overview["total_questions"]
     accuracy = overview["accuracy"]
-
     knowledge_point_stats = build_knowledge_point_stats(subject_rows)
-
-    def local_diagnosis(*, provider_failed: bool = False) -> dict:
-        return build_local_ai_diagnosis(
-            knowledge_point_stats=knowledge_point_stats,
-            subject_count=len(subject_rows),
-            total_questions=total_q,
-            provider_failed=provider_failed,
-        )
-
-    try:
-        # Model configuration is part of the remote-AI dependency boundary too.
-        # Credential decryption/provider configuration can fail before the actual
-        # chat request; keep those failures on the same deterministic fallback
-        # path instead of turning a recoverable AI outage into an HTTP 500.
-        runtime = await resolve_llm_runtime_config(db, feature="analysis")
-    except Exception as exc:
-        logger.warning(
-            "stats.ai_diagnosis.runtime_config_failed user_id=%s error_type=%s",
-            user_id,
-            type(exc).__name__,
-        )
-        return local_diagnosis(provider_failed=True)
-
+    local = _local_ai_diagnosis(knowledge_point_stats, len(subject_rows), total_q)
+    runtime, runtime_failed = await _load_ai_diagnosis_runtime(db, user_id)
+    if runtime_failed:
+        return local(provider_failed=True)
     if runtime is None:
-        return local_diagnosis()
+        return local()
 
     try:
-        subj_label = subject_rows[0][0] if subject_rows else "全科"
-        messages = build_report_prompt(
-            subject=subj_label,
-            days=60,
-            total=total_q,
-            accuracy=accuracy,
-            knowledge_point_stats=knowledge_point_stats,
+        ai_resp = await _call_ai_diagnosis_provider(
+            db,
+            runtime,
+            subject_rows,
+            total_q,
+            accuracy,
+            knowledge_point_stats,
         )
-
-        # This endpoint is user-facing and synchronous. Prefer a direct answer
-        # and cap the output so reasoning-heavy compatible models do not occupy
-        # the whole wx.request timeout window.
-        ai_resp = await llm.chat(
-            messages,
-            temperature=0.2,
-            model=runtime.model_name,
-            api_key=runtime.api_key,
-            base_url=runtime.base_url,
-            provider=runtime.provider,
-            timeout=_SYNC_AI_PROVIDER_TIMEOUT_SEC,
-            max_tokens=_AI_DIAGNOSIS_MAX_TOKENS,
-            response_format={"type": "json_object"},
-            prefer_direct_answer=True,
+        return _parse_ai_diagnosis_or_local(
+            ai_resp, user_id, runtime.model_name, local, len(subject_rows)
         )
-
-        parsed = _extract_json_object(ai_resp.get("content"))
-        if parsed is None:
-            logger.warning(
-                "stats.ai_diagnosis.invalid_json user_id=%s model=%s",
-                user_id,
-                runtime.model_name,
-            )
-            return local_diagnosis(provider_failed=True)
-
-        weak_points = normalize_knowledge_points(parsed.get("weak_points"), limit=5)
-        strong_points = normalize_knowledge_points(parsed.get("strong_points"), limit=3)
-        suggestions = _normalize_text_list(
-            parsed.get("learning_suggestions"),
-            limit=5,
-            max_chars=240,
-        )
-        if not weak_points and not strong_points and not suggestions:
-            return local_diagnosis(provider_failed=True)
-        return {
-            "weak_points": weak_points,
-            "strong_points": strong_points,
-            "learning_suggestions": suggestions,
-            "summary": f"基于最近60天{len(subject_rows)}个科目的真实错题数据进行AI诊断。",
-            "generated": True,
-        }
     except Exception as exc:
         logger.warning(
             "stats.ai_diagnosis.provider_failed user_id=%s model=%s error_type=%s",
@@ -891,7 +413,108 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             runtime.model_name,
             type(exc).__name__,
         )
-        return local_diagnosis(provider_failed=True)
+        return local(provider_failed=True)
+
+
+async def _load_ai_diagnosis_runtime(db: AsyncSession, user_id: int):
+    from app.ai.gateway import resolve_llm_runtime_config
+
+    try:
+        # Model configuration is part of the remote-AI dependency boundary too.
+        # Keep configuration failures on the deterministic fallback path.
+        return await resolve_llm_runtime_config(db, feature="analysis"), False
+    except Exception as exc:
+        logger.warning(
+            "stats.ai_diagnosis.runtime_config_failed user_id=%s error_type=%s",
+            user_id,
+            type(exc).__name__,
+        )
+        return None, True
+
+
+def _local_ai_diagnosis(
+    knowledge_point_stats: list[dict],
+    subject_count: int,
+    total_questions: int,
+):
+    def local(*, provider_failed: bool = False) -> dict:
+        return build_local_ai_diagnosis(
+            knowledge_point_stats=knowledge_point_stats,
+            subject_count=subject_count,
+            total_questions=total_questions,
+            provider_failed=provider_failed,
+        )
+
+    return local
+
+
+async def _call_ai_diagnosis_provider(
+    db: AsyncSession,
+    runtime,
+    subject_rows,
+    total_q: int,
+    accuracy: float,
+    knowledge_point_stats: list[dict],
+):
+    from app.ai.client import llm
+    from app.ai.prompts_learning import build_report_prompt
+
+    subj_label = subject_rows[0][0] if subject_rows else "全科"
+    messages = build_report_prompt(
+        subject=subj_label,
+        days=60,
+        total=total_q,
+        accuracy=accuracy,
+        knowledge_point_stats=knowledge_point_stats,
+    )
+    # This endpoint is synchronous: cap provider time/output so a reasoning
+    # model cannot occupy the whole wx.request timeout window.
+    return await llm.chat(
+        messages,
+        temperature=0.2,
+        model=runtime.model_name,
+        api_key=runtime.api_key,
+        base_url=runtime.base_url,
+        provider=runtime.provider,
+        timeout=_SYNC_AI_PROVIDER_TIMEOUT_SEC,
+        max_tokens=_AI_DIAGNOSIS_MAX_TOKENS,
+        response_format={"type": "json_object"},
+        prefer_direct_answer=True,
+    )
+
+
+def _parse_ai_diagnosis_or_local(
+    ai_resp: dict,
+    user_id: int,
+    model_name: str,
+    local,
+    subject_count: int,
+) -> dict:
+    parsed = _extract_json_object(ai_resp.get("content"))
+    if parsed is None:
+        logger.warning(
+            "stats.ai_diagnosis.invalid_json user_id=%s model=%s",
+            user_id,
+            model_name,
+        )
+        return local(provider_failed=True)
+
+    weak_points = normalize_knowledge_points(parsed.get("weak_points"), limit=5)
+    strong_points = normalize_knowledge_points(parsed.get("strong_points"), limit=3)
+    suggestions = _normalize_text_list(
+        parsed.get("learning_suggestions"),
+        limit=5,
+        max_chars=240,
+    )
+    if not weak_points and not strong_points and not suggestions:
+        return local(provider_failed=True)
+    return {
+        "weak_points": weak_points,
+        "strong_points": strong_points,
+        "learning_suggestions": suggestions,
+        "summary": f"基于最近60天{subject_count}个科目的真实错题数据进行AI诊断。",
+        "generated": True,
+    }
 
 
 # ──────────────────────────────────────────────
@@ -902,71 +525,16 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
 async def get_dashboard_llm_analysis(
     db: AsyncSession, user_id: int, *, trend_days: int = 7
 ) -> dict:
-    """Generate a bounded dashboard diagnosis with deterministic fallback.
-
-    The endpoint is intentionally synchronous because it is user-triggered.
-    Provider work therefore has a strict budget, JSON output is normalized
-    before it reaches the response model, and any provider/configuration issue
-    returns a useful rule-based diagnosis rather than a transport failure.
-    """
-    # Build a reduced payload only from aggregate learning data.
-    overview = await get_overview(db, user_id)
-    subjects_raw = await get_subject_stats(db, user_id)
-    trends = await get_trends(db, user_id, trend_days)
-    forgetting = await get_forgetting_trends(db, user_id)
-
-    subj_items = _subject_items_with_label(subjects_raw)
-    data_payload = build_dashboard_ai_payload(
-        overview=overview,
-        subject_items=subj_items,
-        trends=trends,
-        forgetting=forgetting,
-        trend_days=trend_days,
-    )
-
+    """Generate a bounded dashboard diagnosis with deterministic fallback."""
+    data_payload = await _load_dashboard_ai_payload(db, user_id, trend_days)
+    prompt_messages = build_dashboard_ai_prompt(data_payload, trend_days)
     from app.ai.gateway import chat_with_db_model
 
-    prompt_messages = build_dashboard_ai_prompt(data_payload, trend_days)
     try:
-        # Resolve and invoke only once.  The previous implementation resolved a
-        # model separately and then let the gateway resolve it again, adding DB
-        # work and allowing the selected model to change between the two calls.
-        ai_resp = await chat_with_db_model(
-            db,
-            prompt_messages,
-            feature="analysis",
-            temperature=0.2,
-            timeout=_SYNC_AI_PROVIDER_TIMEOUT_SEC,
-            max_tokens=_DASHBOARD_AI_MAX_TOKENS,
-            response_format={"type": "json_object"},
-            prefer_direct_answer=True,
-        )
+        ai_resp = await _call_dashboard_ai(db, chat_with_db_model, prompt_messages)
         if ai_resp is None:
             return _rule_based_dashboard_analysis(data_payload, trend_days)
-
-        parsed = _extract_json_object(ai_resp.get("content"))
-        if parsed is None:
-            logger.warning(
-                "stats.dashboard_ai.invalid_json user_id=%s model=%s",
-                user_id,
-                ai_resp.get("model") or "-",
-            )
-            return _rule_based_dashboard_analysis(data_payload, trend_days)
-
-        response = build_dashboard_ai_response(
-            parsed=parsed,
-            ai_response=ai_resp,
-            generated_at=serialize_utc_datetime(utcnow()),
-        )
-        if response is None:
-            logger.warning(
-                "stats.dashboard_ai.empty_payload user_id=%s model=%s",
-                user_id,
-                ai_resp.get("model") or "-",
-            )
-            return _rule_based_dashboard_analysis(data_payload, trend_days)
-
-        return response
+        return _parse_dashboard_ai_response(ai_resp, data_payload, trend_days, user_id)
     except Exception as exc:
         logger.warning(
             "stats.dashboard_ai.provider_failed user_id=%s error_type=%s",
@@ -974,6 +542,66 @@ async def get_dashboard_llm_analysis(
             type(exc).__name__,
         )
         return _rule_based_dashboard_analysis(data_payload, trend_days)
+
+
+async def _load_dashboard_ai_payload(
+    db: AsyncSession, user_id: int, trend_days: int
+) -> dict:
+    overview = await get_overview(db, user_id)
+    subjects_raw = await get_subject_stats(db, user_id)
+    trends = await get_trends(db, user_id, trend_days)
+    forgetting = await get_forgetting_trends(db, user_id)
+    return build_dashboard_ai_payload(
+        overview=overview,
+        subject_items=_subject_items_with_label(subjects_raw),
+        trends=trends,
+        forgetting=forgetting,
+        trend_days=trend_days,
+    )
+
+
+async def _call_dashboard_ai(
+    db: AsyncSession, chat_with_db_model, prompt_messages: list[dict]
+):
+    # Resolve and invoke only once so the selected model cannot change between
+    # configuration resolution and the actual provider call.
+    return await chat_with_db_model(
+        db,
+        prompt_messages,
+        feature="analysis",
+        temperature=0.2,
+        timeout=_SYNC_AI_PROVIDER_TIMEOUT_SEC,
+        max_tokens=_DASHBOARD_AI_MAX_TOKENS,
+        response_format={"type": "json_object"},
+        prefer_direct_answer=True,
+    )
+
+
+def _parse_dashboard_ai_response(
+    ai_resp: dict, data_payload: dict, trend_days: int, user_id: int
+) -> dict:
+    parsed = _extract_json_object(ai_resp.get("content"))
+    if parsed is None:
+        logger.warning(
+            "stats.dashboard_ai.invalid_json user_id=%s model=%s",
+            user_id,
+            ai_resp.get("model") or "-",
+        )
+        return _rule_based_dashboard_analysis(data_payload, trend_days)
+
+    response = build_dashboard_ai_response(
+        parsed=parsed,
+        ai_response=ai_resp,
+        generated_at=serialize_utc_datetime(utcnow()),
+    )
+    if response is None:
+        logger.warning(
+            "stats.dashboard_ai.empty_payload user_id=%s model=%s",
+            user_id,
+            ai_resp.get("model") or "-",
+        )
+        return _rule_based_dashboard_analysis(data_payload, trend_days)
+    return response
 
 
 def _rule_based_dashboard_analysis(payload: dict, trend_days: int) -> dict:

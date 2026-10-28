@@ -682,6 +682,8 @@ jobs:
             tests/test_services/test_study_plan_concurrency.py \
             tests/test_services/test_learning_stats_query_bounds.py \
             tests/test_services/test_stats_service.py \
+            tests/test_services/test_stats_service_contract.py \
+            tests/architecture/test_stats_service_boundaries.py \
             tests/test_services/test_study_report_service.py \
             tests/test_services/test_trends_previous_period.py \
             tests/test_api/test_wrong_question_update_cache.py \

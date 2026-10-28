@@ -397,17 +397,16 @@ async def _seed(db, *, now, today_start):
 
 
 @pytest_asyncio.fixture
-async def seeded_session(sqlite_session):
-    from app.core.time_utils import utcnow
-    from app.services.learning_time_projection import today_utc
-
-    now = utcnow()
-    today_start = today_utc()
+async def seeded_session(sqlite_session, monkeypatch):
+    # Keep the SQLite fixture deterministic across China/UTC midnight; the
+    # production code under test must use the same fixed clock as the seed.
+    monkeypatch.setattr(study_report_service, "utcnow", lambda: NOW)
+    monkeypatch.setattr(study_report_service, "_today_utc", lambda: TODAY_START)
     async with sqlite_session.async_session() as db:
         for table in reversed(list(sqlite_session.Base.metadata.tables.values())):
             await db.execute(table.delete())
         await db.commit()
-        await _seed(db, now=now, today_start=today_start)
+        await _seed(db, now=NOW, today_start=TODAY_START)
     return sqlite_session
 
 
