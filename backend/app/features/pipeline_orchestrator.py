@@ -52,6 +52,10 @@ from app.features.pipeline_artifacts import (
 from app.features.pipeline_artifacts import (
     save_failed_marker as _save_failed_marker,  # noqa: F401 - live single-pass port
 )
+from app.features.pipeline_chunk_execution import (
+    build_chunk_execution_state,
+    run_chunk_execution,
+)
 from app.features.pipeline_chunked_execution import execute_chunked_loop
 from app.features.pipeline_chunked_input import (
     initialize_chunked_checkpoints,
@@ -68,6 +72,7 @@ from app.features.pipeline_chunked_result import (
 from app.features.pipeline_chunked_state import ChunkedRunState
 from app.features.pipeline_extract_stage import run_extract_stage
 from app.features.pipeline_freeze_orchestration import run_structure_freeze_mode
+from app.features.pipeline_ocr_router_config import build_router_config
 from app.features.pipeline_ocr_router_stage import run_ocr_router_stage
 from app.features.pipeline_resume_context import (
     load_resume_hash_index,
@@ -2882,117 +2887,7 @@ class ImportPipeline:
         所有模型凭据均从 AdminAiModelConfig 表解析（通过 model_config_resolver），
         不依赖硬编码 env var 或 admin_ai_configs 中的独立 key。
         """
-        config: dict = {
-            "mode": opts.get("ocr_correction_mode", "auto"),
-            "noise_threshold": opts.get("ocr_noise_threshold", 0.3),
-            "daily_token_limit": opts.get("ocr_correction_daily_token_limit", 50000),
-            "monthly_token_limit": opts.get(
-                "ocr_correction_monthly_token_limit", 1000000
-            ),
-        }
-
-        for key in ("ocr_fix_model", "ocr_fix_strategy"):
-            val = opts.get(key)
-            if val is not None:
-                config[key] = val
-
-        # 从 opts 读取过滤开关
-        val = opts.get("ocr_filter_sensitive")
-        if val is not None:
-            config["ocr_filter_sensitive"] = str(val).lower() != "false"
-
-        if db:
-            try:
-                from app.services.model_config_resolver import (
-                    AICapability,
-                    AIModelConfigResolver,
-                )
-
-                resolver = AIModelConfigResolver(db)
-
-                # Resolve OCR_FIX capability. PaddleOCR-VL keeps its vendor-specific
-                # adapter; every other provider is treated as an OpenAI-compatible
-                # text LLM for OCR correction.
-                try:
-                    ocr_fix_config = await resolver.resolve_for_capability(
-                        AICapability.OCR_FIX
-                    )
-                    secret = await resolver.resolve_secret(ocr_fix_config)
-                    provider = (ocr_fix_config.provider or "").lower().replace("_", "-")
-
-                    if provider.startswith("paddleocr"):
-                        config["paddleocr_vl_api_token"] = secret
-                        if ocr_fix_config.endpoint:
-                            config["paddleocr_vl_base_url"] = ocr_fix_config.endpoint
-                        config["paddleocr_vl_model"] = ocr_fix_config.model_name
-                    else:
-                        config["llm_api_key"] = secret
-                        config["llm_base_url"] = ocr_fix_config.endpoint or ""
-                        config["llm_model_name"] = ocr_fix_config.model_name
-                        config["llm_provider"] = ocr_fix_config.provider
-                except ValueError:
-                    logger.info(
-                        "OCR router: no OCR_FIX config resolved via AIModelConfigResolver"
-                    )
-
-                # Text-LLM fallback for the auto chain when the primary OCR fixer is
-                # PaddleOCR-VL. Reuse AI_REPAIR as a backward-compatible fallback.
-                if "llm_api_key" not in config:
-                    try:
-                        fallback_config = await resolver.resolve_for_capability(
-                            AICapability.AI_REPAIR
-                        )
-                        fallback_provider = (
-                            (fallback_config.provider or "").lower().replace("_", "-")
-                        )
-                        if not fallback_provider.startswith("paddleocr"):
-                            config["llm_api_key"] = await resolver.resolve_secret(
-                                fallback_config
-                            )
-                            config["llm_base_url"] = fallback_config.endpoint or ""
-                            config["llm_model_name"] = fallback_config.model_name
-                            config["llm_provider"] = fallback_config.provider
-                    except ValueError:
-                        logger.info(
-                            "OCR router: no OpenAI-compatible fallback config resolved"
-                        )
-            except Exception:
-                logger.warning(
-                    "OCR router: AIModelConfigResolver failed", exc_info=True
-                )
-
-            # 从 DB admin_ai_configs 读取过滤配置
-            try:
-                from app.services.admin_ai_config_service import get_all_configs
-
-                db_configs = await get_all_configs(db)
-                for key in (
-                    "ocr_filter_sensitive",
-                    "ocr_filter_max_chars",
-                    "ocr_filter_max_tokens",
-                ):
-                    val = db_configs.get(key)
-                    if val is not None:
-                        if isinstance(val, bool):
-                            config[key] = val
-                        else:
-                            config[key] = (
-                                str(val).lower() != "false"
-                                if key == "ocr_filter_sensitive"
-                                else val
-                            )
-            except Exception:
-                logger.warning(
-                    "OCR router: admin_ai_configs read failed", exc_info=True
-                )
-
-        # Legacy aliases for rolling upgrades. New router code reads llm_* keys.
-        if "deepseek_api_key" not in config:
-            config["deepseek_api_key"] = config.get("llm_api_key", "")
-        if "deepseek_base_url" not in config:
-            config["deepseek_base_url"] = config.get("llm_base_url", "")
-
-        return config
+        return await build_router_config(opts, db, namespace=globals())
 
     async def _run_analyze_structure(
         self, normalized_blocks: list[dict], **_kw
@@ -3931,151 +3826,9 @@ class ImportPipeline:
         The returned dict matches the per-chunk diagnostics shape consumed by
         ``diagnostics.chunks`` in the pipeline-level result.
         """
-        from app.core.config import settings
-        from app.services.pdf_renderer_service import pdf_renderer
-
-        # When PDF_RENDER_PAGE_WINDOW > 0, render only this chunk's pages
-        # using iter_pages() streaming — avoids holding all pages in memory.
-        page_window = settings.PDF_RENDER_PAGE_WINDOW
-        if page_window > 0 and source_type == "pdf" and page_images is None:
-            chunk_page_images: dict[int, bytes] = {}
-            async for page in pdf_renderer.iter_pages(
-                file_content=file_content,
-                file_path=file_path,
-                source_type=source_type,
-                page_start=page_start,
-                page_end=logical_end,
-            ):
-                chunk_page_images[page.page_number] = page.png_bytes
-                await page.aclose()
-            if chunk_page_images:
-                page_images = chunk_page_images
-
-        from app.features import pipeline_checkpoint as ckpt
-
-        await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
-        await ckpt.invalidate_progress_cache(self.pipeline_id)
-
-        _chunk_logger = logging.getLogger("app.pipeline")
-        _chunk_start = time.monotonic()
-        bind_log_context(chunk_index=chunk_index)
-        log_event(
-            _chunk_logger,
-            "pipeline.chunk.start",
-            pipeline_id=self.pipeline_id,
-            chunk_index=chunk_index,
-            page_start=page_start,
-            page_end=logical_end,
+        return await run_chunk_execution(
+            build_chunk_execution_state(self, locals(), globals())
         )
-
-        # P2-3: extend page_end by overlap so the splitter can finish the
-        # last question whose tail crosses the chunk boundary. Cap at
-        # total_pages so we never read past the document. The final chunk
-        # has no overlap (nothing comes after it).
-        effective_end = (
-            logical_end
-            if is_last_chunk
-            else min(logical_end + chunk_overlap, total_pages)
-        )
-
-        chunk_status = "completed"
-        chunk_error: str | None = None
-        chunk_result: dict = {}
-        try:
-            chunk_result = await self._run_single_pass(
-                file_content=file_content,
-                file_path=file_path,
-                source_type=source_type,
-                source_file=source_file,
-                subject=subject,
-                subject_id=subject_id,
-                opts=opts,
-                db=db,
-                shared=shared,
-                progress_callback=progress_callback,
-                started_at=started_at,
-                page_start=page_start,
-                page_end=effective_end,
-                chunk_seen_hashes=seen_hashes,
-                chunk_logical_end=logical_end,
-                page_images=page_images,
-                page_image_refs=page_image_refs,
-            )
-            if chunk_result.get("status") != "completed":
-                chunk_status = "failed"
-                errs = chunk_result.get("errors") or []
-                chunk_error = errs[0] if errs else "chunk failed without explicit error"
-        except Exception as exc:
-            # _run_single_pass should swallow stage errors itself, but if
-            # something escapes (e.g. extract crash before stage loop) we
-            # must still keep the import alive.
-            logger.exception(
-                "chunk %d (pages %d-%d) raised unexpectedly",
-                chunk_index,
-                page_start,
-                logical_end,
-            )
-            chunk_status = "failed"
-            chunk_error = f"{type(exc).__name__}: {exc}"
-            chunk_result = {"errors": [chunk_error]}
-
-        written = (chunk_result.get("stats") or {}).get("to_review", 0)
-        batch_id = chunk_result.get("batch_id") or None
-
-        # P2-4: push (subject, hash, import_id) so subsequent chunks can hit
-        # this chunk's writes via similarity_match. add_import is a no-op when
-        # the index ran into the SQL fallback.
-        if hash_index is not None and chunk_status == "completed":
-            for subj, qhash, iid in chunk_result.get("review_new_hashes") or []:
-                hash_index.add_import(subj, qhash, iid)
-
-        await ckpt.update_chunk_status(
-            db,
-            self.pipeline_id,
-            chunk_index,
-            status=chunk_status,
-            batch_id=batch_id,
-            question_count=written,
-            error_message=chunk_error,
-        )
-        await ckpt.invalidate_progress_cache(self.pipeline_id)
-
-        _chunk_event = (
-            "pipeline.chunk.finish"
-            if chunk_status == "completed"
-            else "pipeline.chunk.error"
-        )
-        _chunk_level = "info" if chunk_status == "completed" else "error"
-        log_event(
-            _chunk_logger,
-            _chunk_event,
-            level=_chunk_level,
-            pipeline_id=self.pipeline_id,
-            chunk_index=chunk_index,
-            page_start=page_start,
-            page_end=logical_end,
-            effective_page_end=effective_end,
-            status=chunk_status,
-            duration_ms=round((time.monotonic() - _chunk_start) * 1000),
-            batch_id=batch_id or "-",
-            question_count=written,
-            error_message=(chunk_error or "")[:300],
-        )
-
-        return {
-            "chunk_index": chunk_index,
-            "page_start": page_start,
-            "page_end": logical_end,
-            "effective_page_end": effective_end,
-            "status": chunk_status,
-            "batch_id": batch_id,
-            "question_count": written,
-            "error_message": chunk_error,
-            "diagnostics": _slim_chunk_diagnostics(
-                chunk_result.get("diagnostics") or {}
-            ),
-            "stages": chunk_result.get("stages") or {},
-        }
 
     async def _run_chunked(
         self,

@@ -50,7 +50,7 @@ def resolve_router_port(namespace: dict, name: str) -> Any:
     """Resolve original globals and builtins only when their expression executes."""
     if name in namespace:
         return namespace[name]
-    builtins = namespace["__builtins__"]
+    builtins = namespace.get("__builtins__", globals().get("__builtins__"))
     if not isinstance(builtins, dict):
         builtins = vars(builtins)
     if name in builtins:

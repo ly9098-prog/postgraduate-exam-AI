@@ -133,6 +133,7 @@
 - 文本变化且置信度为正才进入 CandidateEvaluator；PaddleOCR-VL 保留零/缺失置信度例外。领域质量门处于 shadow/enforce 时仍只记录该路径的观察结果，文本发布继续使用 CandidateEvaluator 的 decision；本批没有新增 enforce 策略。先构建兼容 safety trace，再按接受/拒绝分支发布。最后敏感过滤可能修改透传原块，再汇总模型名、flush 指标并返回。
 - 保留原模块 globals/builtin 动态读取，以及预算函数在分类后的导入捕获、CandidateDecision 在 evaluator 调用前的导入捕获。新模块均满足 300 行/50 行预算；架构门禁覆盖 async、嵌套函数与 lambda，并约束依赖、端口别名、resolver 使用和 fresh import。
 - execution/result/ports 三组契约及架构门禁已接入静态 CI。验证使用合成预算、模型和指标端口；没有真实 OCR/AI、Redis 预算争用、生产数据库或完整 worker 验收，不代表全栈预算治理已经完成。
+- 2026-10-29：`_build_router_config` 117→7 行，保留原 async 签名并委托 `pipeline_ocr_router_config`。基础 opts、OCR_FIX→AI_REPAIR 解析、admin_ai_configs 过滤配置和 rolling-upgrade 别名按原顺序执行；模型解析仍在原调用点局部导入，外层失败继续降级并保留 logger 动态查找。新模块 144 行、最长函数 26 行，`test_ocr_router_config_contract.py` 与既有 Admin 配置契约、router 架构门禁共同接入静态 CI。
 
 ## 12. Single-pass 输入、恢复、执行和收尾（2026-10-26）
 

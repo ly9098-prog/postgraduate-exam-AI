@@ -11,6 +11,7 @@ APP = Path(__file__).resolve().parents[2] / "app"
 FEATURES = APP / "features"
 FILES = {
     "state",
+    "config",
     "classification",
     "execution",
     "candidates",
@@ -32,6 +33,11 @@ IMPORTS = {
         "RouterCandidate",
         "resolve_router_port",
     },
+    "app.services.model_config_resolver": {
+        "AICapability",
+        "AIModelConfigResolver",
+    },
+    "app.services.admin_ai_config_service": {"get_all_configs"},
     "app.features.pipeline_ocr_router_classification": {
         "initialize_router_state",
         "classify_router_candidates",
@@ -91,6 +97,8 @@ PORTS = {
     "dict",
     "_get_domain_quality_gate_mode",
     "Exception",
+    "ValueError",
+    "logger",
     "_filter_sensitive",
     "sorted",
 }
