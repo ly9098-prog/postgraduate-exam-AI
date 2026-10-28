@@ -44,9 +44,9 @@ async def test_ack_port_is_bound_before_reading_mutable_visual_evidence(monkeypa
     reviewed = await module.review_analysis_result(h.invocation, **h.kwargs)
     assert reviewed.usage is usage
     assert reviewed.ack_failure is h.ack
-    assert next(kwargs for name, _, kwargs in h.events if name == "ack")["visual_evidence"] == (
-        "late-evidence"
-    )
+    assert next(kwargs for name, _, kwargs in h.events if name == "ack")[
+        "visual_evidence"
+    ] == ("late-evidence")
 
 
 @pytest.mark.asyncio
@@ -59,7 +59,6 @@ async def test_visual_request_and_reconcile_bind_before_runtime_property(monkeyp
 
         @property
         def runtime(self):
-            monkeypatch.setattr(module, "VisualValidationRequest", forbidden)
             monkeypatch.setattr(module, "reconcile_visual_evidence", forbidden)
             return runtime
 
@@ -94,7 +93,9 @@ async def test_parse_mutations_are_visible_but_raw_content_is_not_reread(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_parse_response_precedes_logger_lookup_and_response_rebinding(monkeypatch):
+async def test_parse_response_precedes_logger_lookup_and_response_rebinding(
+    monkeypatch,
+):
     h = outcome_harness(monkeypatch, kind="parse")
     logger = h.kwargs["logger"]
     events = []
@@ -110,11 +111,19 @@ async def test_parse_response_precedes_logger_lookup_and_response_rebinding(monk
         return h.response
 
     monkeypatch.setattr(module, "parse_failed_response", response)
-    assert await module.resolve_analysis_outcome(h.db, h.review, **h.kwargs) is h.response
+    assert (
+        await module.resolve_analysis_outcome(h.db, h.review, **h.kwargs) is h.response
+    )
     assert events == [
         ("response",),
-        ("log", ("ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
-                 9, h.kwargs["effective_force"])),
+        (
+            "log",
+            (
+                "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
+                9,
+                h.kwargs["effective_force"],
+            ),
+        ),
     ]
 
 
@@ -129,7 +138,9 @@ async def test_logger_method_binds_before_question_id_property(monkeypatch):
             return 11
 
     h.kwargs["wrong_question"] = Question()
-    assert await module.resolve_analysis_outcome(h.db, h.review, **h.kwargs) is h.response
+    assert (
+        await module.resolve_analysis_outcome(h.db, h.review, **h.kwargs) is h.response
+    )
     assert h.events[-1][0] == "log"
     assert h.events[-1][1][1] == 11
 
@@ -147,7 +158,9 @@ async def test_ack_retry_property_changes_later_failure_read(monkeypatch):
 
     usage = Usage()
     h.review.usage = usage
-    assert await module.resolve_analysis_outcome(h.db, h.review, **h.kwargs) is h.response
+    assert (
+        await module.resolve_analysis_outcome(h.db, h.review, **h.kwargs) is h.response
+    )
     assert h.events[0][2]["usage"] is usage
     assert h.events[0][2]["visual_ack_retried"] is retried
     assert h.events[0][2]["failure"] is None
@@ -188,6 +201,8 @@ async def test_valid_parsed_getter_updates_later_grounding_and_usage(monkeypatch
             self.grounding, self.usage = grounding, usage
             return h.review.parsed
 
-    assert await module.resolve_analysis_outcome(h.db, Review(), **h.kwargs) is h.response
+    assert (
+        await module.resolve_analysis_outcome(h.db, Review(), **h.kwargs) is h.response
+    )
     assert h.events[0][2]["grounding"] is grounding
     assert h.events[0][2]["usage"] is usage

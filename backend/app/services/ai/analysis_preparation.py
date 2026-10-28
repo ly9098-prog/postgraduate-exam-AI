@@ -55,28 +55,46 @@ async def prepare_analysis(
     wrong_question, question = await _load_analysis_pair(request)
     guarded = await _guard_revision(request, wrong_question, question)
     if guarded is not None:
-        return _early_return(
-            request, wrong_question, question, guarded, [], False, [], None, "", None
-        )
+        return _guarded_return(request, wrong_question, question, guarded)
 
     visual_sources, requires_visual = _visual_requirements(request, question)
     if requires_visual and not visual_sources:
-        response = _missing_visual_response(request, wrong_question, question)
-        return _early_return(
-            request,
-            wrong_question,
-            question,
-            response,
-            visual_sources,
-            requires_visual,
-            [],
-            None,
-            "",
-            None,
-        )
+        return _missing_visual_return(request, wrong_question, question, visual_sources)
 
     return await _prepare_material_analysis(
         request, wrong_question, question, visual_sources, requires_visual
+    )
+
+
+def _guarded_return(
+    request: AnalysisPreparationRequest,
+    wrong_question: Any,
+    question: Any,
+    guarded: dict,
+) -> AnalysisPreparation:
+    return _early_return(
+        request, wrong_question, question, guarded, [], False, [], None, "", None
+    )
+
+
+def _missing_visual_return(
+    request: AnalysisPreparationRequest,
+    wrong_question: Any,
+    question: Any,
+    visual_sources: list,
+) -> AnalysisPreparation:
+    response = _missing_visual_response(request, wrong_question, question)
+    return _early_return(
+        request,
+        wrong_question,
+        question,
+        response,
+        visual_sources,
+        True,
+        [],
+        None,
+        "",
+        None,
     )
 
 

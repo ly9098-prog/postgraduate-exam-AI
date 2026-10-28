@@ -106,9 +106,26 @@ async def _execute_with_lease(
     if inputs.response is not None:
         return inputs.response
 
+    context = _grounded_context(inputs)
+    invocation, review = await _invoke_review(request, context, input_signature, inputs)
+    return await _resolve_review_outcome(
+        request, context, input_signature, inputs, invocation, review
+    )
+
+
+def _grounded_context(inputs: LockedAnalysisInputs) -> dict:
     context = inputs.context
     context["answer_grounding"] = inputs.prompt_grounding
-    invocation, review = await invoke_and_review_analysis(
+    return context
+
+
+async def _invoke_review(
+    request: AnalysisOrchestrationRequest,
+    context: dict,
+    input_signature: str,
+    inputs: LockedAnalysisInputs,
+):
+    return await invoke_and_review_analysis(
         db=request.db,
         request=request,
         context=context,
@@ -116,6 +133,16 @@ async def _execute_with_lease(
         input_signature=input_signature,
         inputs=inputs,
     )
+
+
+async def _resolve_review_outcome(
+    request: AnalysisOrchestrationRequest,
+    context: dict,
+    input_signature: str,
+    inputs: LockedAnalysisInputs,
+    invocation,
+    review,
+) -> dict:
     return await resolve_reviewed_analysis_outcome(
         request=request,
         context=context,
@@ -145,7 +172,9 @@ async def _review_cache(request: AnalysisOrchestrationRequest) -> LockedCacheRev
     )
 
 
-async def _prepare_inputs(request: AnalysisOrchestrationRequest) -> LockedAnalysisInputs:
+async def _prepare_inputs(
+    request: AnalysisOrchestrationRequest,
+) -> LockedAnalysisInputs:
     return await prepare_locked_analysis_inputs(
         request.wrong_question,
         request.question,

@@ -76,14 +76,11 @@ async def review_analysis_result(
     raw_content = result.get("content", "")
     parsed = parse_content(raw_content)
     parsed_valid = validate_content(parsed)
-    usage = build_usage(
-        raw_content=raw_content,
-        result=result,
-        image_data_urls=image_data_urls,
-        extract_evidence=extract_evidence,
+    usage = _build_review_usage(
+        build_usage, raw_content, result, image_data_urls, extract_evidence
     )
     grounding = await reconcile_visual_evidence(
-        VisualValidationRequest(
+        _visual_request(
             result=result,
             image_data_urls=image_data_urls,
             runtime=invocation.runtime,
@@ -102,7 +99,24 @@ async def review_analysis_result(
         answer_grounding=answer_grounding,
         usage=usage,
     )
-    return _make_review(parsed, parsed_valid, usage, grounding, image_data_urls, evidence_is_valid)
+    return _make_review(
+        parsed, parsed_valid, usage, grounding, image_data_urls, evidence_is_valid
+    )
+
+
+def _build_review_usage(
+    build_usage: Callable[..., AnalysisUsage],
+    raw_content: str,
+    result: dict,
+    image_data_urls: list[str],
+    extract_evidence: Callable[[str], str],
+) -> AnalysisUsage:
+    return build_usage(
+        raw_content=raw_content,
+        result=result,
+        image_data_urls=image_data_urls,
+        extract_evidence=extract_evidence,
+    )
 
 
 def _make_review(
@@ -123,6 +137,35 @@ def _make_review(
             visual_evidence=usage.visual_evidence,
             evidence_is_valid=evidence_is_valid,
         ),
+    )
+
+
+def _visual_request(
+    *,
+    result: dict,
+    image_data_urls: list[str],
+    runtime: Any,
+    wrong_question_id: int,
+    chat: Callable[..., Awaitable[Any]],
+    extract_evidence: Callable[[str], str],
+    validate_answer_check: Callable[[str, Any], tuple[bool, str, Any]],
+    diagnosis_contradicts_grounding: Callable[[str, Any], tuple[bool, str | None]],
+    evidence_is_valid: Callable[[str], bool],
+    should_retry_visual_ack: Callable[..., bool],
+    retry_visual_ack: Callable[..., Awaitable[Any]],
+) -> VisualValidationRequest:
+    return VisualValidationRequest(
+        result=result,
+        image_data_urls=image_data_urls,
+        runtime=runtime,
+        wrong_question_id=wrong_question_id,
+        chat=chat,
+        extract_evidence=extract_evidence,
+        validate_answer_check=validate_answer_check,
+        diagnosis_contradicts_grounding=diagnosis_contradicts_grounding,
+        evidence_is_valid=evidence_is_valid,
+        should_retry_visual_ack=should_retry_visual_ack,
+        retry_visual_ack=retry_visual_ack,
     )
 
 
@@ -147,7 +190,7 @@ async def resolve_analysis_outcome(
     grounding_repair: Callable[..., Awaitable[dict]],
     valid_outcome: Callable[..., Awaitable[dict]],
 ) -> dict:
-    arguments = _OutcomeArguments(
+    arguments = _outcome_arguments(
         db=db,
         wrong_question=wrong_question,
         user_id=user_id,
@@ -173,6 +216,10 @@ async def resolve_analysis_outcome(
     return await _resolve_grounded_outcome(review, arguments)
 
 
+def _outcome_arguments(**kwargs) -> _OutcomeArguments:
+    return _OutcomeArguments(**kwargs)
+
+
 def _resolve_early_outcome(
     review: ReviewedAnalysis,
     arguments: _OutcomeArguments,
@@ -190,7 +237,9 @@ def _resolve_early_outcome(
             logger=arguments.logger,
         )
     if not review.parsed_valid:
-        response = parse_failed_response(image_data_urls, effective_force=arguments.effective_force)
+        response = parse_failed_response(
+            image_data_urls, effective_force=arguments.effective_force
+        )
         arguments.logger.info(
             "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
             arguments.wrong_question.id,
@@ -200,7 +249,9 @@ def _resolve_early_outcome(
     return False, None
 
 
-async def _resolve_grounded_outcome(review: ReviewedAnalysis, arguments: _OutcomeArguments) -> dict:
+async def _resolve_grounded_outcome(
+    review: ReviewedAnalysis, arguments: _OutcomeArguments
+) -> dict:
     if not review.grounding.valid:
         return await arguments.grounding_repair(
             arguments.db,
