@@ -601,6 +601,8 @@ jobs:
             tests/test_services/test_ai_advice_compatibility.py \
             tests/test_features/test_pipeline_checkpoint_compatibility.py \
             tests/test_services/test_study_plan_compatibility.py \
+            tests/test_services/test_study_plan_completion_contract.py \
+            tests/architecture/test_study_plan_boundaries.py \
             tests/test_services/test_dashboard_stats_compatibility.py \
             tests/test_services/test_review_scheduler_compatibility.py \
             tests/test_services/test_error_diagnosis_compatibility.py \

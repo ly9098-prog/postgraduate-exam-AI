@@ -7,10 +7,10 @@ completion is projected from ReviewRecord / PracticeSession / ExamAttempt.
 
 from __future__ import annotations
 
-import math
+from dataclasses import dataclass
 from datetime import date, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -36,7 +36,24 @@ from app.schemas.study_plan import StudyPlanUpsertRequest
 from app.services.pomodoro_attribution import (
     split_duration_excluding_intervals,
     split_session_duration_by_study_day,
-    split_session_duration_excluding_intervals,
+)
+from app.services.study_plan_completion import load_today_completion
+from app.services.study_plan_rules import (
+    CATEGORIES,
+    allocate_integer,
+    build_weights,
+    category_availability,
+    ceil_minutes,
+    credit_supplemental_focus,
+    dynamic_remaining,
+    focus_duration_for_subject_scope,
+    phase_for_days,
+    study_day_seconds,
+)
+from app.services.study_plan_views import (
+    build_allocation_views,
+    build_snapshot_payload,
+    task_by_type,
 )
 from app.services.unique_conflict import (
     is_unique_violation as _is_unique_violation,
@@ -45,114 +62,20 @@ from app.services.unique_conflict import (
     start_explicit_transaction as _start_explicit_transaction,
 )
 
-CATEGORIES = ("review", "weakness", "new", "exam")
-PRIORITY_LABELS = {
-    "balanced": "均衡推进",
-    "review": "记忆复习优先",
-    "weakness": "薄弱点优先",
-    "new": "新知识推进优先",
-    "exam": "真题检测优先",
-}
-
-
-def _focus_duration_for_subject_scope(session, split: dict, subject_ids: set[int]) -> int:
-    allocations = list(getattr(session, "subject_allocations", []) or [])
-    total = 0
-    for seconds in split.values():
-        if allocations:
-            weights = [max(0, int(item.weight_basis_points or 0)) for item in allocations]
-            denominator = sum(int(item.weight_basis_points or 0) for item in allocations)
-            if denominator <= 0:
-                continue
-            exact = [seconds * weight / denominator for weight in weights]
-            parts = [int(value) for value in exact]
-            remainder = seconds - sum(parts)
-            order = sorted(range(len(parts)), key=lambda i: (-(exact[i] - parts[i]), i))
-            for index in order[:remainder]:
-                parts[index] += 1
-            total += sum(
-                value
-                for item, value in zip(allocations, parts)
-                if item.subject_id in subject_ids
-            )
-        elif session.subject_id in subject_ids:
-            total += seconds
-    return total
-
-
-def _phase_for_days(days_remaining: int) -> tuple[str, str]:
-    if days_remaining <= 0:
-        return "target_day", "目标日"
-    if days_remaining <= 45:
-        return "sprint", "冲刺阶段"
-    if days_remaining <= 180:
-        return "steady", "强化阶段"
-    return "foundation", "基础阶段"
-
-
-def _allocate_integer(total: int, weights: dict[str, float]) -> dict[str, int]:
-    total = max(0, int(total or 0))
-    result = {category: 0 for category in CATEGORIES}
-    positive = {k: max(0.0, float(weights.get(k, 0.0))) for k in CATEGORIES}
-    weight_sum = sum(positive.values())
-    if total <= 0 or weight_sum <= 0:
-        return result
-
-    raw = {k: total * positive[k] / weight_sum for k in CATEGORIES}
-    floors = {k: int(math.floor(raw[k])) for k in CATEGORIES}
-    remainder = total - sum(floors.values())
-    ranked = sorted(
-        CATEGORIES,
-        key=lambda key: (-(raw[key] - floors[key]), CATEGORIES.index(key)),
-    )
-    for key in ranked[:remainder]:
-        floors[key] += 1
-    return floors
-
-
-def _category_availability(hub: dict, exam_suggestion: dict | None) -> dict[str, bool]:
-    task_types = {
-        str(task.get("task_type")) for task in (hub.get("tasks") or []) if task
-    }
-    return {
-        "review": "review" in task_types,
-        "weakness": "weakness" in task_types,
-        "new": bool(hub.get("scope_ready", True)) and "smart_practice" in task_types,
-        "exam": exam_suggestion is not None,
-    }
-
-
-def _build_weights(
-    *,
-    phase: str,
-    priority_mode: str,
-    availability: dict[str, bool],
-) -> dict[str, float]:
-    weights = {"review": 0.28, "weakness": 0.30, "new": 0.27, "exam": 0.15}
-    if phase == "foundation":
-        weights["new"] += 0.10
-        weights["weakness"] += 0.05
-        weights["exam"] = max(0.05, weights["exam"] - 0.05)
-    elif phase == "steady":
-        weights["weakness"] += 0.08
-        weights["exam"] += 0.05
-    elif phase in {"sprint", "target_day"}:
-        weights["exam"] += 0.18
-        weights["review"] += 0.05
-        weights["new"] = max(0.05, weights["new"] - 0.08)
-
-    if priority_mode in CATEGORIES:
-        weights[priority_mode] += 0.18
-
-    for category in CATEGORIES:
-        if not availability.get(category, False):
-            weights[category] = 0.0
-    return weights
-
-
-def _ceil_minutes(seconds: int | float | None) -> int:
-    value = max(0, int(seconds or 0))
-    return (value + 59) // 60 if value else 0
+# Underscore aliases keep the historical private names importable by tests and
+# existing call sites while the single definition lives in study_plan_rules.
+_allocate_integer = allocate_integer
+_build_weights = build_weights
+_category_availability = category_availability
+_ceil_minutes = ceil_minutes
+_credit_supplemental_focus = credit_supplemental_focus
+_dynamic_remaining = dynamic_remaining
+_focus_duration_for_subject_scope = focus_duration_for_subject_scope
+_study_day_seconds = study_day_seconds
+_phase_for_days = phase_for_days
+_task_by_type = task_by_type
+_build_allocation_views = build_allocation_views
+_build_snapshot_payload = build_snapshot_payload
 
 
 async def _load_day_start_minute(db: AsyncSession, user_id: int) -> int:
@@ -162,27 +85,6 @@ async def _load_day_start_minute(db: AsyncSession, user_id: int) -> int:
         )
     )
     return max(0, min(1439, int(value or 0)))
-
-
-def _study_day_seconds(
-    *,
-    start,
-    end,
-    duration_sec: int | None,
-    target_day: date,
-    day_start_minute: int,
-) -> int:
-    if start is None or end is None or end <= start:
-        return 0
-    return int(
-        split_duration_excluding_intervals(
-            start,
-            end,
-            max(0, int(duration_sec or 0)),
-            [],
-            day_start_minute,
-        ).get(target_day, 0)
-    )
 
 
 def _plan_select(db: AsyncSession, user_id: int, *, lock: bool = False):
@@ -387,262 +289,6 @@ async def _load_activity_dates(
     return active_dates
 
 
-async def _today_completion(
-    db: AsyncSession,
-    user_id: int,
-    *,
-    today: date,
-    planned: dict[str, int],
-    all_408_ids: list[int],
-    core_408_ids: list[int],
-    day_start_minute: int,
-) -> tuple[dict[str, int], int, int]:
-    start_utc, end_utc = study_day_utc_range(today, day_start_minute)
-
-    review_count = 0
-    if core_408_ids:
-        review_count = int(
-            (
-                await db.execute(
-                    select(func.count(ReviewRecord.id))
-                    .join(
-                        QuestionVersion,
-                        QuestionVersion.id == ReviewRecord.question_version_id,
-                    )
-                    .where(
-                        ReviewRecord.user_id == user_id,
-                        QuestionVersion.subject_id.in_(core_408_ids),
-                        ReviewRecord.reviewed_at >= start_utc,
-                        ReviewRecord.reviewed_at < end_utc,
-                    )
-                )
-            ).scalar_one()
-            or 0
-        )
-
-    practice_rows = []
-    if all_408_ids:
-        practice_rows = (
-            await db.execute(
-                select(
-                    PracticeSession.started_at,
-                    PracticeSession.finished_at,
-                    PracticeSession.mode,
-                    PracticeSession.duration_sec,
-                ).where(
-                    PracticeSession.user_id == user_id,
-                    PracticeSession.subject_id.in_(all_408_ids),
-                    PracticeSession.status == "completed",
-                    PracticeSession.started_at < end_utc,
-                    PracticeSession.finished_at > start_utc,
-                )
-            )
-        ).all()
-
-    smart_sec = 0
-    other_sec = 0
-    activity_spans: list[tuple] = []
-    for row in practice_rows:
-        contributed = _study_day_seconds(
-            start=row.started_at,
-            end=row.finished_at,
-            duration_sec=row.duration_sec,
-            target_day=today,
-            day_start_minute=day_start_minute,
-        )
-        if str(row.mode or "") == "smart":
-            smart_sec += contributed
-        else:
-            other_sec += contributed
-        if row.finished_at > row.started_at:
-            activity_spans.append((row.started_at, row.finished_at))
-
-    smart_minutes = _ceil_minutes(smart_sec)
-    other_minutes = _ceil_minutes(other_sec)
-
-    exam_rows = (
-        await db.execute(
-            select(
-                ExamAttempt.started_at,
-                ExamAttempt.submitted_at,
-                ExamAttempt.duration_sec,
-            ).where(
-                ExamAttempt.user_id == user_id,
-                ExamAttempt.submitted_at.is_not(None),
-                ExamAttempt.status.in_(("submitted", "expired")),
-                ExamAttempt.started_at < end_utc,
-                ExamAttempt.submitted_at > start_utc,
-            )
-        )
-    ).all()
-    exam_sec = 0
-    for row in exam_rows:
-        exam_sec += _study_day_seconds(
-            start=row.started_at,
-            end=row.submitted_at,
-            duration_sec=row.duration_sec,
-            target_day=today,
-            day_start_minute=day_start_minute,
-        )
-        if row.submitted_at is not None and row.submitted_at > row.started_at:
-            activity_spans.append((row.started_at, row.submitted_at))
-
-    # Pomodoro focus is a *supplement* to durable practice/exam facts.  The raw
-    # focus total remains visible as focus_minutes, while only active focus wall
-    # time not covered by practice/exam intervals is eligible to advance the
-    # study-plan completion budget.  Session pauses are removed before coverage
-    # is applied, so paused minutes are never counted or subtracted twice.
-    focus_sec = 0
-    focus_supplement_sec = 0
-    if all_408_ids:
-        pomodoro_rows = (
-            (
-                await db.execute(
-                    select(PomodoroSession)
-                    .options(
-                        selectinload(PomodoroSession.pause_intervals),
-                        selectinload(PomodoroSession.subject_allocations),
-                    )
-                    .where(
-                        PomodoroSession.user_id == user_id,
-                        or_(
-                            PomodoroSession.subject_id.in_(all_408_ids),
-                            PomodoroSession.id.in_(
-                                select(PomodoroSubjectAllocation.session_id).where(
-                                    PomodoroSubjectAllocation.subject_id.in_(all_408_ids)
-                                )
-                            ),
-                        ),
-                        PomodoroSession.status == "completed",
-                        PomodoroSession.end_time.is_not(None),
-                        PomodoroSession.start_time < end_utc,
-                        PomodoroSession.end_time > start_utc,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for session in pomodoro_rows:
-            split = split_session_duration_by_study_day(
-                session,
-                session.pause_intervals,
-                day_start_minute,
-            )
-            focus_sec += _focus_duration_for_subject_scope(
-                session, {today: split.get(today, 0)}, set(all_408_ids)
-            )
-            supplement_split = split_session_duration_excluding_intervals(
-                session,
-                session.pause_intervals,
-                activity_spans,
-                day_start_minute,
-            )
-            focus_supplement_sec += _focus_duration_for_subject_scope(
-                session, {today: supplement_split.get(today, 0)}, set(all_408_ids)
-            )
-
-    completed = {category: 0 for category in CATEGORIES}
-    # Review runner has no server-side elapsed timer. Keep the same 2 questions /
-    # minute estimate used by review_scheduler.get_today_review_overview().
-    completed["review"] = (review_count + 1) // 2 if review_count else 0
-    completed["exam"] = _ceil_minutes(exam_sec)
-    completed["new"] = smart_minutes
-
-    # Non-smart practice may be weak-point training or free/random training. There
-    # is no durable source tag on PracticeSession, so distribute it according to
-    # the stable daily weak/new plan instead of pretending we know exact intent.
-    weak_planned = max(0, int(planned.get("weakness") or 0))
-    new_planned = max(0, int(planned.get("new") or 0))
-    if other_minutes > 0:
-        if weak_planned <= 0:
-            completed["new"] += other_minutes
-        elif new_planned <= 0:
-            completed["weakness"] += other_minutes
-        else:
-            split = _allocate_integer(
-                other_minutes,
-                {"weakness": float(weak_planned), "new": float(new_planned)},
-            )
-            completed["weakness"] += split["weakness"]
-            completed["new"] += split["new"]
-
-    return completed, _ceil_minutes(focus_sec), _ceil_minutes(focus_supplement_sec)
-
-
-def _credit_supplemental_focus(
-    *,
-    completed: dict[str, int],
-    target_minutes: int,
-    supplement_minutes: int,
-) -> int:
-    """Return the de-duplicated Pomodoro minutes credited to today's target.
-
-    Pomodoro focus has no durable task-category intent, so it advances only the
-    headline time budget instead of being mislabeled as review/weakness/new/exam.
-    The credit is capped at the still-unfilled target after authoritative activity
-    minutes have been counted.
-    """
-    direct_total = sum(
-        max(0, int(completed.get(category) or 0)) for category in CATEGORIES
-    )
-    return min(
-        max(0, int(supplement_minutes)),
-        max(0, int(target_minutes) - direct_total),
-    )
-
-
-def _task_by_type(hub: dict, task_type: str) -> dict | None:
-    return next(
-        (
-            task
-            for task in (hub.get("tasks") or [])
-            if task and task.get("task_type") == task_type
-        ),
-        None,
-    )
-
-
-def _build_snapshot_payload(
-    *,
-    plan: StudyPlan,
-    today: date,
-    hub: dict,
-    exam_suggestion: dict | None,
-    prior_active_days: int,
-    day_start_minute: int,
-) -> tuple[int, bool, dict[str, int], dict]:
-    days_remaining_raw = (plan.target_date - today).days
-    phase, _ = _phase_for_days(max(0, days_remaining_raw))
-    availability = _category_availability(hub, exam_suggestion)
-
-    target_passed = days_remaining_raw < 0
-    rest_day = (
-        not target_passed
-        and today != plan.target_date
-        and prior_active_days >= int(plan.weekly_days)
-    )
-    target_minutes = 0 if target_passed or rest_day else int(plan.daily_minutes)
-    weights = _build_weights(
-        phase=phase,
-        priority_mode=str(plan.priority_mode),
-        availability=availability,
-    )
-    allocation = _allocate_integer(target_minutes, weights)
-    basis = {
-        "phase": phase,
-        "priority_mode": str(plan.priority_mode),
-        "priority_label": PRIORITY_LABELS.get(str(plan.priority_mode), "均衡推进"),
-        "availability": availability,
-        "weights": {key: round(float(value), 4) for key, value in weights.items()},
-        "prior_active_days": int(prior_active_days),
-        "day_start_minute": int(day_start_minute),
-        "target_passed": bool(target_passed),
-        "exam": exam_suggestion or {},
-    }
-    return target_minutes, rest_day, allocation, basis
-
-
 async def _ensure_day_snapshot(
     db: AsyncSession,
     *,
@@ -719,150 +365,6 @@ async def _ensure_day_snapshot(
         return winner
 
 
-def _dynamic_remaining(
-    *,
-    target_minutes: int,
-    planned: dict[str, int],
-    completed: dict[str, int],
-    extra_completed_minutes: int = 0,
-    current_weights: dict[str, float],
-    availability: dict[str, bool],
-) -> dict[str, int]:
-    completed_total = min(
-        max(0, int(target_minutes)),
-        sum(max(0, int(completed.get(category) or 0)) for category in CATEGORIES)
-        + max(0, int(extra_completed_minutes)),
-    )
-    budget = max(0, int(target_minutes) - completed_total)
-    if budget <= 0:
-        return {category: 0 for category in CATEGORIES}
-
-    need_weights: dict[str, float] = {}
-    for category in CATEGORIES:
-        if not availability.get(category, False):
-            need_weights[category] = 0.0
-            continue
-        plan_value = max(0, int(planned.get(category) or 0))
-        done_value = max(0, int(completed.get(category) or 0))
-        if plan_value > 0:
-            need_ratio = max(0.0, min(1.0, (plan_value - done_value) / plan_value))
-        else:
-            need_ratio = 1.0
-        # Keep a small floor for still-available work even when its original
-        # bucket is already met; this lets the plan absorb time released by a
-        # finished/unavailable category without changing the historical snapshot.
-        need_weights[category] = float(current_weights.get(category, 0.0)) * (
-            0.25 + 0.75 * need_ratio
-        )
-    return _allocate_integer(budget, need_weights)
-
-
-def _build_allocation_views(
-    *,
-    hub: dict,
-    exam_suggestion: dict | None,
-    planned: dict[str, int],
-    completed: dict[str, int],
-    adjusted: dict[str, int],
-    availability: dict[str, bool],
-) -> list[dict]:
-    hub_tasks = {
-        "review": _task_by_type(hub, "review"),
-        "weakness": _task_by_type(hub, "weakness"),
-        "new": _task_by_type(hub, "smart_practice"),
-    }
-    result: list[dict] = []
-    for category in CATEGORIES:
-        planned_minutes = max(0, int(planned.get(category) or 0))
-        completed_minutes = max(0, int(completed.get(category) or 0))
-        remaining_minutes = max(0, planned_minutes - completed_minutes)
-        adjusted_minutes = max(0, int(adjusted.get(category) or 0))
-        available = bool(availability.get(category, False))
-
-        task = hub_tasks.get(category)
-        route = None
-        route_params: dict = {}
-        action_label = ""
-        estimated_question_count = 0
-        if task and available:
-            route = task.get("route")
-            route_params = dict(task.get("route_params") or {})
-            action_label = str(task.get("action_label") or "开始")
-            estimated_question_count = max(
-                0, int(task.get("estimated_question_count") or 0)
-            )
-        elif category == "exam" and exam_suggestion and available:
-            route = "exam_list"
-            route_params = {"suggested_paper_id": int(exam_suggestion["paper_id"])}
-            action_label = "去做选择题套卷"
-            estimated_question_count = int(exam_suggestion.get("question_count") or 0)
-
-        if category == "review":
-            title = str(task.get("title")) if task else "今日到期复习已清空"
-            reason = (
-                str(task.get("reason"))
-                if task
-                else "当前没有到期复习，原计划中的剩余时间会自动转给其他可执行任务。"
-            )
-        elif category == "weakness":
-            title = str(task.get("title")) if task else "当前没有需要优先强化的弱项"
-            reason = (
-                str(task.get("reason"))
-                if task
-                else "掌握状态暂未识别出可训练弱项，这部分时间会动态转给新题或真题。"
-            )
-        elif category == "new":
-            title = str(task.get("title")) if task else "继续新题推进"
-            reason = (
-                str(task.get("reason"))
-                if task
-                else "用新题持续扩展知识边界并刷新推荐状态。"
-            )
-        else:
-            title = (
-                exam_suggestion["title"] if exam_suggestion else "暂无可用选择题套卷"
-            )
-            if exam_suggestion:
-                reason = (
-                    f"建议套卷约 {exam_suggestion['question_count']} 题 / "
-                    f"{exam_suggestion['estimated_minutes']} 分钟；交卷后成绩会继续进入学习诊断。"
-                )
-            else:
-                reason = "当前没有已发布且可用的选择题真题/模拟卷，这部分时间会自动转给其他任务。"
-
-        if adjusted_minutes > 0 and available:
-            reason = f"动态调整后今天建议投入约 {adjusted_minutes} 分钟。{reason}"
-
-        if (
-            adjusted_minutes <= 0
-            and completed_minutes >= planned_minutes
-            and planned_minutes > 0
-        ):
-            status = "done"
-        elif available:
-            status = "available"
-        else:
-            status = "unavailable"
-
-        result.append(
-            {
-                "category": category,
-                "title": title,
-                "reason": reason,
-                "planned_minutes": planned_minutes,
-                "completed_minutes": completed_minutes,
-                "remaining_minutes": remaining_minutes,
-                "adjusted_minutes": adjusted_minutes,
-                "status": status,
-                "action_label": action_label,
-                "route": route,
-                "route_params": route_params,
-                "estimated_question_count": estimated_question_count,
-            }
-        )
-    return result
-
-
 async def upsert_study_plan(
     db: AsyncSession,
     user_id: int,
@@ -935,32 +437,96 @@ async def deactivate_study_plan(db: AsyncSession, user_id: int) -> None:
     await db.commit()
 
 
-async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
-    day_start_minute = await _load_day_start_minute(db, user_id)
-    today = current_study_day(day_start_minute)
-    plan = await db.scalar(
+@dataclass(slots=True)
+class _OverviewInputs:
+    hub: dict
+    exam_suggestion: dict | None
+    all_408_ids: list[int]
+    core_408_ids: list[int]
+    prior_dates: set[date]
+    week_start: date
+    week_end: date
+
+
+@dataclass(slots=True)
+class _OverviewFacts:
+    planned: dict[str, int]
+    completed: dict[str, int]
+    focus_minutes: int
+    supplemented_focus_minutes: int
+    credited_focus_minutes: int
+
+
+@dataclass(slots=True)
+class _OverviewTotals:
+    availability: dict[str, bool]
+    adjusted: dict[str, int]
+    allocations: list[dict]
+    completed_total: int
+    remaining_total: int
+    completion_percent: int
+    primary_category: str | None
+    active_days: int
+    days_remaining: int
+    days_remaining_raw: int
+    phase: str
+    phase_label: str
+
+
+async def _today_completion(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    today: date,
+    planned: dict[str, int],
+    all_408_ids: list[int],
+    core_408_ids: list[int],
+    day_start_minute: int,
+) -> tuple[dict[str, int], int, int]:
+    return await load_today_completion(
+        db,
+        user_id,
+        today=today,
+        planned=planned,
+        all_408_ids=all_408_ids,
+        core_408_ids=core_408_ids,
+        day_start_minute=day_start_minute,
+    )
+
+
+def _unconfigured_overview(today: date) -> dict:
+    return {
+        "configured": False,
+        "date": today,
+        "suggested_defaults": {
+            "daily_minutes": 90,
+            "weekly_days": 6,
+            "priority_mode": "balanced",
+        },
+    }
+
+
+async def _load_active_plan(db: AsyncSession, user_id: int) -> StudyPlan | None:
+    return await db.scalar(
         select(StudyPlan).where(
             StudyPlan.user_id == user_id,
             StudyPlan.is_active.is_(True),
         )
     )
-    if plan is None:
-        return {
-            "configured": False,
-            "date": today,
-            "suggested_defaults": {
-                "daily_minutes": 90,
-                "weekly_days": 6,
-                "priority_mode": "balanced",
-            },
-        }
 
+
+async def _load_overview_inputs(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    today: date,
+    day_start_minute: int,
+) -> _OverviewInputs:
     from app.services import study_hub_service
 
     hub = await study_hub_service.get_study_hub_overview(db, user_id)
     exam_suggestion = await _load_exam_suggestion(db, user_id)
     all_408_ids, core_408_ids = await _load_scope_ids(db)
-
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     prior_dates = await _load_activity_dates(
@@ -972,7 +538,25 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         core_408_ids=core_408_ids,
         day_start_minute=day_start_minute,
     )
+    return _OverviewInputs(
+        hub=hub,
+        exam_suggestion=exam_suggestion,
+        all_408_ids=all_408_ids,
+        core_408_ids=core_408_ids,
+        prior_dates=prior_dates,
+        week_start=week_start,
+        week_end=week_end,
+    )
 
+
+async def _materialize_overview_day(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    today: date,
+    day_start_minute: int,
+    inputs: _OverviewInputs,
+) -> tuple[StudyPlan | None, StudyPlanDay | None]:
     # Hub/exam aggregation above can take long enough for another device to save
     # new plan settings. Re-read and lock the plan before materializing today's
     # snapshot so an older overview request can never overwrite a newer
@@ -980,29 +564,31 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
     latest_plan = await _get_user_plan(db, user_id, lock=True)
     if latest_plan is None or not latest_plan.is_active:
         await db.rollback()
-        return {
-            "configured": False,
-            "date": today,
-            "suggested_defaults": {
-                "daily_minutes": 90,
-                "weekly_days": 6,
-                "priority_mode": "balanced",
-            },
-        }
-    plan = latest_plan
+        return None, None
     day = await _ensure_day_snapshot(
         db,
-        plan=plan,
+        plan=latest_plan,
         today=today,
-        hub=hub,
-        exam_suggestion=exam_suggestion,
-        prior_active_days=len(prior_dates),
+        hub=inputs.hub,
+        exam_suggestion=inputs.exam_suggestion,
+        prior_active_days=len(inputs.prior_dates),
         day_start_minute=day_start_minute,
     )
     # _ensure_day_snapshot may return an already-current row without committing;
     # release the plan row lock before the remaining read-only aggregation.
     await db.commit()
+    return latest_plan, day
 
+
+async def _load_overview_facts(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    today: date,
+    day: StudyPlanDay,
+    inputs: _OverviewInputs,
+    day_start_minute: int,
+) -> _OverviewFacts:
     planned = {
         category: int((day.allocation_json or {}).get(category) or 0)
         for category in CATEGORIES
@@ -1012,8 +598,8 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         user_id,
         today=today,
         planned=planned,
-        all_408_ids=all_408_ids,
-        core_408_ids=core_408_ids,
+        all_408_ids=inputs.all_408_ids,
+        core_408_ids=inputs.core_408_ids,
         day_start_minute=day_start_minute,
     )
     credited_focus_minutes = _credit_supplemental_focus(
@@ -1021,44 +607,81 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         target_minutes=int(day.target_minutes),
         supplement_minutes=supplemental_focus_minutes,
     )
-    current_availability = _category_availability(hub, exam_suggestion)
+    return _OverviewFacts(
+        planned=planned,
+        completed=completed,
+        focus_minutes=focus_minutes,
+        supplemented_focus_minutes=supplemental_focus_minutes,
+        credited_focus_minutes=credited_focus_minutes,
+    )
+
+
+def _overview_totals(
+    *,
+    plan: StudyPlan,
+    today: date,
+    day: StudyPlanDay,
+    inputs: _OverviewInputs,
+    facts: _OverviewFacts,
+) -> _OverviewTotals:
+    availability = _category_availability(inputs.hub, inputs.exam_suggestion)
     days_remaining_raw = (plan.target_date - today).days
     days_remaining = max(0, days_remaining_raw)
     phase, phase_label = _phase_for_days(days_remaining)
     current_weights = _build_weights(
         phase=phase,
         priority_mode=str(plan.priority_mode),
-        availability=current_availability,
+        availability=availability,
     )
     adjusted = _dynamic_remaining(
         target_minutes=int(day.target_minutes),
-        planned=planned,
-        completed=completed,
-        extra_completed_minutes=credited_focus_minutes,
+        planned=facts.planned,
+        completed=facts.completed,
+        extra_completed_minutes=facts.credited_focus_minutes,
         current_weights=current_weights,
-        availability=current_availability,
+        availability=availability,
     )
     allocations = _build_allocation_views(
-        hub=hub,
-        exam_suggestion=exam_suggestion,
-        planned=planned,
-        completed=completed,
+        hub=inputs.hub,
+        exam_suggestion=inputs.exam_suggestion,
+        planned=facts.planned,
+        completed=facts.completed,
         adjusted=adjusted,
-        availability=current_availability,
+        availability=availability,
+    )
+    completed_total = _completed_total(day.target_minutes, facts)
+    return _OverviewTotals(
+        availability=availability,
+        adjusted=adjusted,
+        allocations=allocations,
+        completed_total=completed_total,
+        remaining_total=max(0, int(day.target_minutes) - completed_total),
+        completion_percent=_completion_percent(day.target_minutes, completed_total),
+        primary_category=_primary_category(allocations),
+        active_days=_overview_active_days(inputs.prior_dates, facts, today),
+        days_remaining=days_remaining,
+        days_remaining_raw=days_remaining_raw,
+        phase=phase,
+        phase_label=_phase_label(phase_label, days_remaining_raw),
     )
 
-    completed_total = min(
-        int(day.target_minutes),
-        sum(max(0, int(completed.get(category) or 0)) for category in CATEGORIES)
-        + max(0, int(credited_focus_minutes)),
+
+def _completed_total(target_minutes: int, facts: _OverviewFacts) -> int:
+    return min(
+        int(target_minutes),
+        sum(max(0, int(facts.completed.get(category) or 0)) for category in CATEGORIES)
+        + max(0, int(facts.credited_focus_minutes)),
     )
-    remaining_total = max(0, int(day.target_minutes) - completed_total)
-    completion_percent = (
-        100
-        if int(day.target_minutes) <= 0
-        else min(100, round(completed_total / int(day.target_minutes) * 100))
-    )
-    primary = next(
+
+
+def _completion_percent(target_minutes: int, completed_total: int) -> int:
+    if int(target_minutes) <= 0:
+        return 100
+    return min(100, round(completed_total / int(target_minutes) * 100))
+
+
+def _primary_category(allocations: list[dict]) -> str | None:
+    return next(
         (
             item["category"]
             for item in sorted(
@@ -1073,15 +696,29 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         None,
     )
 
+
+def _overview_active_days(
+    prior_dates: set[date], facts: _OverviewFacts, today: date
+) -> int:
     active_dates = set(prior_dates)
     actual_activity_minutes = sum(
-        max(0, int(completed.get(category) or 0)) for category in CATEGORIES
+        max(0, int(facts.completed.get(category) or 0)) for category in CATEGORIES
     )
-    if actual_activity_minutes > 0 or focus_minutes > 0:
+    if actual_activity_minutes > 0 or facts.focus_minutes > 0:
         active_dates.add(today)
-    active_days = len(active_dates)
+    return len(active_dates)
 
-    plan_payload = {
+
+def _phase_label(phase_label: str, days_remaining_raw: int) -> str:
+    if days_remaining_raw < 0:
+        return "目标日已过，请更新计划"
+    if days_remaining_raw == 0:
+        return "目标日"
+    return phase_label
+
+
+def _plan_payload(plan: StudyPlan) -> dict:
+    return {
         "id": int(plan.id),
         "target_date": plan.target_date,
         "daily_minutes": int(plan.daily_minutes),
@@ -1092,39 +729,45 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         "created_at": plan.created_at,
         "updated_at": plan.updated_at,
     }
-    if days_remaining_raw < 0:
-        phase_label = "目标日已过，请更新计划"
-    elif days_remaining_raw == 0:
-        phase_label = "目标日"
 
+
+def _overview_response(
+    *,
+    plan: StudyPlan,
+    today: date,
+    day: StudyPlanDay,
+    inputs: _OverviewInputs,
+    facts: _OverviewFacts,
+    totals: _OverviewTotals,
+) -> dict:
     return {
         "configured": True,
         "date": today,
-        "plan": plan_payload,
+        "plan": _plan_payload(plan),
         "countdown": {
             "target_date": plan.target_date,
-            "days_remaining": days_remaining,
-            "phase": phase,
-            "phase_label": phase_label,
+            "days_remaining": totals.days_remaining,
+            "phase": totals.phase,
+            "phase_label": totals.phase_label,
         },
         "weekly": {
-            "week_start": week_start,
-            "week_end": week_end,
+            "week_start": inputs.week_start,
+            "week_end": inputs.week_end,
             "target_days": int(plan.weekly_days),
-            "active_days": active_days,
-            "remaining_days": max(0, int(plan.weekly_days) - active_days),
-            "target_met": active_days >= int(plan.weekly_days),
+            "active_days": totals.active_days,
+            "remaining_days": max(0, int(plan.weekly_days) - totals.active_days),
+            "target_met": totals.active_days >= int(plan.weekly_days),
         },
         "today": {
             "date": today,
             "target_minutes": int(day.target_minutes),
-            "completed_minutes": completed_total,
-            "remaining_minutes": remaining_total,
-            "focus_minutes": focus_minutes,
+            "completed_minutes": totals.completed_total,
+            "remaining_minutes": totals.remaining_total,
+            "focus_minutes": facts.focus_minutes,
             "is_rest_day": bool(day.is_rest_day),
-            "completion_percent": completion_percent,
-            "primary_category": primary,
-            "allocations": allocations,
+            "completion_percent": totals.completion_percent,
+            "primary_category": totals.primary_category,
+            "allocations": totals.allocations,
         },
         "suggested_defaults": {
             "daily_minutes": 90,
@@ -1132,3 +775,42 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
             "priority_mode": "balanced",
         },
     }
+
+
+async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
+    day_start_minute = await _load_day_start_minute(db, user_id)
+    today = current_study_day(day_start_minute)
+    plan = await _load_active_plan(db, user_id)
+    if plan is None:
+        return _unconfigured_overview(today)
+    inputs = await _load_overview_inputs(
+        db, user_id, today=today, day_start_minute=day_start_minute
+    )
+    latest_plan, day = await _materialize_overview_day(
+        db,
+        user_id,
+        today=today,
+        day_start_minute=day_start_minute,
+        inputs=inputs,
+    )
+    if latest_plan is None or day is None:
+        return _unconfigured_overview(today)
+    facts = await _load_overview_facts(
+        db,
+        user_id,
+        today=today,
+        day=day,
+        inputs=inputs,
+        day_start_minute=day_start_minute,
+    )
+    totals = _overview_totals(
+        plan=latest_plan, today=today, day=day, inputs=inputs, facts=facts
+    )
+    return _overview_response(
+        plan=latest_plan,
+        today=today,
+        day=day,
+        inputs=inputs,
+        facts=facts,
+        totals=totals,
+    )
