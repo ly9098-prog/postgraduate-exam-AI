@@ -345,3 +345,74 @@
 - 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
   `adaptive_learning_service`，不覆盖 `study_report_service`、`review_scheduler`、
   `wrong_question_service`、任务队列、OCR 导入编排、AI 分析执行等学习域大函数，也不声称学习域整体完成。
+
+## 14. 错题本服务投影与批量操作拆分
+
+- 2026-10-28，`wrong_question_service` 五个入口收敛：`record_wrong` 65 → 39 行、`get_stats` 111 → 23 行、
+  `list_wrong_enriched` 196 → 44 行、`batch_operate` 195 → 46 行、`get_task_flow` 115 → 37 行；拆出 37 个 helper
+  （`_wrong_list_item` 38、`_load_all_task_flow_items` 35、`_wrong_stats_summary_statement` 31、
+  `_batch_set_mastered_state` 31、`_batch_remove_from_book` 29、`_rebind_wrong_review_schedule` 25、
+  `_batch_delete_wrong_questions` 25、`_today_due_statement_conditions` 24、`_wrong_mastery_pct_subquery` 24、
+  `_reactivate_existing_wrong_question` 21、`_task_flow_bucket` 20、`_wrong_stats_by_subject` 19、
+  `_wrong_list_base_query` 19、`_add_wrong_question_to_review` 18、`_force_schedule_due_now` 17、
+  `_task_flow_summary` 17、`_apply_wrong_topic_scope` 15、`_load_batch_wrong_questions` 15、
+  `_new_wrong_question` 14、`_batch_add_to_review` 14、`_wrong_next_review_subquery` 13、
+  `_wrong_list_optional_conditions` 13、`_wrong_stats_summary` 11、`_wrong_last_reviewed_subquery` 11、
+  `_reactivate_wrong_question_row` 11、`_load_wrong_question` 10、`_wrong_book_conditions` 10、
+  `_task_flow_groups` 10、`_today_due_wrong_question_count` 9、`_wrong_review_record_count_subquery` 9、
+  `_empty_batch_result` 9、`_wrong_mastery_percent` 8、`_wrong_stats_by_error_type` 7、
+  `_ordered_batch_wrong_questions` 7、`_dedupe_batch_ids` 5、`_apply_wrong_subject_scope` 3、
+  `_wrong_ai_analysis_status` 2），全部满足 300/50 预算；模块 772 → 963 行，`get_by_id`、`update_wrong`
+  与全部 15 条模块级语句逐字未动，新增 4 条任务流常量。
+- 错题记录语义保持：仍先取 user+question 事务锁再查行；软删除/已掌握行仍复用同一行并清空 `ai_analysis`、
+  更新 `wrong_answer`/`question_version_id`、`review_count+1`、`last_review_at`，并再次清零 mastered 状态；
+  新行仍是 `review_count=1`；仍调用 `auto_schedule_wrong_question(..., commit=commit)`，`commit=False` 时
+  补 `flush` 后 `refresh` 返回。
+- 统计语义保持：仍是一次覆盖索引聚合（total/unmastered/mastered/high_frequency `review_count >= 3`）+
+  错误类型分组 + 当前题库科目分组（join `questions`/`subjects`）+ today_due 去重计数；today_due 仍是
+  ReviewSchedule 侧 `is_active`、`~mastered`、`next_review_at <= 今日结束` 且 question 落在本人生效错题本内的
+  子查询，给定科目时追加同一题目科目子查询；缺失值仍回落 0，返回键序不变。
+- 列表语义保持：过滤条件（本人 + 生效 + 可选科目/错误类型/中国日历半开区间）与四个关联子查询逐字保留——
+  复习记录数按历史 `question_version_id` 计数，下一次/最近复习时间分别按升/降序取一行，掌握度仍按
+  `mastered → 1.00`、`repetitions >= 5/4/3/2/1 → 1.00/0.90/0.80/0.65/0.45`、否则 0.20；仍以可变的当前
+  `Question`/`Subject` 外连接展示、按 `updated_at desc, id desc` 稳定分页，先计数后 offset/limit，
+  知识点仍按当前题目 id 集合批量加载；`mastery_percent` 仍以 `WrongQuestion.mastered` 为最终态优先，
+  `ai_analysis_status` 仍只对非空 dict 返回 `ready`。
+- 批量操作语义保持：先按出现顺序去重（`seen`/`seen.add`），空列表仍返回 `success=False` 且不触库；
+  仍单次按 `id.in_(deduped_ids)` + `user_id` 取行，not_found 在动作处理后才并入 `skipped_ids`；
+  仍按 `(question_id, wq_id)` 排序执行以避免交叉批次死锁；`add_to_review` 仍逐条 savepoint 并吞掉异常，
+  重新激活行、按版本重绑 schedule（`commit=False`）、把未来到期压到 now 并在未重绑时 `occurrence_seq+1`；
+  `mark_mastered`/`unmark_mastered` 仍跳过非生效行且无 savepoint；`remove_from_book` 仍先取锁、跳过非生效行、
+  置 `is_active=False`/`removed_at=now` 并停用 schedule、`occurrence_seq+1`；`delete` 仍先取锁再依次删除
+  ReviewRecord → ReviewSchedule → WrongQuestion；未知 action 仍不处理条目但照常提交并返回成功；
+  仍单次 `await db.commit()`，响应键与计数语义不变。
+- 任务流语义保持：仍按 500/页循环调用 `list_wrong_enriched` 直到取满 total 或空页，分组仍是
+  today_due（`next_review_at <= 今日结束` 且未掌握）→ 高频（`wrong_count >= 3` 且未掌握）→ 最近新增
+  （`created_at` 在 14 天内且未掌握）→ 待巩固 → 已掌握的优先级去重链；五组键、标题、`items[:preview_size]`
+  与 summary 的四个非互斥计数（total/mastered/high_frequency/today_due）不变。
+- 34 项固定契约（`tests/test_services/test_wrong_question_service_contract.py`）在拆分后与拆分前均可通过
+  （HEAD 原实现经 AST 提取后以 pytest 插件回放：34 passed），覆盖优先级链边界（`next_review_at` 等于今日结束、
+  `wrong_count` 等于 3、14 天窗口含等值）、掌握度换算与四位小数、savepoint 逐条隔离与异常吞咽、
+  版本重绑与 `occurrence_seq` 递增规则、批量锁顺序、删除三段语句顺序、not_found 追加顺序、
+  分页参数与全部过滤 SQL 片段。
+- 3500 例随机差分（`/tmp/wq-batch/differential.py`，五个入口各 700 例）比较返回值/异常、渲染 SQL 与绑定参数序列、
+  访问器序列、`flush`/`add`/`commit`/`begin_nested` 事件、review_scheduler 间谍调用、分页调用参数与全部状态快照：
+  0 mismatch、0 harness gap。
+- 97 个故障变体全部被拒绝（日志 `/tmp/wq-batch/mutants.log`），每个变体仅作用于单个函数，覆盖错题重录字段、
+  统计聚合标志位/阈值/列序、四个关联子查询与日期边界、批量去重/排序/守卫/savepoint/异常吞咽/锁顺序/
+  三段删除、任务流阈值/窗口/分页/优先级链/预览与摘要。
+- AST 证明（`/tmp/wq-batch/verify_ast.py`、报告 `/tmp/wq-batch/ast-report.json`）：未触及的 `get_by_id`、
+  `update_wrong` 与 HEAD AST 完全一致；模块级语句 15/15 逐字保留并新增 4 条任务流常量；五个入口消失的
+  29 个表达式全部解释（4 个去重缺口 + 25 个并入 helper/命名常量的显式白名单），无未解释差异。
+- 8 项架构门禁（`tests/architecture/test_wrong_question_projection_boundaries.py`）约束 42 个函数的预算、
+  五个入口签名与默认值、委派顺序、冻结的单行语义（去重/排序/重激活/到期压平/任务流分桶与摘要）、
+  阈值与 SQL 单点，并含“放宽任务流阈值”“颠倒 commit 与 not_found 合并”“入口内联 SQL”
+  “移除 remove 生效守卫”“改为互斥摘要”五项反向自检。
+- 定向回归：`test_wrong_question_batch`、`test_wrong_question_date_filter`、`test_wrong_question_service`、
+  `test_wrong_question_compatibility` 与两个新文件合计 99 passed；严格 Ruff、`ruff format --check`、
+  compileall 与 `git diff --check` 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 418 个测试文件：7209 passed、0 failed、64 条既有弃用 warning，508.26 秒；Mocked readiness boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed；
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
+  `wrong_question_service`，不覆盖 `review_scheduler`、`study_report_service`、任务队列、OCR 导入编排、
+  AI 分析执行等学习域大函数，也不声称学习域整体完成。
