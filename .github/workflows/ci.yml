@@ -675,6 +675,8 @@ jobs:
             tests/architecture/test_mastery_service_boundaries.py \
             tests/test_services/test_knowledge_point_service_contract.py \
             tests/architecture/test_knowledge_point_service_boundaries.py \
+            tests/test_services/test_knowledge_path_service_contract.py \
+            tests/architecture/test_knowledge_path_service_boundaries.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
             tests/test_services/test_study_plan_concurrency.py \
