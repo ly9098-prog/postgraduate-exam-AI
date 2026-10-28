@@ -1,5 +1,4 @@
 const api = require('../../../utils/api')
-const examAttemptCache = require('../utils/exam-attempt-cache')
 const view = require('../utils/exam-runner-view')
 const { buildFinalSubmitAnswers, isRetryableSubmitError } = require('../utils/submit-helpers')
 const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl, buildPendingItem, computeAnsweredProgress } = require('../utils/hydrate-helpers')
@@ -42,6 +41,32 @@ const {
 const {
   createExamExitRequestController,
 } = require('../utils/exam-exit-request-controller')
+const {
+  buildExamPendingCachePageCapabilities,
+  isPendingItemKey,
+} = require('../utils/exam-runner-pending-cache-page-adapter')
+const {
+  buildExamTimerPageCapabilities,
+} = require('../utils/exam-runner-timer-page-adapter')
+const {
+  buildExamInteractionPageCapabilities,
+  buildExamQuestionTimePageCapabilities,
+  buildExamAnswerSyncPageCapabilities,
+  buildExamAttemptReconcilePageCapabilities,
+} = require('../utils/exam-runner-answer-page-adapter')
+const {
+  buildExamQuestionNavigationPageCapabilities,
+  buildExamExitRequestPageCapabilities,
+} = require('../utils/exam-runner-navigation-page-adapter')
+const {
+  buildExamSubmitRetryPageCapabilities,
+  buildExamSubmitEntryPageCapabilities,
+  buildExamSubmitPreparationPageCapabilities,
+  buildExamSubmitOutcomePageCapabilities,
+} = require('../utils/exam-runner-submit-page-adapter')
+const {
+  buildExamReconnectPageCapabilities,
+} = require('../utils/exam-runner-reconnect-page-adapter')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -75,41 +100,6 @@ function examSubjectLabel(name, code) {
   if (/操作系统/.test(cleaned)) return '操作系统'
   if (/计算机网络|计网/.test(cleaned)) return '计算机网络'
   return cleaned
-}
-
-function pad2(n) { return String(Math.max(0, Number(n) || 0)).padStart(2, '0') }
-function formatClock(sec) {
-  sec = Math.max(0, Math.floor(Number(sec) || 0))
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = sec % 60
-  return h > 0 ? `${pad2(h)}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
-}
-
-const EXAM_CACHE_SCHEMA_VERSION = 3
-// 本地草稿保留时长：离开作答页后 60 分钟内可恢复，超时进入重新作答状态。
-const EXAM_DRAFT_TTL_MS = 60 * 60 * 1000
-// 到时后如果因为断网尚未完成交卷，pending 答案需要比普通草稿保留更久。
-// 只有服务端确认终态后才主动清理；7 天上限用于防止异常缓存永久占用空间。
-const EXAM_SUBMIT_PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const { cacheKey, v2CacheKey, legacyCacheKey } = examAttemptCache
-function isPendingItemKey(value) { return /^\d+$/.test(String(value || '')) }
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0))) }
-
-function sanitizePendingItems(raw) {
-  const source = raw && typeof raw === 'object' ? raw : {}
-  const result = Object.create(null)
-  Object.keys(source).forEach((key) => {
-    if (!isPendingItemKey(key)) return
-    const value = source[key]
-    if (!value || typeof value !== 'object') return
-    result[String(Number(key))] = {
-      selected_answer: String(value.selected_answer || '').trim().toUpperCase() || null,
-      marked_for_review: !!value.marked_for_review,
-      used_time: Math.min(6 * 60 * 60, Math.max(0, Number(value.used_time || 0))),
-    }
-  })
-  return result
 }
 
 Page({
@@ -214,22 +204,9 @@ Page({
   },
   _examPendingCacheController() {
     return this._examPendingCache || (
-      this._examPendingCache = createExamPendingCacheController({
-        readStorage: key => wx.getStorageSync(key),
-        writeStorage: (key, value) => wx.setStorageSync(key, value),
-        removeStorage: key => wx.removeStorageSync(key),
-        cacheKey,
-        v2CacheKey,
-        legacyCacheKey,
-        clearPendingAttempt: attemptId => examAttemptCache.clearPendingAttempt(attemptId),
-        now: () => api.now(),
-        sanitizePendingItems,
-        isPendingItemKey,
-        getSchemaVersion: () => EXAM_CACHE_SCHEMA_VERSION,
-        getDraftTtlMs: () => EXAM_DRAFT_TTL_MS,
-        getSubmitPendingTtlMs: () => EXAM_SUBMIT_PENDING_TTL_MS,
-        setRetainPendingForSubmit: value => { this._retainPendingForSubmit = value },
-      })
+      this._examPendingCache = createExamPendingCacheController(
+        buildExamPendingCachePageCapabilities(this)
+      )
     )
   },
 
@@ -370,29 +347,9 @@ Page({
   },
   _examTimerController() {
     return this._examTimer || (
-      this._examTimer = createExamTimerController({
-        now: () => api.now(),
-        formatClock,
-        isPageAlive: () => this._pageAlive,
-        isAttemptTerminal: () => this._attemptTerminal,
-        isTerminalNavigation: () => this._terminalNavigation,
-        isTimeExpired: () => this.data.timeExpired,
-        getRemainingText: () => this.data.remainingText,
-        setData: patch => this.setData(patch),
-        getBaseRemaining: () => this._timerBaseRemaining,
-        setBaseRemaining: value => { this._timerBaseRemaining = value },
-        getStartedAt: () => this._timerStartedAt,
-        setStartedAt: value => { this._timerStartedAt = value },
-        getTimer: () => this._timer,
-        setTimer: timer => { this._timer = timer },
-        setInterval,
-        clearInterval,
-        onExpired: () => {
-          this._retainPendingForSubmit = true
-          this._persistPending()
-          this.submitExam({ auto: true }).catch(() => {})
-        },
-      })
+      this._examTimer = createExamTimerController(
+        buildExamTimerPageCapabilities(this)
+      )
     )
   },
 
@@ -429,21 +386,9 @@ Page({
 
   _examInteractionController() {
     return this._examInteraction || (
-      this._examInteraction = createExamInteractionController({
-        isTimeExpired: () => this.data.timeExpired,
-        isSubmitting: () => this.data.submitting,
-        isNavigationLocked: () => this._navigationLocked,
-        getCurrentItemId: () => this._currentItemId(),
-        getAnswer: itemId => this._answers[itemId],
-        setAnswer: (itemId, answer) => { this._answers[itemId] = answer },
-        queueItem: itemId => this._queueItem(itemId),
-        updateQuestionFlags: itemId => this._updateQuestionFlags(itemId),
-        getRenderView: itemId => this._renderCache[itemId],
-        buildAnswerState: (renderView, answer) => view.buildAnswerState(renderView, answer),
-        setData: patch => this.setData(patch),
-        setCountsOnly: () => this._setCountsOnly(),
-        syncItem: itemId => this._syncItem(itemId),
-      })
+      this._examInteraction = createExamInteractionController(
+        buildExamInteractionPageCapabilities(this)
+      )
     )
   },
 
@@ -458,16 +403,9 @@ Page({
 
   _examQuestionTimeController() {
     return this._examQuestionTime || (
-      this._examQuestionTime = createExamQuestionTimeController({
-        getCurrentItemId: () => this._currentItemId(),
-        getQuestionEnterAt: () => this._questionEnterAt,
-        setQuestionEnterAt: value => { this._questionEnterAt = value },
-        now: () => api.now(),
-        getAnswer: itemId => this._answers[itemId],
-        setAnswer: (itemId, answer) => { this._answers[itemId] = answer },
-        queueItem: itemId => this._queueItem(itemId),
-        syncItem: itemId => this._syncItem(itemId),
-      })
+      this._examQuestionTime = createExamQuestionTimeController(
+        buildExamQuestionTimePageCapabilities(this)
+      )
     )
   },
 
@@ -481,28 +419,9 @@ Page({
 
   _examAnswerSyncController() {
     return this._examAnswerSync || (
-      this._examAnswerSync = createExamAnswerSyncController({
-        getPendingItem: itemId => this._pending[String(itemId)],
-        removePendingItem: itemId => { delete this._pending[String(itemId)] },
-        getPendingItemIds: () => this._pendingItemIds(),
-        isPendingItemUnchanged: (itemId, snapshot) => {
-          const current = this._pending[String(itemId)]
-          return !!current && JSON.stringify(current) === JSON.stringify(snapshot)
-        },
-        getMaxSyncPasses: () => 2,
-        persistPending: () => this._persistPending(),
-        patchAnswer: (itemId, snapshot) => api.request(
-          'PATCH',
-          `/exams/attempts/${this.data.attemptId}/answers/${itemId}`,
-          snapshot
-        ),
-        onTerminalSync: () => {
-          this._attemptTerminal = true
-          if (this._pageAlive && !this.data.submitting) this._navigateToResult()
-        },
-        resolveTerminalSyncConflict: error => this._resolveTerminalSyncConflict(error),
-        showFlushError: () => wx.showToast({ title: '还有答案未同步，请检查网络', icon: 'none' }),
-      })
+      this._examAnswerSync = createExamAnswerSyncController(
+        buildExamAnswerSyncPageCapabilities(this)
+      )
     )
   },
 
@@ -517,27 +436,9 @@ Page({
 
   _examAttemptReconcileController() {
     return this._examAttemptReconcile || (
-      this._examAttemptReconcile = createExamAttemptReconcileController({
-        isPageAlive: () => this._pageAlive,
-        getAttempt: () => api.get(
-          `/exams/attempts/${this.data.attemptId}`,
-          {},
-          { timeout: 10000, suppressNetworkToast: true }
-        ),
-        clearPending: () => {
-          this._pending = Object.create(null)
-          this._retainPendingForSubmit = false
-          this._clearPendingStorage()
-        },
-        setAttemptTerminal: value => { this._attemptTerminal = value },
-        setAttemptAbandoned: value => { this._attemptAbandoned = value },
-        onAbandoned: () => {
-          if (this._pageAlive && !this.data.submitting) this._navigateToPaperList()
-        },
-        onTerminal: () => {
-          if (this._pageAlive && !this.data.submitting) this._navigateToResult()
-        },
-      })
+      this._examAttemptReconcile = createExamAttemptReconcileController(
+        buildExamAttemptReconcilePageCapabilities(this)
+      )
     )
   },
 
@@ -555,21 +456,9 @@ Page({
 
   _examSubmitRetryController() {
     return this._examSubmitRetry || (
-      this._examSubmitRetry = createExamSubmitRetryController({
-        isPageAlive: () => this._pageAlive,
-        isTerminalNavigation: () => this._terminalNavigation,
-        getRetryDelays: () => [0, 450, 1200],
-        sleep,
-        postSubmit: finalAnswers => api.post(
-          `/exams/attempts/${this.data.attemptId}/submit`,
-          { answers: finalAnswers },
-          { timeout: 12000, suppressNetworkToast: true }
-        ),
-        reconcileAttemptState: () => this._reconcileAttemptState(),
-        isRetryableSubmitError,
-        getPageClosedMessage: () => '页面已关闭',
-        getSubmitFailedMessage: () => '交卷失败',
-      })
+      this._examSubmitRetry = createExamSubmitRetryController(
+        buildExamSubmitRetryPageCapabilities(this)
+      )
     )
   },
 
@@ -579,19 +468,9 @@ Page({
 
   _examReconnectController() {
     return this._examReconnect || (
-      this._examReconnect = createExamReconnectController({
-        isPageAlive: () => this._pageAlive,
-        isAttemptLoaded: () => this._attemptLoaded,
-        isReconnectSyncing: () => this._reconnectSyncing,
-        isAttemptTerminal: () => this._attemptTerminal,
-        isTerminalNavigation: () => this._terminalNavigation,
-        setReconnectSyncing: value => { this._reconnectSyncing = value },
-        tickTimer: () => this._tickTimer(),
-        isTimeExpired: () => this.data.timeExpired,
-        isSubmitting: () => this.data.submitting,
-        submitExam: options => this.submitExam(options),
-        flushAllPending: options => this._flushAllPending(options),
-      })
+      this._examReconnect = createExamReconnectController(
+        buildExamReconnectPageCapabilities(this)
+      )
     )
   },
 
@@ -601,22 +480,9 @@ Page({
 
   _examQuestionNavigationController() {
     return this._examQuestionNavigation || (
-      this._examQuestionNavigation = createExamQuestionNavigationController({
-        getQuestions: () => this.data.questions || [],
-        getAnswer: itemId => this._answers[itemId],
-        getRenderView: itemId => this._renderCache[itemId],
-        setQuestionEnterAt: value => { this._questionEnterAt = value },
-        now: () => api.now(),
-        setData: patch => this.setData(patch),
-        buildAnswerState: (renderView, answer) => view.buildAnswerState(renderView, answer),
-        isTimeExpired: () => this.data.timeExpired,
-        isSubmitting: () => this.data.submitting,
-        isNavigationLocked: () => this._navigationLocked,
-        getCurrentItemId: () => this._currentItemId(),
-        settleCurrentTime: options => this._settleCurrentTime(options),
-        syncItem: itemId => this._syncItem(itemId),
-        setCurrent: index => this._setCurrent(index),
-      })
+      this._examQuestionNavigation = createExamQuestionNavigationController(
+        buildExamQuestionNavigationPageCapabilities(this)
+      )
     )
   },
   goPrev(e) { this._moveTo(e.detail.index) },
@@ -635,20 +501,9 @@ Page({
 
   _examExitRequestController() {
     return this._examExitRequest || (
-      this._examExitRequest = createExamExitRequestController({
-        isSubmitting: () => this.data.submitting,
-        isNavigationLocked: () => this._navigationLocked,
-        settleCurrentTime: options => this._settleCurrentTime(options),
-        showExitDialog: () => this._showAppDialog({
-          scenario: 'all-done',
-          title: '暂时退出考试？',
-          message: '60 分钟内回来可继续作答；超过 60 分钟草稿将被清除，需要重新作答。',
-          confirmText: '退出',
-          cancelText: '继续作答',
-          hideEyebrow: true,
-        }),
-        navigateBack: options => wx.navigateBack(options),
-      })
+      this._examExitRequest = createExamExitRequestController(
+        buildExamExitRequestPageCapabilities(this)
+      )
     )
   },
 
@@ -658,33 +513,9 @@ Page({
 
   _examSubmitEntryController() {
     return this._examSubmitEntry || (
-      this._examSubmitEntry = createExamSubmitEntryController({
-        isAttemptTerminal: () => this._attemptTerminal,
-        isNavigationLocked: () => this._navigationLocked,
-        getSubmitPromise: () => this._submitPromise,
-        isSubmitting: () => this.data.submitting,
-        isTimeExpired: () => this.data.timeExpired,
-        isConfirmingSubmit: () => this._confirmingSubmit,
-        setConfirmingSubmit: value => { this._confirmingSubmit = value },
-        showConfirmDialog: dialog => this._showAppDialog(dialog),
-        buildConfirmDialog: () => {
-          const unanswered = Math.max(0, this.data.totalCount - this.data.answeredCount)
-          const marked = (this.data.questions || []).filter((q) => q._marked).length
-          return {
-            scenario: unanswered ? 'unanswered' : 'all-done',
-            title: '确认交卷',
-            message: `${unanswered ? `还有 ${unanswered} 题未作答。` : '所有题目均已作答。'}${marked ? `\n另有 ${marked} 题待检查。` : ''}\n交卷后不可修改。`,
-            confirmText: '确认交卷',
-            cancelText: '继续检查',
-            hideEyebrow: true,
-          }
-        },
-        performSubmit: auto => this._performSubmit(auto),
-        setSubmitPromise: task => { this._submitPromise = task },
-        clearSubmitPromise: task => {
-          if (this._submitPromise === task) this._submitPromise = null
-        },
-      })
+      this._examSubmitEntry = createExamSubmitEntryController(
+        buildExamSubmitEntryPageCapabilities(this)
+      )
     )
   },
 
@@ -701,59 +532,17 @@ Page({
 
   _examSubmitPreparationController() {
     return this._examSubmitPreparation || (
-      this._examSubmitPreparation = createExamSubmitPreparationController({
-        getCurrentRemainingSec: () => this._currentRemainingSec(),
-        isTimeExpired: () => this.data.timeExpired,
-        setRetainPendingForSubmit: value => { this._retainPendingForSubmit = value },
-        persistPending: () => this._persistPending(),
-        setSubmitting: value => this.setData({ submitting: value }),
-        clearTimer: () => this._clearTimer(),
-        settleCurrentTime: options => this._settleCurrentTime(options),
-        buildFinalSubmitAnswers: () => this._buildFinalSubmitAnswers(),
-        onAutoResolved: value => { this._lastSubmitAuto = value },
-      })
+      this._examSubmitPreparation = createExamSubmitPreparationController(
+        buildExamSubmitPreparationPageCapabilities(this)
+      )
     )
   },
 
   _examSubmitOutcomeController() {
     return this._examSubmitOutcome || (
-      this._examSubmitOutcome = createExamSubmitOutcomeController({
-        isPageAlive: () => this._pageAlive,
-        clearPending: () => {
-          this._pending = Object.create(null)
-          this._retainPendingForSubmit = false
-          this._clearPendingStorage()
-        },
-        setAttemptTerminal: value => { this._attemptTerminal = value },
-        navigateReconciled: () => {
-          if (this._pageAlive && !this._terminalNavigation) {
-            if (this._attemptAbandoned) this._navigateToPaperList()
-            else this._navigateToResult()
-          }
-        },
-        navigateToResult: () => this._navigateToResult(),
-        reconcileAttemptState: () => this._reconcileAttemptState(),
-        setSubmitting: value => this.setData({ submitting: value }),
-        showAutoSubmitPending: () => {
-          this.setData({ timeExpired: true, remainingText: '已到时 · 待联网交卷' })
-          wx.showToast({ title: '时间已到，答案已保留，联网后将自动交卷', icon: 'none' })
-        },
-        showManualSubmitError: error => {
-          wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
-          const remaining = this._currentRemainingSec()
-          if (remaining == null || remaining > 0) this._startTimer(remaining)
-          else {
-            this.setData({ timeExpired: true, remainingText: '已到时 · 待联网交卷' })
-            // Run after the current single-flight promise releases; otherwise
-            // submitExam() would simply return the promise that is finishing now.
-            setTimeout(() => {
-              if (this._pageAlive && !this._attemptTerminal && !this._terminalNavigation) {
-                this.submitExam({ auto: true }).catch(() => {})
-              }
-            }, 0)
-          }
-        },
-      })
+      this._examSubmitOutcome = createExamSubmitOutcomeController(
+        buildExamSubmitOutcomePageCapabilities(this)
+      )
     )
   },
 

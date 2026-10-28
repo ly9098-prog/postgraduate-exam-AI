@@ -374,6 +374,7 @@ jobs:
           node miniprogram/scripts/architecture/pomodoro-boundaries.js
           node miniprogram/scripts/architecture/page-budgets.js
           node miniprogram/scripts/architecture/learning-controller-budgets.js
+          node miniprogram/scripts/architecture/exam-runner-boundaries.js
           node --test miniprogram/tests/test-page-budgets.js
           node --test miniprogram/tests/test-learning-controller-budgets.js
           node --test \
@@ -572,6 +573,8 @@ jobs:
           node --test miniprogram/tests/test-review-group-submit-flow-controller.js
           node miniprogram/tests/test-storage-session-cleanup.js
           node miniprogram/tests/test-exam-terminal-navigation.js
+          node --test miniprogram/tests/test-exam-runner-page-adapter-contracts.js
+          node --test miniprogram/tests/test-exam-runner-module-boundaries.js
           node --test miniprogram/tests/test-exam-timer-controller.js
           node --test miniprogram/tests/test-exam-pending-cache-controller.js
           node --test miniprogram/tests/test-exam-answer-sync-controller.js

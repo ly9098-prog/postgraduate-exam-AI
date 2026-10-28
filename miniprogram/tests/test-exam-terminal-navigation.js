@@ -71,10 +71,21 @@ assert.equal(target.data.resultRecoveryPending, false)
   const source = fs.readFileSync(pagePath, 'utf8')
   const template = fs.readFileSync(path.join(root, 'subpackages/exam/exam-runner/index.wxml'), 'utf8')
   assert(template.includes('readonly="{{timeExpired || submitting || resultRecoveryPending}}"'))
-  assert(source.includes('isTimeExpired: () => this.data.timeExpired'))
-  assert(source.includes('isSubmitting: () => this.data.submitting'))
-  assert(source.includes('isNavigationLocked: () => this._navigationLocked'))
-  assert(source.includes('isAttemptTerminal: () => this._attemptTerminal'))
+  // The page keeps the lazily memoised factories; the port wiring for these
+  // guards now lives in the exam runner page adapters.
+  assert(source.includes('buildExamSubmitEntryPageCapabilities(this)'))
+  const adapterSource = [
+    'exam-runner-answer-page-adapter.js',
+    'exam-runner-navigation-page-adapter.js',
+    'exam-runner-submit-page-adapter.js',
+    'exam-runner-reconnect-page-adapter.js',
+  ].map(name => fs.readFileSync(
+    path.join(root, 'subpackages/exam/utils', name), 'utf8'
+  )).join('\n')
+  assert(adapterSource.includes('isTimeExpired: () => page.data.timeExpired'))
+  assert(adapterSource.includes('isSubmitting: () => page.data.submitting'))
+  assert(adapterSource.includes('isNavigationLocked: () => page._navigationLocked'))
+  assert(adapterSource.includes('isAttemptTerminal: () => page._attemptTerminal'))
 
   console.log('Exam terminal navigation regression passed')
 })().catch((error) => {
