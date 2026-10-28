@@ -1763,19 +1763,9 @@ async def get_smart_scored_questions(
     subject_ids: list[int] | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
     """Select scored questions; the smart/aggregated caller owns finalization."""
-    from app.models.question_knowledge_point import (
-        QuestionKnowledgePoint,  # noqa: F401 - preserve entry import boundary
-    )
-    from app.models.user_knowledge_state import (
-        UserKnowledgeState,  # noqa: F401 - preserve entry import boundary
-    )
-    from app.models.user_question_state import (
-        UserQuestionState,  # noqa: F401 - preserve entry import boundary
-    )
-
     now = utcnow()
     metadata: dict[int, dict] = {}
-    scored_runtime, candidate_context = await _load_scored_context(
+    scored_runtime, graph_runtime, candidate_context = await _load_scored_context(
         db,
         user_id,
         subject_code,
@@ -1785,16 +1775,18 @@ async def get_smart_scored_questions(
         no_repeat_days,
         now,
     )
-    graph_runtime = scored_runtime.get("graph") or {}
     candidates = candidate_context.candidates
     if not candidates:
-        logger.warning(
-            "[smart_scored] 候选题池为空 uid=%s subject=%s", user_id, subject_code
-        )
+        _log_empty_scored_candidates(user_id, subject_code)
         return [], metadata
 
     learning = await _load_scored_learning(
-        db, user_id, candidate_context, graph_runtime, count, scored_runtime
+        db,
+        user_id,
+        candidate_context,
+        graph_runtime,
+        count,
+        scored_runtime,
     )
     cand_ids = {q.id for q in candidates}
     selection = rank_and_select_candidates(
@@ -1826,6 +1818,12 @@ async def get_smart_scored_questions(
     )
 
 
+def _log_empty_scored_candidates(user_id: int, subject_code: str) -> None:
+    logger.warning(
+        "[smart_scored] 候选题池为空 uid=%s subject=%s", user_id, subject_code
+    )
+
+
 async def _load_scored_context(
     db: AsyncSession,
     user_id: int,
@@ -1835,8 +1833,8 @@ async def _load_scored_context(
     exclude_answered: bool,
     no_repeat_days: int | None,
     now: datetime,
-) -> tuple[dict, ScoredCandidateContext]:
-    return await load_scored_candidate_context(
+) -> tuple[dict, dict, ScoredCandidateContext]:
+    scored_runtime, context = await load_scored_candidate_context(
         db=db,
         user_id=user_id,
         subject_code=subject_code,
@@ -1849,6 +1847,7 @@ async def _load_scored_context(
         load_candidates=_load_smart_scored_candidates,
         build_subject_condition=Question.subject_id.in_,
     )
+    return scored_runtime, scored_runtime.get("graph") or {}, context
 
 
 async def _load_scored_learning(
