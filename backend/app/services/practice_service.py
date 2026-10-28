@@ -338,47 +338,58 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
     all_subjects = list(result.scalars().all())
     subjects = select_study_subject_records(all_subjects)
 
-    def _to_node(s: Subject) -> dict:
-        product_code = canonical_408_code(s.code) or str(s.code or "").strip().lower()
-        display_name = study_subject_display_name(s.name)
-        return {
-            "subject_id": s.id,
-            "subject_code": s.code,
-            "subject_name": display_name,
-            "display_name": display_name,
-            "product_code": product_code,
-            "parent_id": s.parent_id,
-            "level": s.level,
-            "path": s.path,
-            "sort_order": s.sort_order,
-            "children": [],
-        }
+    roots = _build_study_subject_tree(subjects)
+    await set_cached_subject_tree(roots)
+    return roots
 
-    nodes: dict[int, dict] = {s.id: _to_node(s) for s in subjects}
+
+def _study_subject_node(subject) -> dict:
+    product_code = (
+        canonical_408_code(subject.code) or str(subject.code or "").strip().lower()
+    )
+    display_name = study_subject_display_name(subject.name)
+    return {
+        "subject_id": subject.id,
+        "subject_code": subject.code,
+        "subject_name": display_name,
+        "display_name": display_name,
+        "product_code": product_code,
+        "parent_id": subject.parent_id,
+        "level": subject.level,
+        "path": subject.path,
+        "sort_order": subject.sort_order,
+        "children": [],
+    }
+
+
+def _build_study_subject_tree(subjects: list) -> list[dict]:
+    nodes: dict[int, dict] = {
+        subject.id: _study_subject_node(subject) for subject in subjects
+    }
     roots: list[dict] = []
-    for s in subjects:
-        node = nodes[s.id]
-        parent = nodes.get(s.parent_id) if s.parent_id else None
+    for subject in subjects:
+        node = nodes[subject.id]
+        parent = nodes.get(subject.parent_id) if subject.parent_id else None
         if parent:
             parent["children"].append(node)
         else:
             roots.append(node)
-
-    def _node_sort_key(node: dict) -> tuple[int, int, int]:
-        return (
-            EXAM408_DISPLAY_ORDER.get(node.get("product_code") or "", 999),
-            int(node.get("sort_order") or 0),
-            int(node.get("subject_id") or 0),
-        )
-
-    def _sort_tree(items: list[dict]) -> None:
-        items.sort(key=_node_sort_key)
-        for item in items:
-            _sort_tree(item["children"])
-
-    _sort_tree(roots)
-    await set_cached_subject_tree(roots)
+    _sort_study_subject_tree(roots)
     return roots
+
+
+def _sort_study_subject_tree(items: list[dict]) -> None:
+    items.sort(key=_study_subject_sort_key)
+    for item in items:
+        _sort_study_subject_tree(item["children"])
+
+
+def _study_subject_sort_key(node: dict) -> tuple[int, int, int]:
+    return (
+        EXAM408_DISPLAY_ORDER.get(node.get("product_code") or "", 999),
+        int(node.get("sort_order") or 0),
+        int(node.get("subject_id") or 0),
+    )
 
 
 async def resolve_subject_id_to_code(
@@ -516,19 +527,27 @@ async def resolve_practice_subject_scope(
     )
     all_subjects = select_study_subject_records(all_result.scalars().all())
 
-    # 检查是否有启用子科目
-    children_by_parent: dict[int | None, list[Subject]] = {}
-    for s in all_subjects:
-        children_by_parent.setdefault(s.parent_id, []).append(s)
+    children_by_parent = _children_by_parent(all_subjects)
     has_enabled_children = len(children_by_parent.get(subj.id, [])) > 0
 
     if not include_children or not has_enabled_children:
         return has_enabled_children, [subj.id]
 
-    # 包含后代：BFS 遍历子树
-    result = []
-    stack = [subj]
-    seen = set()
+    descendants = _enabled_descendants(subj, children_by_parent)
+    return has_enabled_children, [subject.id for subject in descendants]
+
+
+def _children_by_parent(subjects: list) -> dict[int | None, list]:
+    children_by_parent: dict[int | None, list] = {}
+    for subject in subjects:
+        children_by_parent.setdefault(subject.parent_id, []).append(subject)
+    return children_by_parent
+
+
+def _enabled_descendants(subject, children_by_parent: dict[int | None, list]) -> list:
+    result: list = []
+    stack = [subject]
+    seen: set[int] = set()
     while stack:
         node = stack.pop()
         if node.id in seen:
@@ -538,10 +557,8 @@ async def resolve_practice_subject_scope(
         for child in children_by_parent.get(node.id, []):
             if is_study_subject_enabled(child):
                 stack.append(child)
-
-    # 按 sort_order, id 排序
-    result.sort(key=lambda s: (s.sort_order, s.id))
-    return has_enabled_children, [s.id for s in result]
+    result.sort(key=lambda item: (item.sort_order, item.id))
+    return result
 
 
 async def resolve_practice_knowledge_scope(
@@ -632,6 +649,18 @@ async def get_knowledge_scope_practice_questions(
     if len(candidates) <= count:
         return candidates
 
+    return await _rank_knowledge_scope_candidates(
+        db, user_id, target_ids, candidates, count
+    )
+
+
+async def _rank_knowledge_scope_candidates(
+    db: AsyncSession,
+    user_id: int,
+    target_ids: list[int],
+    candidates: list[Question],
+    count: int,
+) -> list[Question]:
     candidate_ids = [int(question.id) for question in candidates]
     states = await load_knowledge_states(db, user_id, target_ids)
     mapping_rows = await load_question_knowledge_rows(db, candidate_ids, target_ids)
@@ -642,8 +671,17 @@ async def get_knowledge_scope_practice_questions(
     # Its SQL sampling already supplies randomness where appropriate; reshuffling
     # here would incorrectly let relaxed-repeat candidates jump ahead of fresh/due ones.
     selected = select_bucket_questions(buckets, count)
-    targets = _chapter_bucket_targets(count)
+    _log_knowledge_scope_selection(target_ids, count, candidates, buckets, selected)
+    return selected[:count]
 
+
+def _log_knowledge_scope_selection(
+    target_ids: list[int],
+    count: int,
+    candidates: list[Question],
+    buckets: dict,
+    selected: list[Question],
+) -> None:
     logger.info(
         "[KNOWLEDGE_SCOPE_PRACTICE] root_scope_size=%d requested=%d candidates=%d "
         "bucket_sizes=%s target_mix=%s returned=%d",
@@ -651,10 +689,9 @@ async def get_knowledge_scope_practice_questions(
         count,
         len(candidates),
         {name: len(values) for name, values in buckets.items()},
-        targets,
+        _chapter_bucket_targets(count),
         len(selected[:count]),
     )
-    return selected[:count]
 
 
 async def get_aggregated_random_questions(
@@ -1080,25 +1117,9 @@ async def _finalize_smart(
     try:
         from app.services import recommendation_log_service
 
-        recs: list[dict] = []
-        for question in questions:
-            meta = metadata.get(question.id, {})
-            recs.append(
-                {
-                    "question_id": question.id,
-                    # 聚合刷题时 subject_code 可能是父科目；题目自身 subject_id 才是
-                    # 真实归属，指标必须按这个值记录。
-                    "subject_id": question.subject_id,
-                    "recommend_score": meta.get("recommend_score"),
-                    "similarity": meta.get("similarity"),
-                    "reason": meta.get("recommend_reason"),
-                    "strategy": meta.get("strategy", "fallback"),
-                    "strategy_config_id": meta.get("strategy_config_id"),
-                    "experiment_id": meta.get("experiment_id", experiment_id),
-                    "variant_key": meta.get("variant_key", variant_key),
-                }
-            )
-
+        recs = _smart_recommendation_rows(
+            questions, metadata, experiment_id, variant_key
+        )
         if recs:
             await recommendation_log_service.create_recommendation_logs_isolated(
                 db=db,
@@ -1116,6 +1137,33 @@ async def _finalize_smart(
         logger.warning("smart 推荐日志写入失败（不影响结果）", exc_info=True)
 
     return questions, metadata
+
+
+def _smart_recommendation_rows(
+    questions: list[Question],
+    metadata: dict[int, dict],
+    experiment_id: int | None,
+    variant_key: str | None,
+) -> list[dict]:
+    recs: list[dict] = []
+    for question in questions:
+        meta = metadata.get(question.id, {})
+        recs.append(
+            {
+                "question_id": question.id,
+                # 聚合刷题时 subject_code 可能是父科目；题目自身 subject_id 才是
+                # 真实归属，指标必须按这个值记录。
+                "subject_id": question.subject_id,
+                "recommend_score": meta.get("recommend_score"),
+                "similarity": meta.get("similarity"),
+                "reason": meta.get("recommend_reason"),
+                "strategy": meta.get("strategy", "fallback"),
+                "strategy_config_id": meta.get("strategy_config_id"),
+                "experiment_id": meta.get("experiment_id", experiment_id),
+                "variant_key": meta.get("variant_key", variant_key),
+            }
+        )
+    return recs
 
 
 async def _smart_weakness_vector(
@@ -1147,7 +1195,37 @@ async def _smart_weakness_vector(
     )
     from app.services import mastery_service, vector_retrieval_service
 
-    provider_request = WeaknessVectorProviderRequest(
+    provider_request = _weakness_vector_provider_request(
+        db, user_id, exclude_answered, no_repeat_days
+    )
+    request = _weakness_vector_request(
+        db=db,
+        user_id=user_id,
+        subject_code=subject_code,
+        count=count,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        use_leitner=use_leitner,
+        exclude_ids=exclude_ids,
+        subject_ids=subject_ids,
+        provider_request=provider_request,
+        load_vector_matches=load_vector_matches,
+        load_fill_questions=load_fill_questions,
+    )
+    return await run_smart_weakness_vector(request)
+
+
+def _weakness_vector_provider_request(
+    db: AsyncSession,
+    user_id: int,
+    exclude_answered: bool,
+    no_repeat_days: int | None,
+) -> object:
+    from app.services.practice.weakness_vector_providers import (
+        WeaknessVectorProviderRequest,
+    )
+
+    return WeaknessVectorProviderRequest(
         db=db,
         user_id=user_id,
         exclude_answered=exclude_answered,
@@ -1157,6 +1235,24 @@ async def _smart_weakness_vector(
         utcnow=utcnow,
         random_sample=_random_sample_query,
     )
+
+
+def _weakness_vector_request(
+    *,
+    db: AsyncSession,
+    user_id: int,
+    subject_code: str,
+    count: int,
+    exclude_answered: bool,
+    no_repeat_days: int | None,
+    use_leitner: bool,
+    exclude_ids: set[int] | None,
+    subject_ids: list[int] | None,
+    provider_request: object,
+    load_vector_matches,
+    load_fill_questions,
+) -> SmartWeaknessVectorRequest:
+    from app.services import mastery_service, vector_retrieval_service
 
     async def _load_vector_matches(recalls, scope_ids, excluded_ids):
         return await load_vector_matches(
@@ -1168,26 +1264,24 @@ async def _smart_weakness_vector(
             provider_request, remaining, scope_ids, existing_ids
         )
 
-    return await run_smart_weakness_vector(
-        SmartWeaknessVectorRequest(
-            db=db,
-            user_id=user_id,
-            subject_code=subject_code,
-            count=count,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-            use_leitner=use_leitner,
-            exclude_ids=exclude_ids,
-            subject_ids=subject_ids,
-            logger=logger,
-            resolve_scope_ids=resolve_subject_ids,
-            load_mastery=mastery_service.get_user_weak_knowledge_points,
-            compute_weak_kps=_compute_weak_knowledge_points,
-            load_random=get_practice_questions,
-            load_vector_recalls=vector_retrieval_service.vector_recall_by_text,
-            load_vector_matches=_load_vector_matches,
-            load_fill_questions=_load_fill_questions,
-        )
+    return SmartWeaknessVectorRequest(
+        db=db,
+        user_id=user_id,
+        subject_code=subject_code,
+        count=count,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        use_leitner=use_leitner,
+        exclude_ids=exclude_ids,
+        subject_ids=subject_ids,
+        logger=logger,
+        resolve_scope_ids=resolve_subject_ids,
+        load_mastery=mastery_service.get_user_weak_knowledge_points,
+        compute_weak_kps=_compute_weak_knowledge_points,
+        load_random=get_practice_questions,
+        load_vector_recalls=vector_retrieval_service.vector_recall_by_text,
+        load_vector_matches=_load_vector_matches,
+        load_fill_questions=_load_fill_questions,
     )
 
 
@@ -1391,18 +1485,9 @@ async def _load_knowledge_and_graph_context(
         )
     )
     knowledge_states = list(ks_result.scalars().all())
-    kp_mastery: dict[int, tuple] = {
-        s.knowledge_point_id: (s.mastery_score, s.confidence) for s in knowledge_states
-    }
-    kp_observations: dict[int, tuple[int, int]] = {
-        s.knowledge_point_id: (s.attempt_count, s.wrong_count) for s in knowledge_states
-    }
+    kp_mastery, kp_observations = _knowledge_state_projections(knowledge_states)
 
-    graph_context: dict = {
-        "blocked_targets": {},
-        "prerequisite_candidates": {},
-        "prerequisites_by_target": {},
-    }
+    graph_context = _empty_graph_context()
     try:
         from app.core.config import settings as _settings
 
@@ -1423,12 +1508,28 @@ async def _load_knowledge_and_graph_context(
         logger.warning(
             "V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True
         )
-        graph_context = {
-            "blocked_targets": {},
-            "prerequisite_candidates": {},
-            "prerequisites_by_target": {},
-        }
+        graph_context = _empty_graph_context()
     return kp_mastery, kp_observations, graph_context
+
+
+def _knowledge_state_projections(knowledge_states: list) -> tuple[dict, dict]:
+    kp_mastery: dict[int, tuple] = {
+        state.knowledge_point_id: (state.mastery_score, state.confidence)
+        for state in knowledge_states
+    }
+    kp_observations: dict[int, tuple[int, int]] = {
+        state.knowledge_point_id: (state.attempt_count, state.wrong_count)
+        for state in knowledge_states
+    }
+    return kp_mastery, kp_observations
+
+
+def _empty_graph_context() -> dict:
+    return {
+        "blocked_targets": {},
+        "prerequisite_candidates": {},
+        "prerequisites_by_target": {},
+    }
 
 
 async def _fetch_graph_context(
@@ -1674,18 +1775,15 @@ async def get_smart_scored_questions(
 
     now = utcnow()
     metadata: dict[int, dict] = {}
-    scored_runtime, candidate_context = await load_scored_candidate_context(
-        db=db,
-        user_id=user_id,
-        subject_code=subject_code,
-        subject_ids=subject_ids,
-        count=count,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-        now=now,
-        load_runtime=_load_scored_runtime_config,
-        load_candidates=_load_smart_scored_candidates,
-        build_subject_condition=Question.subject_id.in_,
+    scored_runtime, candidate_context = await _load_scored_context(
+        db,
+        user_id,
+        subject_code,
+        subject_ids,
+        count,
+        exclude_answered,
+        no_repeat_days,
+        now,
     )
     graph_runtime = scored_runtime.get("graph") or {}
     candidates = candidate_context.candidates
@@ -1695,20 +1793,8 @@ async def get_smart_scored_questions(
         )
         return [], metadata
 
-    learning = await load_scored_learning_context(
-        db=db,
-        user_id=user_id,
-        candidates=candidates,
-        active_candidate_conditions=candidate_context.active_candidate_conditions,
-        scope_ids=candidate_context.scope_ids,
-        graph_runtime=graph_runtime,
-        count=count,
-        system_weights=scored_runtime.get("weights") or {},
-        load_knowledge_graph=_load_knowledge_and_graph_context,
-        load_candidate_states=_load_candidate_states,
-        extract_graph_context=_extract_graph_context,
-        load_kp_names=_load_kp_names,
-        compute_weights=_compute_recommendation_weights,
+    learning = await _load_scored_learning(
+        db, user_id, candidate_context, graph_runtime, count, scored_runtime
     )
     cand_ids = {q.id for q in candidates}
     selection = rank_and_select_candidates(
@@ -1729,7 +1815,64 @@ async def get_smart_scored_questions(
         )
     )
     return await _complete_scored_selection(
-        db, user_id, subject_code, count, candidate_context, cand_ids, selection, metadata,
+        db,
+        user_id,
+        subject_code,
+        count,
+        candidate_context,
+        cand_ids,
+        selection,
+        metadata,
+    )
+
+
+async def _load_scored_context(
+    db: AsyncSession,
+    user_id: int,
+    subject_code: str,
+    subject_ids: list[int] | None,
+    count: int,
+    exclude_answered: bool,
+    no_repeat_days: int | None,
+    now: datetime,
+) -> tuple[dict, ScoredCandidateContext]:
+    return await load_scored_candidate_context(
+        db=db,
+        user_id=user_id,
+        subject_code=subject_code,
+        subject_ids=subject_ids,
+        count=count,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        now=now,
+        load_runtime=_load_scored_runtime_config,
+        load_candidates=_load_smart_scored_candidates,
+        build_subject_condition=Question.subject_id.in_,
+    )
+
+
+async def _load_scored_learning(
+    db: AsyncSession,
+    user_id: int,
+    candidate_context: ScoredCandidateContext,
+    graph_runtime: dict,
+    count: int,
+    scored_runtime: dict,
+):
+    return await load_scored_learning_context(
+        db=db,
+        user_id=user_id,
+        candidates=candidate_context.candidates,
+        active_candidate_conditions=candidate_context.active_candidate_conditions,
+        scope_ids=candidate_context.scope_ids,
+        graph_runtime=graph_runtime,
+        count=count,
+        system_weights=scored_runtime.get("weights") or {},
+        load_knowledge_graph=_load_knowledge_and_graph_context,
+        load_candidate_states=_load_candidate_states,
+        extract_graph_context=_extract_graph_context,
+        load_kp_names=_load_kp_names,
+        compute_weights=_compute_recommendation_weights,
     )
 
 
@@ -1785,13 +1928,57 @@ async def _compute_weak_knowledge_points(
 
     返回按 accuracy 升序、total 降序排列的前 5 个薄弱知识点。
     """
-    cutoff = utcnow() - timedelta(days=30)
     if not subject_ids:
         return []
+    cutoff = utcnow() - timedelta(days=30)
     subject_cond = PracticeRecord.subject_id.in_(subject_ids)
 
-    # 获取最近 30 天的做题记录，带题目的知识点
     result = await db.execute(
+        _weak_knowledge_points_query(user_id, cutoff, subject_cond)
+    )
+    rows = result.all()
+
+    if not rows:
+        return []
+
+    # 历史统计按作答时 immutable revision 的知识点归因。这里只读取真正
+    # 需要的列，避免任何 PracticeRecord ORM 全量加载重新引入已废弃批次字段。
+    kp_stats: dict[str, dict] = {}
+    for is_correct, kp_name in rows:
+        kp = str(kp_name)
+        if kp not in kp_stats:
+            kp_stats[kp] = {"total": 0, "correct": 0}
+        kp_stats[kp]["total"] += 1
+        if bool(is_correct):
+            kp_stats[kp]["correct"] += 1
+
+    return _project_weak_knowledge_points(kp_stats)
+
+
+def _project_weak_knowledge_points(kp_stats: dict[str, dict]) -> list[dict]:
+    weak = []
+    for kp_name, stats in kp_stats.items():
+        total = stats["total"]
+        correct = stats["correct"]
+        if total >= 2:
+            accuracy = correct / total
+            if accuracy < 0.65:
+                weak.append(
+                    {
+                        "name": kp_name,
+                        "total": total,
+                        "correct": correct,
+                        "accuracy": round(accuracy, 4),
+                    }
+                )
+
+    # 按 accuracy 升序、total 降序
+    weak.sort(key=lambda item: (item["accuracy"], -item["total"]))
+    return weak[:5]
+
+
+def _weak_knowledge_points_query(user_id: int, cutoff: datetime, subject_cond):
+    return (
         select(
             PracticeRecord.is_correct,
             func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name),
@@ -1816,42 +2003,6 @@ async def _compute_weak_knowledge_points(
             subject_cond,
         )
     )
-    rows = result.all()
-
-    if not rows:
-        return []
-
-    # 历史统计按作答时 immutable revision 的知识点归因。这里只读取真正
-    # 需要的列，避免任何 PracticeRecord ORM 全量加载重新引入已废弃批次字段。
-    kp_stats: dict[str, dict] = {}
-    for is_correct, kp_name in rows:
-        kp = str(kp_name)
-        if kp not in kp_stats:
-            kp_stats[kp] = {"total": 0, "correct": 0}
-        kp_stats[kp]["total"] += 1
-        if bool(is_correct):
-            kp_stats[kp]["correct"] += 1
-
-    # 筛选薄弱知识点
-    weak = []
-    for kp_name, stats in kp_stats.items():
-        total = stats["total"]
-        correct = stats["correct"]
-        if total >= 2:
-            accuracy = correct / total
-            if accuracy < 0.65:
-                weak.append(
-                    {
-                        "name": kp_name,
-                        "total": total,
-                        "correct": correct,
-                        "accuracy": round(accuracy, 4),
-                    }
-                )
-
-    # 按 accuracy 升序、total 降序
-    weak.sort(key=lambda x: (x["accuracy"], -x["total"]))
-    return weak[:5]
 
 
 async def _create_answer_projection_outbox(

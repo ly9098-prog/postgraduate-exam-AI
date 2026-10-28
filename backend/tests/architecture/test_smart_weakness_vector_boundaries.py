@@ -49,14 +49,14 @@ def test_module_has_no_application_io_dependencies_or_persistence_calls():
 
 def test_real_entry_delegates_exact_ports_and_keeps_query_ownership():
     source = SERVICE.read_text()
-    entry = next(
+    request_factory = next(
         node
         for node in ast.parse(source).body
-        if getattr(node, "name", "") == "_smart_weakness_vector"
+        if getattr(node, "name", "") == "_weakness_vector_request"
     )
     requests = [
         node
-        for node in ast.walk(entry)
+        for node in ast.walk(request_factory)
         if isinstance(node, ast.Call)
         and getattr(node.func, "id", "") == "SmartWeaknessVectorRequest"
     ]
@@ -86,7 +86,7 @@ def test_real_entry_delegates_exact_ports_and_keeps_query_ownership():
     # orchestrator and this service entry both have no persistence calls.
     provider_functions = [
         node
-        for node in entry.body
+        for node in request_factory.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     ]
     assert len(provider_functions) == 2
