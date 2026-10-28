@@ -388,3 +388,154 @@ def test_lua_literal_gate_rejects_a_second_call_site() -> None:
     )
 
     assert mutated.count('"_lua_claim"') == 2
+
+
+# ── v2 complete transition + worker lifecycle guards ──
+
+TRANSITION_PATH = APP_ROOT / "services" / "task_queue_v2_transition_redis_contract.py"
+WORKER_PATH = APP_ROOT / "services" / "task_queue_worker.py"
+# Splitting adds helper definitions, so the ceilings leave headroom for the
+# remaining worker extractions rather than pinning today's exact size.
+MODULE_CEILINGS = {TRANSITION_PATH: 240, WORKER_PATH: 1700}
+
+# Incidental calls (logging, builtins) stay out of the pinned delegation order:
+# adding a log line is not a delegation change, and pinning it would make the
+# guard fail for reasons unrelated to the split.
+INCIDENTAL_CALLS = frozenset(
+    {
+        "len",
+        "isinstance",
+        "str",
+        "int",
+        "float",
+        "bool",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "max",
+        "min",
+        "range",
+        "print",
+    }
+)
+
+TRANSITION_ENTRY_CALLS = {
+    "execute_v2_complete": (
+        "get_client",
+        "load_scripts",
+        "_completed_updated_at",
+        "_build_v2_complete_payload",
+        "_run_v2_complete_script",
+        "_interpret_v2_complete_result",
+        "client.aclose",
+    ),
+}
+
+WORKER_ENTRY_CALLS = {
+    "_enqueue_v2_with_local_fallback": (
+        "_touch_staging_objects_before_enqueue",
+        "task_queue.enqueue_v2",
+        "_fallback_or_return",
+    ),
+    "graceful_shutdown_v2": (
+        "_resolve_shutdown_grace",
+        "set_draining_v2",
+        "stop_worker_v2",
+        "_drain_active_processing_v2",
+        "stop_worker_v2",
+    ),
+    "_fallback_or_return": (
+        "_can_use_local_execution_fallback",
+        "_schedule_local_fallback",
+    ),
+}
+
+
+def _qualified_call_order(source: str, name: str) -> list[str]:
+    """Ordered ``self.x``/``module.x``/``f()`` call names inside a function."""
+    for node in _function_nodes(source):
+        if node.name != name:
+            continue
+        calls = []
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call):
+                continue
+            func = sub.func
+            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+                calls.append(
+                    (sub.lineno, sub.col_offset, f"{func.value.id}.{func.attr}")
+                )
+            elif isinstance(func, ast.Name):
+                calls.append((sub.lineno, sub.col_offset, func.id))
+        return [
+            attr
+            for _line, _col, attr in sorted(calls)
+            if not attr.startswith("logger.") and attr not in INCIDENTAL_CALLS
+        ]
+    raise AssertionError(f"function not found: {name}")
+
+
+def test_transition_and_worker_entries_delegate_in_a_pinned_order() -> None:
+    transition_source = TRANSITION_PATH.read_text()
+    worker_source = WORKER_PATH.read_text()
+
+    observed_transition = {
+        name: tuple(_qualified_call_order(transition_source, name))
+        for name in TRANSITION_ENTRY_CALLS
+    }
+    observed_worker = {
+        name: tuple(_qualified_call_order(worker_source, name))
+        for name in WORKER_ENTRY_CALLS
+    }
+
+    assert observed_transition == TRANSITION_ENTRY_CALLS
+    assert observed_worker == WORKER_ENTRY_CALLS
+
+
+def test_transition_and_worker_functions_stay_within_the_line_budget() -> None:
+    assert _over_budget_functions(TRANSITION_PATH.read_text()) == []
+    assert _over_budget_functions(WORKER_PATH.read_text()) == []
+
+
+def test_transition_and_worker_modules_stay_below_the_ceiling() -> None:
+    for path, ceiling in MODULE_CEILINGS.items():
+        assert len(path.read_text().splitlines()) <= ceiling, path
+
+
+def test_worker_delegation_gate_rejects_inlined_drain() -> None:
+    source = WORKER_PATH.read_text()
+    mutated = source.replace("    await _drain_active_processing_v2(grace_sec)\n", "")
+
+    assert mutated != source
+    assert (
+        tuple(_qualified_call_order(mutated, "graceful_shutdown_v2"))
+        != WORKER_ENTRY_CALLS["graceful_shutdown_v2"]
+    )
+
+
+def test_worker_delegation_gate_rejects_missing_fallback_decision() -> None:
+    source = WORKER_PATH.read_text()
+    mutated = source.replace(
+        "    return _fallback_or_return(", "    return _bypass_fallback_decider("
+    )
+
+    assert mutated != source
+    assert (
+        tuple(_qualified_call_order(mutated, "_enqueue_v2_with_local_fallback"))
+        != WORKER_ENTRY_CALLS["_enqueue_v2_with_local_fallback"]
+    )
+
+
+def test_transition_delegation_gate_rejects_removed_result_mapping() -> None:
+    source = TRANSITION_PATH.read_text()
+    mutated = source.replace(
+        "        return _interpret_v2_complete_result(",
+        "        return _bypass_v2_complete_result(",
+    )
+
+    assert mutated != source
+    assert (
+        tuple(_qualified_call_order(mutated, "execute_v2_complete"))
+        != TRANSITION_ENTRY_CALLS["execute_v2_complete"]
+    )

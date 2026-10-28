@@ -121,48 +121,106 @@ async def execute_v2_complete(
     try:
         await load_scripts(client)
         updated_at = _completed_updated_at()
-        if isinstance(task_or_id, Task):
-            task_json = build_v2_completed_payload(
-                task_or_id,
-                updated_at=updated_at,
-            )
-        else:
-            current = await client.hget(_v2_task_hash_key(task_id), "data")
-            task_json = build_v2_completed_payload(
-                task_id,
-                task_type=task_type,
-                current_payload=current,
-                updated_at=updated_at,
-            )
-
-        raw = await evalsha(
+        task_json = await _build_v2_complete_payload(
             client,
-            "_lua_complete_v2",
-            5,
-            _v2_p_key(task_type),
-            _v2_retry_key(task_type),
-            _V2_TASK_PREFIX,
-            _V2_HEARTBEAT_PREFIX,
-            _V2_FENCING_PREFIX,
-            task_id,
-            owner_token,
-            task_json,
-            str(completed_ttl),
-            str(tombstone_ttl),
+            task_or_id,
+            task_id=task_id,
+            task_type=task_type,
+            updated_at=updated_at,
         )
-        result = int(raw) if raw is not None else 0
-        if result == 0:
-            logger.warning("v2 Complete owner mismatch: task_id=%s", task_id)
-            metrics["owner_fencing_rejected"] += 1
-        elif result == -1:
-            logger.warning("v2 Complete generation mismatch: task_id=%s", task_id)
-            metrics["owner_fencing_rejected"] += 1
-        else:
-            apply_v2_completed_result(task_or_id, updated_at=updated_at)
-            logger.info("v2 Task completed: task_id=%s", task_id)
-        return result
+        raw = await _run_v2_complete_script(
+            client,
+            evalsha,
+            task_id=task_id,
+            task_type=task_type,
+            owner_token=owner_token,
+            task_json=task_json,
+            completed_ttl=completed_ttl,
+            tombstone_ttl=tombstone_ttl,
+        )
+        return _interpret_v2_complete_result(
+            raw,
+            task_or_id,
+            task_id=task_id,
+            updated_at=updated_at,
+            metrics=metrics,
+        )
     finally:
         await client.aclose()
+
+
+async def _run_v2_complete_script(
+    client,
+    evalsha,
+    *,
+    task_id: str,
+    task_type: str,
+    owner_token: str,
+    task_json: str,
+    completed_ttl: int,
+    tombstone_ttl: int,
+):
+    """Run the fenced complete script with the historical key/ARGV layout."""
+    return await evalsha(
+        client,
+        "_lua_complete_v2",
+        5,
+        _v2_p_key(task_type),
+        _v2_retry_key(task_type),
+        _V2_TASK_PREFIX,
+        _V2_HEARTBEAT_PREFIX,
+        _V2_FENCING_PREFIX,
+        task_id,
+        owner_token,
+        task_json,
+        str(completed_ttl),
+        str(tombstone_ttl),
+    )
+
+
+async def _build_v2_complete_payload(
+    client,
+    task_or_id: Task | str,
+    *,
+    task_id: str,
+    task_type: str,
+    updated_at: float,
+) -> str:
+    """Build the completed payload, reading the hash only for bare ids."""
+    if isinstance(task_or_id, Task):
+        return build_v2_completed_payload(
+            task_or_id,
+            updated_at=updated_at,
+        )
+    current = await client.hget(_v2_task_hash_key(task_id), "data")
+    return build_v2_completed_payload(
+        task_id,
+        task_type=task_type,
+        current_payload=current,
+        updated_at=updated_at,
+    )
+
+
+def _interpret_v2_complete_result(
+    raw,
+    task_or_id: Task | str,
+    *,
+    task_id: str,
+    updated_at: float,
+    metrics: dict[str, int],
+) -> int:
+    """Map the Lua result onto history, logging, and metrics."""
+    result = int(raw) if raw is not None else 0
+    if result == 0:
+        logger.warning("v2 Complete owner mismatch: task_id=%s", task_id)
+        metrics["owner_fencing_rejected"] += 1
+    elif result == -1:
+        logger.warning("v2 Complete generation mismatch: task_id=%s", task_id)
+        metrics["owner_fencing_rejected"] += 1
+    else:
+        apply_v2_completed_result(task_or_id, updated_at=updated_at)
+        logger.info("v2 Task completed: task_id=%s", task_id)
+    return result
 
 
 def _completed_updated_at() -> float:

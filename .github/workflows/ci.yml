@@ -653,6 +653,7 @@ jobs:
             tests/test_services/test_task_queue_v1_dead_contract.py \
             tests/test_services/test_task_queue_v1_metrics_contract.py \
             tests/test_services/test_task_queue_service_entry_contract.py \
+            tests/test_services/test_task_queue_worker_lifecycle_contract.py \
             tests/test_services/test_pomodoro_history_projection.py \
             tests/test_services/test_stats_dashboard_projection.py \
             tests/test_services/test_stats_ai_projection.py \

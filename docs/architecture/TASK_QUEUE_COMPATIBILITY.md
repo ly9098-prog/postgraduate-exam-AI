@@ -407,3 +407,54 @@
   超预算函数为 `task_queue_worker._enqueue_v2_with_local_fallback` 72、
   `task_queue_worker.graceful_shutdown_v2` 56、`task_queue_v2_transition_redis_contract.
   execute_v2_complete` 61 与 v1 `_heartbeat_loop`。
+
+## 18. worker 入队回落、优雅停机与 v2 complete 转换拆分
+
+- 2026-10-28，任务队列域剩余三个超预算入口收敛：`task_queue_worker._enqueue_v2_with_local_fallback`
+  72 → 30 行、`task_queue_worker.graceful_shutdown_v2` 56 → 35 行、
+  `task_queue_v2_transition_redis_contract.execute_v2_complete` 61 → 45 行；worker 模块
+  1523 → 1566 行（顶层定义 +5）、transition 契约模块 171 → 229 行（顶层定义 +3），两个模块
+  0 个超预算函数。
+- 新增 helper：`task_queue_worker` 的 `_staging_object_ids`、`_touch_staging_objects_before_enqueue`、
+  `_fallback_or_return`、`_resolve_shutdown_grace`、`_drain_active_processing_v2`；
+  `task_queue_v2_transition_redis_contract` 的 `_build_v2_complete_payload`、
+  `_run_v2_complete_script`、`_interpret_v2_complete_result`。模块内原有 `_local_fallback_tasks`
+  与 `_can_use_local_execution_fallback`、`_schedule_local_fallback`、`_run_local_fallback_task`
+  等既有单点保持原样。
+- 语义保持要点：入队前 staging 保留刷新仍按 `staging_object_id` → `staging_object_ids`
+  顺序去重（`dict.fromkeys`）、单个对象异常仍返回 `staging_unavailable/retry_after=30`、
+  对象缺失仍返回 `staging_object_missing/retry_after=0` 且不再入队；Redis 结果仍在
+  `result or result.reason not in {"redis_unavailable","no_backend"}` 时原样返回，只有
+  本地画像允许时才记 warning 并转入 `_schedule_local_fallback`；停机次序仍是
+  `set_draining` → 有活跃任务才等待 → 宽限期后取消剩余任务 → `stop_worker`，未活跃任务时立即
+  停机，显式 `grace_sec` 仍下限 5s、缺省仍取 `WORKER_SHUTDOWN_GRACE_SEC`；v2 complete 的
+  脚本名/KEYS/ARGV、Task 载荷与 bare-id 的 `hget` 回退、`0`/`-1` 的 owner/generation
+  拒绝与指标、`finally` 释放客户端都保持不变。
+- 新增契约基线 `tests/test_services/test_task_queue_worker_lifecycle_contract.py`（15 项）：
+  用脚本化 client 与 stub 模块钉住 complete 的 ARGV/TTL/结果映射、staging 去重与拒绝分支、
+  回落决策的三种结果、以及停机的 drain→shield→cancel→stop 次序与宽限期取值；同一份测试在
+  AST 重放 HEAD 实现（plugin `/tmp/tqb-batch/tqb9_head_plugin.py`）时同样 15 passed。
+- 架构门禁 `tests/architecture/test_task_queue_protocol_boundaries.py` 13 → 19 项：新增
+  transition/worker 入口委派顺序、两模块 50 行预算与 240/1600 行模块上限，并附 3 项反向自检
+  （内联 drain、移除回落决策、绕过结果映射）。
+- 差分对拍 `/tmp/tqb-batch/differential9.py`：HEAD 命名空间与拆分实现跑同一随机用例，
+  比较返回值、异常、脚本/Redis 调用、指标增量、日志、touched/enqueued/scheduled/events
+  四个 stub 序列；4 个种子 × 800 用例 = 3201 用例（含 1 个确定性宽限超时场景，任务完成回调
+  也进入比对）全部 0 mismatch。
+- 变异测试 20 个（结果映射、TTL 换位、省略 `hget`、省略释放、staging 去重/类型/异常/缺失、
+  回落白名单与画像门禁、宽限期下限与缺省、超时分支与停机次序等）全部被拒绝（0 survivor、
+  0 pattern miss）。
+- AST 证明：worker 56 个、transition 3 个未触碰函数逐字未变；两模块 0 个旧函数消失、模块语句
+  无删除且顺序不变（新增 8 个 helper 均已声明）；3 条入口内消失语句全部由 3 条已触发规则解释
+  （anti-vacuity：无未触发规则）。
+- 定向回归：queue/worker/runtime shutdown 相关测试合计 899 passed、85 skipped（缺 Redis 等
+  依赖的集成用例未执行）；Ruff（同一既有豁免集）通过，两模块 `ruff format --check` 无差异。
+- 契约测试刻意避开两处顺序依赖：日志断言直接挂到 `postgraduate-ai.task-worker` logger
+  （`WorkerLogCapture`），不依赖 caplog 的 root handler；`WORKER_SHUTDOWN_GRACE_SEC` 通过
+  `app.core.config.settings` 模块路径解析后再打补丁，避免同级测试替换 settings 对象后补丁
+  落在过期引用上。这两个缺陷都由全量静态步骤重放暴露（首次重放 1 failed），修复后在
+  423 个路径的全量顺序下 0 failed。
+- 本机按当前 YAML 精确重放 CI 三步（含新增契约测试）：Static architecture & non-GPU
+  regression 423 个路径 7371 passed / 0 failed（607.19 秒，64 条既有 DeprecationWarning）、
+  Mocked readiness boundary regression 69 passed、Cloud OCR profile boundary regression
+  30 passed；这是本地清单重放，不代表远端 CI 或生产验收。

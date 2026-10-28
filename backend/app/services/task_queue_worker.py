@@ -379,6 +379,27 @@ async def _enqueue_v2_with_local_fallback(
     from worker ownership leases: touching metadata cannot overwrite an active
     worker's fenced lease when the same content-addressed object is reused.
     """
+    rejection = await _touch_staging_objects_before_enqueue(payload, task_id)
+    if rejection is not None:
+        return rejection
+
+    result = await task_queue.enqueue_v2(
+        task_type,
+        payload,
+        task_id=task_id,
+        max_retries=max_retries,
+    )
+    return _fallback_or_return(
+        task_type=task_type,
+        payload=payload,
+        task_id=task_id,
+        max_retries=max_retries,
+        result=result,
+    )
+
+
+def _staging_object_ids(payload: dict) -> list[str]:
+    """Collect the staging object ids carried by an enqueue payload."""
     staging_ids: list[str] = []
     single = payload.get("staging_object_id")
     if isinstance(single, str) and single:
@@ -386,7 +407,15 @@ async def _enqueue_v2_with_local_fallback(
     many = payload.get("staging_object_ids")
     if isinstance(many, list):
         staging_ids.extend(item for item in many if isinstance(item, str) and item)
-    for object_id in dict.fromkeys(staging_ids):
+    return list(dict.fromkeys(staging_ids))
+
+
+async def _touch_staging_objects_before_enqueue(
+    payload: dict,
+    task_id: str | None,
+) -> EnqueueResult | None:
+    """Refresh staging retention; returns a rejection result when unsafe."""
+    for object_id in _staging_object_ids(payload):
         try:
             touched = await async_touch_object(object_id)
         except Exception as exc:
@@ -414,13 +443,18 @@ async def _enqueue_v2_with_local_fallback(
                 reason="staging_object_missing",
                 retry_after=0,
             )
+    return None
 
-    result = await task_queue.enqueue_v2(
-        task_type,
-        payload,
-        task_id=task_id,
-        max_retries=max_retries,
-    )
+
+def _fallback_or_return(
+    *,
+    task_type: str,
+    payload: dict,
+    task_id: str | None,
+    max_retries: int,
+    result: EnqueueResult,
+) -> EnqueueResult:
+    """Keep the Redis result unless the local development profile may fall back."""
     if result or result.reason not in _LOCAL_FALLBACK_REASONS:
         return result
     if not _can_use_local_execution_fallback():
@@ -1338,12 +1372,7 @@ async def graceful_shutdown_v2(grace_sec: int | None = None) -> None:
     This function does NOT close infrastructure resources — only
     coordinates in-flight task lifecycle.
     """
-    if grace_sec is None:
-        from app.core.config import settings
-
-        grace_sec = getattr(settings, "WORKER_SHUTDOWN_GRACE_SEC", 30)
-    else:
-        grace_sec = max(grace_sec, 5)
+    grace_sec = _resolve_shutdown_grace(grace_sec)
 
     # Step 1: Stop claiming
     await set_draining_v2()
@@ -1359,6 +1388,23 @@ async def graceful_shutdown_v2(grace_sec: int | None = None) -> None:
         return
 
     # Step 2-3: Shield active tasks during grace period, then cancel
+    await _drain_active_processing_v2(grace_sec)
+
+    # Step 4: Signal dispatcher to stop
+    await stop_worker_v2()
+
+
+def _resolve_shutdown_grace(grace_sec: int | None) -> int:
+    """Default the grace window from settings and floor explicit values at 5s."""
+    if grace_sec is None:
+        from app.core.config import settings
+
+        return getattr(settings, "WORKER_SHUTDOWN_GRACE_SEC", 30)
+    return max(grace_sec, 5)
+
+
+async def _drain_active_processing_v2(grace_sec: int) -> None:
+    """Shield in-flight tasks for the grace window, then cancel leftovers."""
     try:
         await asyncio.wait_for(
             asyncio.gather(*_v2_active_processing, return_exceptions=True),
@@ -1376,9 +1422,6 @@ async def graceful_shutdown_v2(grace_sec: int | None = None) -> None:
                 t.cancel()
             await asyncio.gather(*remaining, return_exceptions=True)
             logger.info("v2 Graceful shutdown: remaining tasks cancelled")
-
-    # Step 4: Signal dispatcher to stop
-    await stop_worker_v2()
 
 
 async def _cancel_on_owner_loss(
