@@ -64,7 +64,7 @@ function fixture() {
     },
   })
   page.data.wq = { id: 12, marker: 'initial' }
-  return { page, methods: page, context, api, calls, sleeps }
+  return { page, methods: page, definition, context, api, calls, sleeps }
 }
 
 function deferred() {

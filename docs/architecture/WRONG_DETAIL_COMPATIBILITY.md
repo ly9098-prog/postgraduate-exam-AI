@@ -71,3 +71,12 @@
 - 请求或结果应用异常继续调用但不 await 错误分派；错误分派也不返回恢复 Promise。后台 enqueue 仍不等待，随后 await 轮询、应用恢复结果，最后再判断当前请求是否可写入超时状态；不把这些现有等待差异改成普通生成的行为。
 - 15 项契约在原页面与当前页面全部通过；状态/动画/导航/恢复/生成/重新生成/模块门禁合计 78 项通过。1200 组十入口状态、调用轨迹及字段顺序对照一致；独立只读审查无 P0–P3 可操作发现。
 - 全量 Node 2219 passed、渲染 5 fixtures/31 passed、八条架构门禁及视觉/KaTeX检查通过。CI 增加重新生成契约；详情门禁登记十个模块、38 条委托模板，页面 ceiling 为 1143。证据 `/tmp/wrong-detail-ai-regeneration-batch/`；AI 请求协议/后台恢复任务入队、缓存写回及错因剩余编排仍待治理，既有失败及真实环境限制继续有效。
+
+## 9. AI 请求与缓存支持（2026-10-29 后续批次）
+
+- 本批页面由 1143→1101 行。loading 复位、缓存写回、生成请求、后台恢复入队、失败状态及点击入口六个方法迁入 `utils/wrong-detail-ai-request.js`（68 行，函数均 ≤50 行）；页面保留原方法名、参数、async 和单次委托。无页面状态依赖的三个函数不接收页面，其余三个接收显式 page。
+- 六个方法体仅改变接收者及网络/toast 端口调用；其余 113 个 Page 属性原文不变。网络端口每次调用都读取当前 `api.post` 并保留 receiver；生成请求继续使用 55000ms 超时，恢复入队为 10000ms，均静默网络 toast。force 布尔化、仅强制入队时添加 baseline、字段顺序和返回值保持。
+- 普通请求同步错误/异步拒绝继续传播；enqueue 的 baseline 转换、请求与响应属性异常仍进入原 catch，记录当前 console.warn 并返回 false。reset 仅写原四个 loading 字段；点击入口保留忙碌守卫、私有 ID 优先、当前 loader 调用、不返回 Promise 和缺失 ID toast。
+- 缓存写回仅替换 entry.data，保留 cache/entry 身份、timestamp、旧 status 与无关字段；normalized 引用保持。generatedAt 为 undefined 时不写 marker，其他 falsey 值写空字符串；不增加 ready 状态或改变失效规则。
+- 13 项契约在原页面与当前页面全部通过；八组定向共 91 项通过。900 组六入口返回值、状态、调用轨迹及字段顺序对照一致；独立只读审查无 P0–P3 可操作发现。夹具额外暴露真实 Page definition，确保 reset/cache 契约执行真实方法而非既有 mock。
+- 全量 Node 2232 passed、渲染 5 fixtures/31 passed、八条架构门禁及视觉/KaTeX检查通过。CI 增加请求支持契约；详情门禁登记十一个模块、44 条委托模板，页面 ceiling 为 1101。证据 `/tmp/wrong-detail-ai-request-batch/`；错因、详情加载、掌握/撤销及其他剩余页面职责和真实环境验收仍待继续。

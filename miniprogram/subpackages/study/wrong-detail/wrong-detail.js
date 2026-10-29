@@ -27,6 +27,7 @@ const navigationFlow = require('./utils/wrong-detail-navigation-flow')
 const aiRecovery = require('./utils/wrong-detail-ai-recovery')
 const aiGeneration = require('./utils/wrong-detail-ai-generation')
 const aiRegeneration = require('./utils/wrong-detail-ai-regeneration')
+const aiRequest = require('./utils/wrong-detail-ai-request')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -385,65 +386,22 @@ resetRenderGuard()
     })
   },
 _resetAiLoadingState() {
-this.setData({
-aiLoading: false,
-aiRegenerating: false,
-aiSkeletonVisible: false,
-aiInlineNotice: '',
-})
+return aiRequest._resetAiLoadingState(this)
 },
 _syncWqCacheAi(wqId, normalized, generatedAt) {
-if (!this._wqCache || !wqId || !normalized) return
-const entry = this._wqCache[wqId]
-if (!entry) return
-const patch = { ai_analysis: normalized }
-if (generatedAt !== undefined) patch.ai_analysis_generated_at = String(generatedAt || '')
-entry.data = Object.assign({}, entry.data, patch)
+return aiRequest._syncWqCacheAi(this, wqId, normalized, generatedAt)
 },
 async _requestAiAnalysis(wqId, forceRegenerate) {
-return api.post('/ai/error-analysis', {
-wrong_question_id: wqId,
-force_regenerate: !!forceRegenerate,
-}, {
-timeout: AI_REQUEST_TIMEOUT_MS,
-suppressNetworkToast: true,
-})
+return aiRequest._requestAiAnalysis(wqId, forceRegenerate, { postAnalysis: (payload, options) => api.post('/ai/error-analysis', payload, options), AI_REQUEST_TIMEOUT_MS })
 },
 async _enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt) {
-try {
-const payload = {
-wrong_question_id: wqId,
-force_regenerate: !!forceRegenerate,
-}
-if (forceRegenerate) payload.baseline_generated_at = String(baselineGeneratedAt || '')
-const result = await api.post('/ai/error-analysis/recover', payload, {
-timeout: 10000,
-suppressNetworkToast: true,
-})
-return !!(result && result.queued)
-} catch (e) {
-console.warn('AI 恢复任务入队失败，将继续轮询原请求结果', e)
-return false
-}
+return aiRequest._enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt, { postRecovery: (payload, options) => api.post('/ai/error-analysis/recover', payload, options) })
 },
 _analysisFailureState(model, result) {
-return {
-aiErrorText: _fallbackMessage(
-model,
-result && result.error_code,
-result && result.retryable
-),
-aiRetryable: !(result && result.retryable === false),
-}
+return aiRequest._analysisFailureState(model, result, { _fallbackMessage })
 },
 onTapAiAnalysis() {
-if (this.data.aiLoading || this.data.aiRegenerating) return
-const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
-if (!wqId) {
-wx.showToast({ title: '缺少错题ID', icon: 'none' })
-return
-}
-this.loadAiAnalysis(wqId)
+return aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options) })
 },
 toggleTeacherActions() {
 if (this.data.teacherLoadingAction) return
