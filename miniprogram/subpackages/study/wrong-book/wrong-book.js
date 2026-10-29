@@ -30,6 +30,8 @@ const batchFlow = require('./utils/wrong-book-batch-flow')
 const batchUndo = require('./utils/wrong-book-batch-undo')
 const lifecycle = require('./utils/wrong-book-lifecycle')
 const navigationFlow = require('./utils/wrong-book-navigation-flow')
+const aiState = require('./utils/wrong-book-ai-state')
+const aiPersistence = require('./utils/wrong-book-ai-persistence')
 Page({
 data: {
 list: [],
@@ -163,78 +165,19 @@ async _loadPage() {
 return requestFlow._loadPage(this)
 },
 _getAiAutoSettingKey() {
-const userId = this._getUserId()
-return userId ? AI_AUTO_SETTING_PREFIX + String(userId) : ''
+return aiPersistence._getAiAutoSettingKey(this, { settingPrefix: AI_AUTO_SETTING_PREFIX })
 },
 _getAiInsightIdleText(enabled) {
-return enabled
-? '自动分析已开启，进入错题本时会生成最新洞察'
-: '自动分析已关闭，点击生成获取 AI 洞察'
+return aiState._getAiInsightIdleText(enabled)
 },
 _restoreAiAutoSetting() {
-const key = this._getAiAutoSettingKey()
-const enabled = key ? storage.get(key) === true : false
-this.setData({
-autoAiInsightEnabled: enabled,
-aiInsightText: this.data.aiDiagnosis
-? this.data.aiInsightText
-: this._getAiInsightIdleText(enabled),
-})
+return aiPersistence._restoreAiAutoSetting(this, { storageClient: storage })
 },
 toggleAiAutoAnalysis() {
-const enabled = !this.data.autoAiInsightEnabled
-const key = this._getAiAutoSettingKey()
-if (key) storage.set(key, enabled)
-if (this._aiAutoSwitchTimer) clearTimeout(this._aiAutoSwitchTimer)
-this.setData({
-autoAiInsightEnabled: enabled,
-aiAutoSwitchPulse: true,
-aiInsightText: this.data.aiDiagnosis
-? this.data.aiInsightText
-: this._getAiInsightIdleText(enabled),
-})
-this._aiAutoSwitchTimer = setTimeout(() => {
-if (this._alive) this.setData({ aiAutoSwitchPulse: false })
-this._aiAutoSwitchTimer = null
-}, 420)
-if (!enabled) {
-if (this.data.aiDiagnosisLoading || this.data.aiDiagnosisRefreshing) {
-this._aiDiagnosisRequestId++
-this.setData({ aiDiagnosisLoading: false, aiDiagnosisRefreshing: false, aiDiagnosisError: false })
-}
-wx.showToast({ title: '已切换为手动分析', icon: 'none' })
-return
-}
-wx.showToast({ title: '已开启自动分析', icon: 'none' })
-if (this._aiStatsLoaded && Number((this.data.stats || {}).total) > 0) {
-const startAutoAnalysis = () => {
-if (this._alive && this.data.autoAiInsightEnabled) {
-this.ensureAiDiagnosis({ background: true, refreshOnChange: true })
-}
-}
-if (this._aiDiagnosisPromise) this._aiDiagnosisPromise.finally(startAutoAnalysis)
-else startAutoAnalysis()
-}
+return aiPersistence.toggleAiAutoAnalysis(this, { storageClient: storage, getPlatform: () => wx })
 },
 _restoreAiDiagnosisFromCache() {
-var user = this._getUser()
-var userId = user && (user.id || user.user_id || user.openid || '')
-var cache = aiCache.restore(userId)
-if (cache.status !== 'miss' && this._hasAiDiagnosisContent(cache.data)) {
-this._aiDiagnosisCachedAt = cache.cachedAt
-const normalized = this._normalizeAiDiagnosis(cache.data)
-const detailState = this._buildAiInsightDetails(normalized)
-this.setData({
-aiDiagnosis: normalized,
-aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(cache.cachedAt),
-aiDiagnosisCacheStale: cache.status === 'stale',
-aiDiagnosisError: false,
-aiDiagnosisLoading: false,
-aiDiagnosisRefreshing: false,
-aiInsightText: this._oneLineInsight(cache.data.summary) || this.data.aiInsightText,
-...detailState,
-})
-}
+return aiPersistence._restoreAiDiagnosisFromCache(this, { diagnosisCache: aiCache })
 },
 async loadStats() {
 return requestFlow.loadStats(this, { requestClient: api })
@@ -409,46 +352,16 @@ goDetail(e) {
 return navigationFlow.goDetail(this, e)
 },
 _getUser() {
-try { return storage.get(storage.KEYS.USER) } catch (_) { return null }
+return aiPersistence._getUser({ storageClient: storage })
 },
 _getUserId() {
-var user = this._getUser()
-return user && (user.id || user.user_id || user.openid || '')
+return aiPersistence._getUserId(this)
 },
 _normalizeAiDiagnosis(raw) {
-if (!raw) return null
-var copy = JSON.parse(JSON.stringify(raw))
-var diagnosisListKeys = ['weak_points', 'strong_points', 'learning_suggestions']
-for (var listKeyIndex = 0; listKeyIndex < diagnosisListKeys.length; listKeyIndex++) {
-var listKey = diagnosisListKeys[listKeyIndex]
-if (!Array.isArray(copy[listKey])) copy[listKey] = []
-}
-var diagnosisPointKeys = ['weak_points', 'strong_points']
-for (var diagnosisKeyIndex = 0; diagnosisKeyIndex < diagnosisPointKeys.length; diagnosisKeyIndex++) {
-var key = diagnosisPointKeys[diagnosisKeyIndex]
-copy[key] = copy[key].map(function(item) {
-if (!item || typeof item !== 'object') return null
-var acc = item.accuracy
-if (typeof acc !== 'number') acc = 0
-if (acc > 1) acc = Math.min(acc, 100)
-var pct = acc <= 1 ? Math.round(acc * 100) : Math.round(acc)
-pct = Math.max(0, Math.min(100, pct))
-return {
-knowledge_point: String(item.knowledge_point || ''),
-accuracy: acc,
-_accuracyPercent: pct,
-suggestion: String(item.suggestion || ''),
-}
-}).filter(function(item) { return item && item.knowledge_point })
-}
-copy.learning_suggestions = copy.learning_suggestions.filter(function(s) { return s && String(s).trim() })
-return copy
+return aiState._normalizeAiDiagnosis(raw)
 },
 _buildAiDiagnosisSourceSignature() {
-var stats = this.data.stats || {}
-var list = this.data.list || []
-var firstItem = list[0] || {}
-return aiCache.buildSignature(stats, list)
+return aiPersistence._buildAiDiagnosisSourceSignature(this, { diagnosisCache: aiCache })
 },
 async _checkAiDiagnosis() {
 if (this._destroyed) return null
@@ -484,21 +397,10 @@ return this.data.aiDiagnosis || null
 return this.ensureAiDiagnosis({ background: true, refreshOnChange: true })
 },
 _hasAiDiagnosisContent(value) {
-if (!value || typeof value !== 'object') return false
-const normalized = this._normalizeAiDiagnosis(value)
-return !!(
-(normalized.summary && String(normalized.summary).trim()) ||
-(normalized.weak_points && normalized.weak_points.length) ||
-(normalized.strong_points && normalized.strong_points.length) ||
-(normalized.learning_suggestions && normalized.learning_suggestions.length)
-)
+return aiState._hasAiDiagnosisContent(this, value)
 },
 _isAiDiagnosisPending(value) {
-if (!value || typeof value !== 'object') return false
-const status = String(value.status || value.state || value.generation_status || '').toLowerCase()
-const message = String(value.message || value.detail || value.summary || '').toLowerCase()
-const pendingText = /正在生成|生成中|处理中|排队中|generating|processing|queued/.test(message)
-return ['pending', 'processing', 'generating', 'queued', 'running'].includes(status) || value.generating === true || pendingText
+return aiState._isAiDiagnosisPending(value)
 },
 _delay(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
@@ -596,21 +498,8 @@ return this._requestAiDiagnosis({ background: true, refresh: sourceChanged })
   },
 
   _commitAiDiagnosisContent(normalized) {
-    var sig = this._buildAiDiagnosisSourceSignature()
-    var uid = this._getUserId()
-    var now = Date.now()
-    this._aiDiagnosisCachedAt = now
-    aiCache.save(uid, normalized, sig)
-    var detailState = this._buildAiInsightDetails(normalized)
-    this.setData({
-      aiDiagnosis: normalized, aiDiagnosisLoading: false, aiDiagnosisRefreshing: false,
-      aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(now), aiDiagnosisCacheStale: false,
-      aiDiagnosisError: false,
-      aiInsightText: this._oneLineInsight(normalized.summary) || this.data.aiInsightText,
-      ...detailState,
-    })
-    return normalized
-  },
+return aiPersistence._commitAiDiagnosisContent(this, normalized, { diagnosisCache: aiCache })
+},
 
   _handleAiDiagnosisError(e, opts, hasData, requestId) {
     console.error('加载 AI 诊断失败', e)
@@ -626,27 +515,7 @@ return this._requestAiDiagnosis({ background: true, refresh: sourceChanged })
     return null
   },
 _buildAiInsightDetails(diagnosis) {
-const data = diagnosis || {}
-const weakPoints = (Array.isArray(data.weak_points) ? data.weak_points : [])
-.slice(0, 3)
-.map(item => ({
-name: String((item && item.knowledge_point) || '待识别薄弱点'),
-accuracyPercent: Number(
-item && typeof item._accuracyPercent === 'number'
-? item._accuracyPercent
-: Math.round(Math.max(0, Math.min(1, Number((item && item.accuracy) || 0))) * 100)
-),
-suggestion: String((item && item.suggestion) || ''),
-}))
-const suggestions = (Array.isArray(data.learning_suggestions) ? data.learning_suggestions : [])
-.map(item => String(item || '').trim())
-.filter(Boolean)
-.slice(0, 3)
-return {
-aiInsightWeakPoints: weakPoints,
-aiInsightSuggestions: suggestions,
-aiInsightHasDetails: weakPoints.length > 0 || suggestions.length > 0,
-}
+return aiState._buildAiInsightDetails(diagnosis)
 },
 async toggleAiInsight() {
 if (this.data.aiInsightExpanded) {

@@ -6,11 +6,12 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-book/wrong-book.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-book/utils'
-const PAGE_CEILING = 783
+const PAGE_CEILING = 652
 const MODULES = ['wrong-book-value-view.js', 'wrong-book-item-view.js',
   'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js',
   'wrong-book-selection-flow.js', 'wrong-book-batch-flow.js', 'wrong-book-batch-undo.js',
-  'wrong-book-lifecycle.js', 'wrong-book-navigation-flow.js']
+  'wrong-book-lifecycle.js', 'wrong-book-navigation-flow.js',
+  'wrong-book-ai-state.js', 'wrong-book-ai-persistence.js']
 const REQUEST_DELEGATES = {
   "_beginFilterReload": "_beginFilterReload(patch) {\nreturn requestFlow._beginFilterReload(this, patch)\n}",
   "_loadPage": "async _loadPage() {\nreturn requestFlow._loadPage(this)\n}",
@@ -67,7 +68,23 @@ const LIFECYCLE_DELEGATES = {
   "onViewExportRecords": "onViewExportRecords() {\nreturn navigationFlow.onViewExportRecords({ getPlatform: () => wx })\n}",
   "goDetail": "goDetail(e) {\nreturn navigationFlow.goDetail(this, e)\n}"
 }
+const AI_STATE_DELEGATES = {
+  "_getAiAutoSettingKey": "_getAiAutoSettingKey() {\nreturn aiPersistence._getAiAutoSettingKey(this, { settingPrefix: AI_AUTO_SETTING_PREFIX })\n}",
+  "_getAiInsightIdleText": "_getAiInsightIdleText(enabled) {\nreturn aiState._getAiInsightIdleText(enabled)\n}",
+  "_restoreAiAutoSetting": "_restoreAiAutoSetting() {\nreturn aiPersistence._restoreAiAutoSetting(this, { storageClient: storage })\n}",
+  "toggleAiAutoAnalysis": "toggleAiAutoAnalysis() {\nreturn aiPersistence.toggleAiAutoAnalysis(this, { storageClient: storage, getPlatform: () => wx })\n}",
+  "_restoreAiDiagnosisFromCache": "_restoreAiDiagnosisFromCache() {\nreturn aiPersistence._restoreAiDiagnosisFromCache(this, { diagnosisCache: aiCache })\n}",
+  "_getUser": "_getUser() {\nreturn aiPersistence._getUser({ storageClient: storage })\n}",
+  "_getUserId": "_getUserId() {\nreturn aiPersistence._getUserId(this)\n}",
+  "_normalizeAiDiagnosis": "_normalizeAiDiagnosis(raw) {\nreturn aiState._normalizeAiDiagnosis(raw)\n}",
+  "_buildAiDiagnosisSourceSignature": "_buildAiDiagnosisSourceSignature() {\nreturn aiPersistence._buildAiDiagnosisSourceSignature(this, { diagnosisCache: aiCache })\n}",
+  "_hasAiDiagnosisContent": "_hasAiDiagnosisContent(value) {\nreturn aiState._hasAiDiagnosisContent(this, value)\n}",
+  "_isAiDiagnosisPending": "_isAiDiagnosisPending(value) {\nreturn aiState._isAiDiagnosisPending(value)\n}",
+  "_commitAiDiagnosisContent": "_commitAiDiagnosisContent(normalized) {\nreturn aiPersistence._commitAiDiagnosisContent(this, normalized, { diagnosisCache: aiCache })\n}",
+  "_buildAiInsightDetails": "_buildAiInsightDetails(diagnosis) {\nreturn aiState._buildAiInsightDetails(diagnosis)\n}"
+}
 const DELEGATES = {
+  ...AI_STATE_DELEGATES,
   ...LIFECYCLE_DELEGATES,
   ...BATCH_DELEGATES,
   ...REQUEST_DELEGATES,

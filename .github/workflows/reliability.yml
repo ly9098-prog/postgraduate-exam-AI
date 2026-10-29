@@ -647,6 +647,7 @@ jobs:
           node --test miniprogram/tests/test-wrong-book-selection-contracts.js
           node --test miniprogram/tests/test-wrong-book-batch-contracts.js
           node --test miniprogram/tests/test-wrong-book-lifecycle-contracts.js
+          node --test miniprogram/tests/test-wrong-book-ai-state-contracts.js
           node --test miniprogram/tests/test-wrong-detail-module-boundaries.js
           node --test miniprogram/tests/test-wrong-detail-state-contracts.js
           node --test miniprogram/tests/test-wrong-detail-transition-contracts.js

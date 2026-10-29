@@ -12,12 +12,12 @@ const page = fs.readFileSync(path.join(root,
 const modules = Object.fromEntries(MODULES.map(name =>
   [name, fs.readFileSync(path.join(root, DIRECTORY, name), 'utf8')]))
 
-test('wrong-book page and ten modules stay bounded', () => {
+test('wrong-book page and twelve modules stay bounded', () => {
   const result = scanWrongBook()
   assert.deepEqual(result.errors, [])
   assert.equal(result.pageLines, PAGE_CEILING)
-  assert.equal(result.modules, 10)
-  assert.equal(result.delegates, 75)
+  assert.equal(result.modules, 12)
+  assert.equal(result.delegates, 88)
 })
 
 test('all moved methods must preserve their parameter and delegation contracts', () => {
