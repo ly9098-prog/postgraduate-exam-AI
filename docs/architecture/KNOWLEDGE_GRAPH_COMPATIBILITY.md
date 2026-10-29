@@ -37,3 +37,10 @@
 - Admin 知识图谱浏览器的边编辑、force rebuild 和错误提示未做真实浏览器验证。
 - 推荐实验/策略管理、指标与质量报告已在 `LEARNING_DECISION_COMPATIBILITY.md` 单独登记，本文件不重复声明其完成。
 - 真实微信知识地图页面渲染、真机弱网刷新和外部 OCR/AI 产生的知识点数据质量仍待环境可用后验收。
+
+## 5. 知识地图投影拆分（2026-10-29）
+
+- `knowledge_map_service.py` 从 942 行收敛至 633 行；查询、父边选择、树排序和三个服务入口仍由原模块持有。科目汇总/状态阈值、子树元数据、节点响应分别迁入 `knowledge_map_summary.py`、`knowledge_map_hierarchy.py`、`knowledge_map_nodes.py`，三个模块均不访问数据库，文件 ≤300 行、函数 ≤50 行。
+- 保留既有区别：科目汇总把缺失掌握分数的可靠观测按 50 分计算，子树可靠观测则要求分数非空；子树仅对可练节点按题数和置信度加权，可练节点为空时才使用全部可靠观测。未将这两套口径合并。
+- 新增 `test_knowledge_map_projections.py` 11 项刻画与 `test_knowledge_map_boundaries.py` 10 项门禁，CI 显式纳入；四个尚未拆分的服务长函数保留各自冻结预算，不表示该模块已完成治理。
+- 隔离环境验证：相关图谱/自适应/掌握度/知识点回归共 149 passed；迁移前后 11,250 次确定性投影比较一致，12 个剩余函数完整 AST 不变，5 组真实 SQLite 服务响应及 SQL/参数执行顺序一致。差分脚本与日志位于 `/tmp/knowledge-map-batch/`，临时文件不作为长期回归入口。
