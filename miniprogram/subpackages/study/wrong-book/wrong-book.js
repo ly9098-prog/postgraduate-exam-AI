@@ -25,6 +25,7 @@ const { decorateItem, resolveReviewCount, resolveItemStatus, resolveItemContent,
 const { buildAnalysis, buildSummaryCards, buildActionPlan, rowsFromStats, countsFromList, topItems, toPercentItems, radarPolygonStyle, radarAxisText, focusInsight } = require('./utils/wrong-book-analysis-view')
 const { buildItemViewCapabilities, buildAnalysisViewCapabilities } = require('./utils/wrong-book-view-page-adapter')
 const requestFlow = require('./utils/wrong-book-request-flow')
+const selectionFlow = require('./utils/wrong-book-selection-flow')
 Page({
 data: {
 list: [],
@@ -370,92 +371,37 @@ filterCount: 0,
 })
 },
 switchView(e) {
-const view = e.currentTarget.dataset.view === 'all' ? 'all' : 'task'
-this.setData({ activeView: view })
-this._syncSelectionState()
+return selectionFlow.switchView(this, e)
 },
 openAllQuestions() {
-this.setData({ activeView: 'all' })
-this._syncSelectionState()
+return selectionFlow.openAllQuestions(this)
 },
 toggleBatchMode() {
-const next = !this.data.batchMode
-if (!next) this._clearBatchCapsuleIdleTimer()
-this.setData({
-batchMode: next,
-batchCapsuleVisible: true,
-batchMoreVisible: false,
-showFilter: next ? false : this.data.showFilter,
-selectedIds: [],
-selectedIdMap: {},
-selectedCount: 0,
-allVisibleSelected: false,
-selectionPulse: false,
-}, () => {
-if (next) this._showBatchCapsuleAndRefreshTimer()
-})
+return selectionFlow.toggleBatchMode(this)
 },
 onPageInteraction() {
-this._showBatchCapsuleAndRefreshTimer()
+return selectionFlow.onPageInteraction(this)
 },
 onPageScroll() {
-this._showBatchCapsuleAndRefreshTimer()
+return selectionFlow.onPageScroll(this)
 },
 _clearBatchCapsuleIdleTimer() {
-if (!this._batchCapsuleIdleTimer) return
-clearTimeout(this._batchCapsuleIdleTimer)
-this._batchCapsuleIdleTimer = null
+return selectionFlow._clearBatchCapsuleIdleTimer(this)
 },
 _scheduleBatchCapsuleAutoHide() {
-this._clearBatchCapsuleIdleTimer()
-if (!this._alive || !this.data.batchMode) return
-this._batchCapsuleIdleTimer = setTimeout(() => {
-this._batchCapsuleIdleTimer = null
-if (!this._alive || !this.data.batchMode || !this.data.batchCapsuleVisible) return
-this.setData({ batchCapsuleVisible: false })
-}, BATCH_CAPSULE_IDLE_MS)
+return selectionFlow._scheduleBatchCapsuleAutoHide(this, BATCH_CAPSULE_IDLE_MS)
 },
 _showBatchCapsuleAndRefreshTimer() {
-if (!this.data.batchMode) return
-if (this.data.batchCapsuleVisible) {
-this._scheduleBatchCapsuleAutoHide()
-return
-}
-this.setData({ batchCapsuleVisible: true }, () => {
-this._scheduleBatchCapsuleAutoHide()
-})
+return selectionFlow._showBatchCapsuleAndRefreshTimer(this)
 },
 onQuestionTap(e) {
-if (Date.now() < this._suppressQuestionTapUntil) return
-const id = e.currentTarget.dataset.id
-if (this.data.batchMode) {
-this._toggleQuestionSelection(id)
-return
-}
-this._navigateToDetail(id)
+return selectionFlow.onQuestionTap(this, e)
 },
 onSelectControlTap(e) {
-if (Date.now() < this._suppressQuestionTapUntil) return
-const id = e.currentTarget.dataset.id
-if (!this.data.batchMode) {
-this.setData({ batchMode: true, batchCapsuleVisible: true, showFilter: false }, () => {
-this._showBatchCapsuleAndRefreshTimer()
-})
-}
-this._toggleQuestionSelection(id)
+return selectionFlow.onSelectControlTap(this, e)
 },
 onQuestionLongPress(e) {
-const id = e.currentTarget.dataset.id
-this._suppressQuestionTapUntil = Date.now() + 700
-if (!this.data.batchMode) {
-this.setData({ batchMode: true, batchCapsuleVisible: true, showFilter: false }, () => {
-this._showBatchCapsuleAndRefreshTimer()
-})
-}
-try {
-wx.vibrateShort({ type: 'light' })
-} catch (_e) {}
-this._toggleQuestionSelection(id)
+return selectionFlow.onQuestionLongPress(this, e, { getPlatform: () => wx })
 },
 _navigateToDetail(id) {
 const ids = this.data.activeView === 'task'
@@ -471,78 +417,19 @@ console.warn('保存错题详情导航上下文失败', e)
 wx.navigateTo({ url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(id)}&idx=${Math.max(0, idx)}&source=wrong-book` })
 },
 _toggleQuestionSelection(id) {
-const key = String(id)
-const map = { ...(this.data.selectedIdMap || {}) }
-const wasSelected = !!map[key]
-if (wasSelected) delete map[key]
-else map[key] = true
-const ids = Object.keys(map)
-this.setData({
-selectedIdMap: map,
-selectedIds: ids,
-selectedCount: ids.length,
-})
-this._syncSelectionState()
-if (!wasSelected) this._pulseSelectionBadge()
+return selectionFlow._toggleQuestionSelection(this, id)
 },
 _pulseSelectionBadge() {
-if (this._selectionPulseTimer) clearTimeout(this._selectionPulseTimer)
-this.setData({ selectionPulse: false })
-setTimeout(() => {
-if (!this._alive) return
-this.setData({ selectionPulse: true })
-this._selectionPulseTimer = setTimeout(() => {
-if (this._alive) this.setData({ selectionPulse: false })
-}, 260)
-}, 16)
+return selectionFlow._pulseSelectionBadge(this)
 },
 _getVisibleIds() {
-if (this.data.activeView === 'all') {
-return (this.data.list || []).map(item => String(item.id))
-}
-const ids = []
-;(this.data.taskGroups || []).forEach(group => {
-;(group.items || []).forEach(item => ids.push(String(item.id)))
-})
-return Array.from(new Set(ids))
+return selectionFlow._getVisibleIds(this)
 },
 toggleSelectAll() {
-const visibleIds = this._getVisibleIds()
-if (!visibleIds.length) return
-const current = this.data.selectedIdMap || {}
-const allSelected = visibleIds.every(id => !!current[id])
-const next = { ...current }
-visibleIds.forEach(id => {
-if (allSelected) delete next[id]
-else next[id] = true
-})
-const ids = Object.keys(next)
-this.setData({
-selectedIdMap: next,
-selectedIds: ids,
-selectedCount: ids.length,
-allVisibleSelected: !allSelected,
-})
-if (!allSelected) this._pulseSelectionBadge()
+return selectionFlow.toggleSelectAll(this)
 },
 _syncSelectionState() {
-const validIds = new Set((this.data.list || []).map(item => String(item.id)))
-;(this.data.taskGroups || []).forEach(group => {
-;(group.items || []).forEach(item => validIds.add(String(item.id)))
-})
-const nextMap = {}
-Object.keys(this.data.selectedIdMap || {}).forEach(id => {
-if (validIds.has(String(id))) nextMap[String(id)] = true
-})
-const selectedIds = Object.keys(nextMap)
-const visibleIds = this._getVisibleIds()
-const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => !!nextMap[id])
-this.setData({
-selectedIdMap: nextMap,
-selectedIds,
-selectedCount: selectedIds.length,
-allVisibleSelected,
-})
+return selectionFlow._syncSelectionState(this)
 },
 _showAppOptions(opts) {
 const dialog = this.selectComponent('#appDialog')

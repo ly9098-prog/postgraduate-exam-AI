@@ -6,9 +6,10 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-book/wrong-book.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-book/utils'
-const PAGE_CEILING = 1141
+const PAGE_CEILING = 1028
 const MODULES = ['wrong-book-value-view.js', 'wrong-book-item-view.js',
-  'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js']
+  'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js',
+  'wrong-book-selection-flow.js']
 const REQUEST_DELEGATES = {
   "_beginFilterReload": "_beginFilterReload(patch) {\nreturn requestFlow._beginFilterReload(this, patch)\n}",
   "_loadPage": "async _loadPage() {\nreturn requestFlow._loadPage(this)\n}",
@@ -17,8 +18,27 @@ const REQUEST_DELEGATES = {
   "loadTaskFlow": "async loadTaskFlow() {\nreturn requestFlow.loadTaskFlow(this, { requestClient: api })\n}",
   "loadSubjects": "async loadSubjects() {\nreturn requestFlow.loadSubjects(this, { requestClient: api })\n}"
 }
+const SELECTION_DELEGATES = {
+  "switchView": "switchView(e) {\nreturn selectionFlow.switchView(this, e)\n}",
+  "openAllQuestions": "openAllQuestions() {\nreturn selectionFlow.openAllQuestions(this)\n}",
+  "toggleBatchMode": "toggleBatchMode() {\nreturn selectionFlow.toggleBatchMode(this)\n}",
+  "onPageInteraction": "onPageInteraction() {\nreturn selectionFlow.onPageInteraction(this)\n}",
+  "onPageScroll": "onPageScroll() {\nreturn selectionFlow.onPageScroll(this)\n}",
+  "_clearBatchCapsuleIdleTimer": "_clearBatchCapsuleIdleTimer() {\nreturn selectionFlow._clearBatchCapsuleIdleTimer(this)\n}",
+  "_scheduleBatchCapsuleAutoHide": "_scheduleBatchCapsuleAutoHide() {\nreturn selectionFlow._scheduleBatchCapsuleAutoHide(this, BATCH_CAPSULE_IDLE_MS)\n}",
+  "_showBatchCapsuleAndRefreshTimer": "_showBatchCapsuleAndRefreshTimer() {\nreturn selectionFlow._showBatchCapsuleAndRefreshTimer(this)\n}",
+  "onQuestionTap": "onQuestionTap(e) {\nreturn selectionFlow.onQuestionTap(this, e)\n}",
+  "onSelectControlTap": "onSelectControlTap(e) {\nreturn selectionFlow.onSelectControlTap(this, e)\n}",
+  "onQuestionLongPress": "onQuestionLongPress(e) {\nreturn selectionFlow.onQuestionLongPress(this, e, { getPlatform: () => wx })\n}",
+  "_toggleQuestionSelection": "_toggleQuestionSelection(id) {\nreturn selectionFlow._toggleQuestionSelection(this, id)\n}",
+  "_pulseSelectionBadge": "_pulseSelectionBadge() {\nreturn selectionFlow._pulseSelectionBadge(this)\n}",
+  "_getVisibleIds": "_getVisibleIds() {\nreturn selectionFlow._getVisibleIds(this)\n}",
+  "toggleSelectAll": "toggleSelectAll() {\nreturn selectionFlow.toggleSelectAll(this)\n}",
+  "_syncSelectionState": "_syncSelectionState() {\nreturn selectionFlow._syncSelectionState(this)\n}"
+}
 const DELEGATES = {
   ...REQUEST_DELEGATES,
+  ...SELECTION_DELEGATES,
   "_flattenSubjectOptions": "_flattenSubjectOptions(raw) {\nreturn flattenSubjectOptions(raw)\n}",
   "_decorateItem": "_decorateItem(item) {\nreturn decorateItem(item, buildItemViewCapabilities(this))\n}",
   "_resolveReviewCount": "_resolveReviewCount(item) {\nreturn resolveReviewCount(item, buildItemViewCapabilities(this))\n}",

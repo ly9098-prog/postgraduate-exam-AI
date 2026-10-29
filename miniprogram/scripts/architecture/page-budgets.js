@@ -9,7 +9,7 @@ const PAGES = {
   'pages/pomodoro/pomodoro.js': 1596,
   'subpackages/study/practice/practice.js': 1212,
   'subpackages/study/practice-result/index.js': 823,
-  'subpackages/study/wrong-book/wrong-book.js': 1141,
+  'subpackages/study/wrong-book/wrong-book.js': 1028,
   'subpackages/study/wrong-detail/wrong-detail.js': 502,
   'subpackages/study/review-today/review-today.js': 645,
   'subpackages/exam/exam-runner/index.js': 550,
