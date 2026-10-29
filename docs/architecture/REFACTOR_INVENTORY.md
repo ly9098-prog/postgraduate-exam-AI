@@ -2,7 +2,7 @@
 
 ## 当前接口执行优先级（2026-10-29）
 
-用户明确顺序：**小程序接口 > 后台管理系统接口 > OCR 接口**。先按小程序真实调用链处理Public API及必要后端职责，再处理Admin API/管理端接口编排，最后处理OCR专用导入、识别与恢复接口。下文历史批次及热点表不是调度顺序；保持完整业务链路一批与兼容验证，不按文件长度机械排序。当前OCR后续只有只读盘点、无新增实现；错题AI剩余长函数已核对为依赖装配，避免只为行数再拆。小程序公式库Public API、导出请求生命周期及错题Public API完整请求链路已完成，分别对应 `8a341d4a`、`0e5a0236`、`29bb26bb`。本轮收敛小程序刷题提交请求生命周期，保留原顺序重置、会话读取薄入口及已有发题/事务编排；兼容边界见 `PRACTICE_SUBMISSION_COMPATIBILITY.md` §24，验收证据见 `refactor-results/miniprogram-practice-request-2026-10-30.json`。记录与知识状态接口的客户端消费尚未确认，不因函数长度自动纳入本批；下一步继续核实小程序其余 Public API 实际消费和剩余职责，再转向 Admin 与 OCR。
+用户明确顺序：**小程序接口 > 后台管理系统接口 > OCR 接口**。先按小程序真实调用链处理Public API及必要后端职责，再处理Admin API/管理端接口编排，最后处理OCR专用导入、识别与恢复接口。下文历史批次及热点表不是调度顺序；保持完整业务链路一批与兼容验证，不按文件长度机械排序。当前OCR后续只有只读盘点、无新增实现；错题AI剩余长函数已核对为依赖装配，避免只为行数再拆。小程序公式库Public API、导出请求生命周期及错题Public API完整请求链路已完成，分别对应 `8a341d4a`、`0e5a0236`、`29bb26bb`。本轮收敛小程序刷题提交请求生命周期，保留原顺序重置、会话读取薄入口及已有发题/事务编排；兼容边界见 `PRACTICE_SUBMISSION_COMPATIBILITY.md` §24，验收证据见 `refactor-results/miniprogram-practice-request-2026-10-30.json`。学习计划活动日期读取与日快照/配置写入分别迁至 `study_plan_activity.py`、`study_plan_request.py`，保持同一完整请求链路批次及 300/50 预算，兼容边界见 `STUDY_PLAN_COMPATIBILITY.md` §9，验收证据见 `refactor-results/miniprogram-study-plan-2026-10-30.json`。记录与知识状态接口的客户端消费尚未确认，不因函数长度自动纳入本批；下一步继续核实小程序其余 Public API 实际消费和剩余职责，再转向 Admin 与 OCR。
 
 > 核对日期：2026-10-23（§1 计数为当日复跑；各批次叙事截止 2026-10-22）；对应 `prompts/tasks/current_task.md` 阶段 0/4。
 > 本清单登记真实入口、结构证据、回归入口和后续决策，不代表所有业务语义已审查完毕。

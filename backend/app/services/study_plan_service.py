@@ -10,32 +10,37 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from sqlalchemy import or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import (
+    or_,  # noqa: F401
+    select,
+)
+from sqlalchemy.exc import IntegrityError  # noqa: F401
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload  # noqa: F401
 
 from app.core.subject_scope import EXAM408_ALL_CODES, EXAM408_CORE_CODES
 from app.core.time_utils import (
     current_study_day,
-    shanghai_today,
-    study_day_for_utc,
-    study_day_utc_range,
+    shanghai_today,  # noqa: F401 -- live request dependency port
+    study_day_for_utc,  # noqa: F401 -- live request dependency port
+    study_day_utc_range,  # noqa: F401 -- live request dependency port
 )
-from app.models.admin import QuestionVersion, Subject
-from app.models.exam import ExamAttempt
+from app.models.admin import QuestionVersion, Subject  # noqa: F401
+from app.models.exam import ExamAttempt  # noqa: F401
 from app.models.pomodoro import (
-    PomodoroSession,
-    PomodoroSubjectAllocation,
+    PomodoroSession,  # noqa: F401
+    PomodoroSubjectAllocation,  # noqa: F401
     UserPomodoroSettings,
 )
-from app.models.practice_session import PracticeSession
-from app.models.review_scheduler import ReviewRecord
+from app.models.practice_session import PracticeSession  # noqa: F401
+from app.models.review_scheduler import ReviewRecord  # noqa: F401
 from app.models.study_plan import StudyPlan, StudyPlanDay
 from app.schemas.study_plan import StudyPlanUpsertRequest
+from app.services import study_plan_activity as _activity
+from app.services import study_plan_request as _request
 from app.services.pomodoro_attribution import (
-    split_duration_excluding_intervals,
-    split_session_duration_by_study_day,
+    split_duration_excluding_intervals,  # noqa: F401
+    split_session_duration_by_study_day,  # noqa: F401
 )
 from app.services.study_plan_completion import load_today_completion
 from app.services.study_plan_rules import (
@@ -56,10 +61,10 @@ from app.services.study_plan_views import (
     task_by_type,
 )
 from app.services.unique_conflict import (
-    is_unique_violation as _is_unique_violation,
+    is_unique_violation as _is_unique_violation,  # noqa: F401
 )
 from app.services.unique_conflict import (
-    start_explicit_transaction as _start_explicit_transaction,
+    start_explicit_transaction as _start_explicit_transaction,  # noqa: F401
 )
 
 # Underscore aliases keep the historical private names importable by tests and
@@ -76,6 +81,11 @@ _phase_for_days = phase_for_days
 _task_by_type = task_by_type
 _build_allocation_views = build_allocation_views
 _build_snapshot_payload = build_snapshot_payload
+
+
+def _study_plan_request_port(name):
+    """Resolve historical service names when the request uses them."""
+    return globals()[name]
 
 
 async def _load_day_start_minute(db: AsyncSession, user_id: int) -> int:
@@ -156,137 +166,16 @@ async def _load_activity_dates(
     core_408_ids: list[int],
     day_start_minute: int,
 ) -> set[date]:
-    if end_date < start_date:
-        return set()
-    start_utc = study_day_utc_range(start_date, day_start_minute)[0]
-    end_utc = study_day_utc_range(end_date, day_start_minute)[1]
-    active_dates: set[date] = set()
-
-    if core_408_ids:
-        reviewed_at_values = (
-            await db.scalars(
-                select(ReviewRecord.reviewed_at)
-                .join(
-                    QuestionVersion,
-                    QuestionVersion.id == ReviewRecord.question_version_id,
-                )
-                .where(
-                    ReviewRecord.user_id == user_id,
-                    QuestionVersion.subject_id.in_(core_408_ids),
-                    ReviewRecord.reviewed_at >= start_utc,
-                    ReviewRecord.reviewed_at < end_utc,
-                )
-            )
-        ).all()
-        active_dates.update(
-            study_day_for_utc(value, day_start_minute)
-            for value in reviewed_at_values
-            if value is not None
-        )
-
-    if all_408_ids:
-        practice_rows = (
-            await db.execute(
-                select(
-                    PracticeSession.started_at,
-                    PracticeSession.finished_at,
-                    PracticeSession.duration_sec,
-                ).where(
-                    PracticeSession.user_id == user_id,
-                    PracticeSession.subject_id.in_(all_408_ids),
-                    PracticeSession.status == "completed",
-                    PracticeSession.started_at < end_utc,
-                    PracticeSession.finished_at > start_utc,
-                )
-            )
-        ).all()
-        for row in practice_rows:
-            split = split_duration_excluding_intervals(
-                row.started_at,
-                row.finished_at,
-                max(0, int(row.duration_sec or 0)),
-                [],
-                day_start_minute,
-            )
-            active_dates.update(
-                day
-                for day, sec in split.items()
-                if start_date <= day <= end_date and sec > 0
-            )
-
-        pomodoro_rows = (
-            (
-                await db.execute(
-                    select(PomodoroSession)
-                    .options(
-                        selectinload(PomodoroSession.pause_intervals),
-                        selectinload(PomodoroSession.subject_allocations),
-                    )
-                    .where(
-                        PomodoroSession.user_id == user_id,
-                        or_(
-                            PomodoroSession.subject_id.in_(all_408_ids),
-                            PomodoroSession.id.in_(
-                                select(PomodoroSubjectAllocation.session_id).where(
-                                    PomodoroSubjectAllocation.subject_id.in_(all_408_ids)
-                                )
-                            ),
-                        ),
-                        PomodoroSession.status == "completed",
-                        PomodoroSession.end_time.is_not(None),
-                        PomodoroSession.start_time < end_utc,
-                        PomodoroSession.end_time > start_utc,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for session in pomodoro_rows:
-            split = split_session_duration_by_study_day(
-                session,
-                session.pause_intervals,
-                day_start_minute,
-            )
-            active_dates.update(
-                day
-                for day, sec in split.items()
-                if start_date <= day <= end_date
-                and _focus_duration_for_subject_scope(
-                    session, {day: sec}, set(all_408_ids)
-                ) > 0
-            )
-
-    exam_rows = (
-        await db.execute(
-            select(
-                ExamAttempt.started_at,
-                ExamAttempt.submitted_at,
-                ExamAttempt.duration_sec,
-            ).where(
-                ExamAttempt.user_id == user_id,
-                ExamAttempt.submitted_at.is_not(None),
-                ExamAttempt.status.in_(("submitted", "expired")),
-                ExamAttempt.started_at < end_utc,
-                ExamAttempt.submitted_at > start_utc,
-            )
-        )
-    ).all()
-    for row in exam_rows:
-        split = split_duration_excluding_intervals(
-            row.started_at,
-            row.submitted_at,
-            max(0, int(row.duration_sec or 0)),
-            [],
-            day_start_minute,
-        )
-        active_dates.update(
-            day
-            for day, sec in split.items()
-            if start_date <= day <= end_date and sec > 0
-        )
-
-    return active_dates
+    return await _activity._load_activity_dates(
+        db,
+        user_id,
+        start_date=start_date,
+        end_date=end_date,
+        all_408_ids=all_408_ids,
+        core_408_ids=core_408_ids,
+        day_start_minute=day_start_minute,
+        ports=_study_plan_request_port,
+    )
 
 
 async def _ensure_day_snapshot(
@@ -299,70 +188,16 @@ async def _ensure_day_snapshot(
     prior_active_days: int,
     day_start_minute: int,
 ) -> StudyPlanDay:
-    day_stmt = select(StudyPlanDay).where(
-        StudyPlanDay.plan_id == int(plan.id),
-        StudyPlanDay.plan_date == today,
-    )
-    bind = db.get_bind()
-    if bind is not None and bind.dialect.name == "postgresql":
-        day_stmt = day_stmt.with_for_update()
-    row = await db.scalar(day_stmt)
-    if row is not None and int(row.plan_revision) == int(plan.revision):
-        snapshot_day_start = int((row.basis_json or {}).get("day_start_minute") or 0)
-        if snapshot_day_start == int(day_start_minute):
-            return row
-
-    target_minutes, rest_day, allocation, basis = _build_snapshot_payload(
+    return await _request._ensure_day_snapshot(
+        db,
         plan=plan,
         today=today,
         hub=hub,
         exam_suggestion=exam_suggestion,
         prior_active_days=prior_active_days,
         day_start_minute=day_start_minute,
+        ports=_study_plan_request_port,
     )
-    if row is not None:
-        row.plan_revision = int(plan.revision)
-        row.target_minutes = target_minutes
-        row.is_rest_day = rest_day
-        row.allocation_json = allocation
-        row.basis_json = basis
-        await db.commit()
-        return row
-
-    row = StudyPlanDay(
-        plan_id=int(plan.id),
-        plan_revision=int(plan.revision),
-        plan_date=today,
-        target_minutes=target_minutes,
-        is_rest_day=rest_day,
-        allocation_json=allocation,
-        basis_json=basis,
-    )
-    try:
-        # SQLite may defer BEGIN until the first write. Start the caller's outer
-        # transaction before the savepoint so a losing claim cannot survive a
-        # later request rollback.
-        await _start_explicit_transaction(db)
-        async with db.begin_nested():
-            db.add(row)
-            await db.flush()
-        await db.commit()
-        return row
-    except IntegrityError as exc:
-        if not _is_unique_violation(exc):
-            raise
-        # Two devices may materialize the same day's snapshot concurrently. The
-        # unique(plan_id, plan_date) constraint is authoritative. Keep the outer
-        # transaction and loaded plan usable while reloading the winner.
-        winner = await db.scalar(
-            select(StudyPlanDay).where(
-                StudyPlanDay.plan_id == int(plan.id),
-                StudyPlanDay.plan_date == today,
-            )
-        )
-        if winner is None:
-            raise
-        return winner
 
 
 async def upsert_study_plan(
@@ -370,71 +205,13 @@ async def upsert_study_plan(
     user_id: int,
     data: StudyPlanUpsertRequest,
 ) -> StudyPlan:
-    today = shanghai_today()
-    if data.target_date < today:
-        raise ValueError("目标日期不能早于今天")
-
-    # Serialize updates for an existing plan so revision increments cannot be
-    # lost when two devices save settings at nearly the same time. PostgreSQL
-    # uses a row lock; SQLite still relies on the unique user constraint below.
-    plan = await _get_user_plan(db, user_id, lock=True)
-    created = False
-    if plan is None:
-        candidate = StudyPlan(
-            user_id=user_id,
-            target_date=data.target_date,
-            daily_minutes=int(data.daily_minutes),
-            weekly_days=int(data.weekly_days),
-            priority_mode=str(data.priority_mode),
-            revision=1,
-            is_active=True,
-        )
-        try:
-            # A savepoint keeps the outer request transaction usable if another
-            # device wins the first-create race on uq_study_plans_user.
-            await _start_explicit_transaction(db)
-            async with db.begin_nested():
-                db.add(candidate)
-                await db.flush()
-            plan = candidate
-            created = True
-        except IntegrityError as exc:
-            if not _is_unique_violation(exc):
-                raise
-            plan = await _get_user_plan(db, user_id, lock=True)
-            if plan is None:
-                raise
-
-    if not created:
-        changed = any(
-            (
-                plan.target_date != data.target_date,
-                int(plan.daily_minutes) != int(data.daily_minutes),
-                int(plan.weekly_days) != int(data.weekly_days),
-                str(plan.priority_mode) != str(data.priority_mode),
-                not bool(plan.is_active),
-            )
-        )
-        plan.target_date = data.target_date
-        plan.daily_minutes = int(data.daily_minutes)
-        plan.weekly_days = int(data.weekly_days)
-        plan.priority_mode = str(data.priority_mode)
-        plan.is_active = True
-        if changed:
-            plan.revision = int(plan.revision or 1) + 1
-
-    await db.commit()
-    await db.refresh(plan)
-    return plan
+    return await _request.upsert_study_plan(
+        db, user_id, data, ports=_study_plan_request_port
+    )
 
 
 async def deactivate_study_plan(db: AsyncSession, user_id: int) -> None:
-    plan = await _get_user_plan(db, user_id, lock=True)
-    if plan is None or not plan.is_active:
-        return
-    plan.is_active = False
-    plan.revision = int(plan.revision or 1) + 1
-    await db.commit()
+    await _request.deactivate_study_plan(db, user_id, ports=_study_plan_request_port)
 
 
 @dataclass(slots=True)

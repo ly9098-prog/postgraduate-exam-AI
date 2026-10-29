@@ -11,6 +11,8 @@ from tests.architecture.dependency_scan import scan_application
 
 APP = Path(__file__).resolve().parents[2] / "app"
 SERVICE_PATH = APP / "services/study_plan_service.py"
+REQUEST_PATH = APP / "services/study_plan_request.py"
+ACTIVITY_PATH = APP / "services/study_plan_activity.py"
 MODULES = {
     "app.services.study_plan_rules": (APP / "services/study_plan_rules.py", 260),
     "app.services.study_plan_completion": (
@@ -18,8 +20,10 @@ MODULES = {
         300,
     ),
     "app.services.study_plan_views": (APP / "services/study_plan_views.py", 230),
+    "app.services.study_plan_request": (REQUEST_PATH, 300),
+    "app.services.study_plan_activity": (ACTIVITY_PATH, 300),
 }
-SERVICE_BUDGET = 820
+SERVICE_BUDGET = 600
 OVERVIEW_ORDER = (
     "_load_day_start_minute",
     "_load_active_plan",
@@ -46,11 +50,27 @@ OVERVIEW_HELPERS = (
     "_overview_response",
 )
 LEGACY_CEILINGS = {
-    "_load_activity_dates": 150,
-    "_ensure_day_snapshot": 80,
-    "upsert_study_plan": 65,
+    "_load_day_start_minute": 10,
+    "_plan_select": 10,
+    "_get_user_plan": 10,
+    "_load_scope_ids": 10,
+    "_load_exam_suggestion": 32,
+    "_load_overview_inputs": 32,
+    "_materialize_overview_day": 32,
+    "_load_overview_facts": 34,
+    "_overview_totals": 48,
+    "_overview_response": 48,
+    "get_study_plan_overview": 38,
 }
-WRITE_CALLS = {"commit", "rollback", "flush", "begin_nested", "add", "add_all", "delete"}
+WRITE_CALLS = {
+    "commit",
+    "rollback",
+    "flush",
+    "begin_nested",
+    "add",
+    "add_all",
+    "delete",
+}
 DB_CALLS = {"execute", "scalar", "scalars", "commit", "rollback", "flush"}
 
 
@@ -110,6 +130,26 @@ def check_rules_are_pure(source: str) -> None:
             assert node.id != "db"
 
 
+def check_request_delegation(tree: ast.Module) -> None:
+    for name, target in (
+        ("_load_activity_dates", "_activity"),
+        ("_ensure_day_snapshot", "_request"),
+        ("upsert_study_plan", "_request"),
+        ("deactivate_study_plan", "_request"),
+    ):
+        node = function(tree, name)
+        assert len(node.body) == 1
+        statement = node.body[0]
+        assert isinstance(
+            statement, ast.Expr if name == "deactivate_study_plan" else ast.Return
+        )
+        assert isinstance(statement.value, ast.Await)
+        call = statement.value.value
+        assert isinstance(call, ast.Call)
+        assert ast.unparse(call.func) == f"{target}.{name}"
+        assert ast.unparse(call.keywords[-1]) == "ports=_study_plan_request_port"
+
+
 def test_extracted_modules_stay_within_budget():
     for path, budget in MODULES.values():
         check_module_budgets(path, budget)
@@ -122,20 +162,26 @@ def test_rules_and_views_have_no_database_dependencies():
         "app.services.pomodoro_attribution"
     }
     assert graph["app.services.study_plan_views"] == {"app.services.study_plan_rules"}
-    assert "app.services.study_plan_service" not in graph["app.services.study_plan_rules"]
-    assert "app.services.study_plan_service" not in graph["app.services.study_plan_views"]
+    assert (
+        "app.services.study_plan_service" not in graph["app.services.study_plan_rules"]
+    )
+    assert (
+        "app.services.study_plan_service" not in graph["app.services.study_plan_views"]
+    )
     assert graph["app.services.study_plan_completion"] >= {
         "app.services.study_plan_rules"
     }
-    assert "app.services.study_plan_service" not in graph[
-        "app.services.study_plan_completion"
-    ]
+    assert (
+        "app.services.study_plan_service"
+        not in graph["app.services.study_plan_completion"]
+    )
     for module in MODULES:
         assert module in graph["app.services.study_plan_service"]
     check_rules_are_pure((APP / "services/study_plan_rules.py").read_text())
     check_completion_is_read_only(
         (APP / "services/study_plan_completion.py").read_text()
     )
+    check_completion_is_read_only(ACTIVITY_PATH.read_text())
 
 
 def test_overview_entry_delegates_in_source_order():
@@ -180,9 +226,7 @@ def test_gate_rejects_budget_growth_database_leaks_and_missing_delegation():
         )
 
     with pytest.raises(AssertionError):
-        check_completion_is_read_only(
-            "async def leak(db):\n    await db.commit()\n"
-        )
+        check_completion_is_read_only("async def leak(db):\n    await db.commit()\n")
 
     with pytest.raises(AssertionError):
         check_rules_are_pure("def leak(db):\n    return db\n")
@@ -207,3 +251,45 @@ def test_gate_rejects_budget_growth_database_leaks_and_missing_delegation():
     ]
     with pytest.raises((AssertionError, ValueError)):
         check_overview_delegation(tree)
+
+
+def test_request_module_owns_activity_snapshot_and_settings_writes():
+    tree = ast.parse(REQUEST_PATH.read_text())
+    functions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    assert functions == [
+        "_claim_day_snapshot",
+        "_ensure_day_snapshot",
+        "upsert_study_plan",
+        "deactivate_study_plan",
+    ]
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert [arg.arg for arg in node.args.kwonlyargs][-1] == "ports"
+            assert node.args.kw_defaults[-1] is None
+            assert node.end_lineno - node.lineno + 1 <= 50
+    check_request_delegation(ast.parse(SERVICE_PATH.read_text()))
+
+
+@pytest.mark.parametrize("mutation", ["extra_statement", "target", "ports"])
+def test_request_gate_rejects_bypassed_delegation(mutation):
+    tree = ast.parse(SERVICE_PATH.read_text())
+    node = function(tree, "upsert_study_plan")
+    if mutation == "extra_statement":
+        node.body.insert(0, ast.parse("await db.commit()").body[0])
+    elif mutation == "target":
+        node.body[0].value.value.func.attr = "deactivate_study_plan"
+    else:
+        node.body[0].value.value.keywords[-1].value.id = "globals"
+    with pytest.raises(AssertionError):
+        check_request_delegation(tree)
+
+
+def test_new_module_gate_rejects_long_functions(tmp_path):
+    path = tmp_path / "oversized.py"
+    path.write_text("def oversized():\n" + "    value = 1\n" * 50)
+    with pytest.raises(AssertionError, match="oversized"):
+        check_module_budgets(path, 300)

@@ -1,6 +1,6 @@
 # 学习计划与报告兼容基线
 
-核对日期：2026-10-24，2026-10-29 增补第 8 节规则/完成度/视图拆分登记。对应重构计划阶段 0；范围仅限 `study_plan_service` 的阶段/分配/概览和 `study_report_service` 的报告生成，不表示学习域、OCR 导入或全栈阶段 0 完成。
+核对日期：2026-10-30；第 8 节保留 2026-10-29 的规则/完成度/视图拆分记录，第 9 节登记本轮活动日期与快照/配置写入职责。对应重构计划阶段 0；范围仅限学习计划与报告，不表示学习域、OCR 导入或全栈阶段 0 完成。
 
 ## 1. 学习计划阶段划分
 
@@ -54,7 +54,7 @@
 ## 7. 未完成和未验证
 
 - 纯函数测试不覆盖 `upsert_study_plan` 的数据库竞态、行锁和 savepoint 行为；需 PostgreSQL 并发验收。
-- `get_study_plan_overview` 的完成度口径、动态剩余、科目权重与委托顺序已由第 8 节的契约/门禁测试覆盖；`_load_activity_dates`、`_ensure_day_snapshot`、`upsert_study_plan` 的内部实现语义仍未登记。
+- `get_study_plan_overview` 的完成度口径、动态剩余、科目权重与委托顺序见第 8 节；活动日期、日快照和配置写入的本地契约与实现边界见第 9 节。真实多设备并发和 PostgreSQL 行锁仍未验收。
 - 真实多设备并发 upsert、日快照跨日切换和生产 PostgreSQL 行锁仍待环境可用后验收。
 - 拆出后的完成度查询只在真实 SQLite 上验证过，未在 PostgreSQL 重放；本文档不据此声称生产数据库行为一致。
 
@@ -73,3 +73,46 @@
 - 数据库级 overview 对照中唯一差异是 `created_at`/`updated_at` 时间戳与每次请求新签发的 `plan_token`，其余业务字段一致；改动不改变接口字段、事务边界或统计口径。
 - 预算门禁固化：三个新模块上限 260/300/230 行、全部函数 ≤50 行、service 820 行，`_load_activity_dates` 150、`_ensure_day_snapshot` 80、`upsert_study_plan` 65 的 legacy ceiling，以及别名身份与委托顺序。
 - 历史私有名 `_study_day_seconds`、`_task_by_type` 仍在 service 命名空间可导入（别名指向新模块定义）；`_load_activity_dates`、`_ensure_day_snapshot`、`upsert_study_plan` 本批未迁出。
+
+## 9. 请求 / 快照 / 配置写入拆分（2026-10-30）
+
+按小程序学习计划页实际调用的 `GET /api/v1/study-plan/overview`、
+`PUT /api/v1/study-plan`、`DELETE /api/v1/study-plan` 为一个完整请求链路批次。
+原路由和响应 schema 不变；service 保留全部历史函数签名、docstring 与调用点。
+`_load_activity_dates` 迁入 `services/study_plan_activity.py`，
+`_ensure_day_snapshot`、`upsert_study_plan`、`deactivate_study_plan`
+迁入 `services/study_plan_request.py`；service 四个同名函数只做单次委托。
+
+- `_load_activity_dates` 继续按 review、practice、pomodoro、exam 四类事实读取
+  活动日期；core/all 科目为空时保留原短路，不额外查询。跨统计日 practice、
+  pomodoro 分摊和 review 的自然日换算不变。
+- `_ensure_day_snapshot` 继续区分已匹配 revision/day_start 的现有快照、
+  revision/统计日设置变化后的更新、首次 savepoint claim 和并发唯一冲突。
+  SQLite 外层显式事务、非唯一错误传播、冲突后重载 winner 且不重复 commit
+  均保持。
+- `upsert_study_plan` 继续先校验目标日期，再按现有计划加锁更新或首次创建；
+  revision 只在实际字段变化或重新激活时递增。创建唯一冲突后重载锁定
+  winner，非唯一错误继续抛出。commit→refresh 顺序不变。
+- `deactivate_study_plan` 仍只在激活计划存在时置 inactive 并递增 revision；
+  缺失或已停用计划不写库、不提交。
+- 新模块仅使用标准库类型与 dataclass；ORM、模型、时间换算和业务依赖仍由
+  service 在使用时解析。活动读取按 review、practice、pomodoro、exam 分工，
+  `_ActivityWindow` 只保存本次读取的日期和 UTC 边界，活动日期集合由调用方持有；
+  快照 claim 独立承接 savepoint 与冲突恢复。两个模块均 ≤300 行、所有函数
+  ≤50 行，无新增预算例外。精确行数由本批结果清单从源码计算。
+- 行为等价：最终 14 项直接契约在原实现与当前入口分别通过；另有原有配置、
+  完成度和 SQLite 冲突测试。四个迁移函数在精确展开六个内部 helper、
+  还原窗口字段和原签名后，完整函数 AST 与原体一致；其余 20 个 service
+  函数 AST 不变，不宽泛忽略注解或业务语句差异。
+- 900 组差分使用独立状态，在调用期间注入替身，比较 SQL/参数、查询顺序、
+  savepoint/commit/refresh 事件、响应与部分写入状态。每组同时断言预期成功
+  或指定异常；覆盖 scope 短路、快照更新/唯一冲突、配置重激活/保存、停用、
+  非唯一错误、取消及提交失败。当前使用 `verify_differential.py` 的带分支计数
+  结果；旧 `differential.py` 与旧 `inverse.py` 的日志不作为本批验收依据。
+- 固定 CI 已加入 `test_study_plan_request_contract.py`；架构门禁覆盖新模块
+  300/50 预算、活动读取无写操作、历史入口单次委托及破坏委托/超长函数负例。
+  最终命令、检查状态、行数和源码哈希集中于
+  `refactor-results/miniprogram-study-plan-2026-10-30.json`。
+
+本批不改变小程序代码、数据库结构、API/OpenAPI 或真实多设备并发行为；
+真实微信、生产 PostgreSQL 行锁和跨设备并发验收仍保持未验证。
