@@ -128,3 +128,13 @@
 - 空列表继续先 toast、清原返回 timer、注册 220ms 回退；callback 先清句柄，再判断存活并调用当前 goBack。非空分支保留索引 clamp、await 当前 loadData 后直接 toast，不补第二次存活判断；load/同步副作用失败仍进入原 catch，已完成的列表/cache/存储写入不回滚。
 - 9 项契约原页重放与当前通过；十三组定向 159 项、全量 Node 2300 项、渲染 5 fixtures/31 项、八门禁及视觉/KaTeX通过。1000 组五入口返回值/状态/调用轨迹/字段顺序对照一致；独立实现只读审查无 P0–P3 可操作发现。
 - CI 增加移除契约；详情门禁为十七模块、93 条委托，页面 ceiling 为 579。证据 `/tmp/wrong-detail-remove-batch/`；渲染安全、专项老师反馈等剩余页面职责继续核查，前述既有行为和真实环境验收限制保持。
+
+
+## 15. 渲染安全与专项老师交互收敛（2026-10-29 后续批次）
+
+- 本批页面由 579→502 行。CODE/MIXED 渲染检查、trace 与安全模式重渲染三方法迁入 `utils/wrong-detail-render-safety.js`（63 行）；老师动作开合、六字段缓存键、结果弹层关闭和反馈四方法迁入 `utils/wrong-detail-teacher-interaction.js`（46 行）。新模块函数均 ≤50 行；缓存键纯函数不接收 page，页面签名/async/单次委托保持。七方法体仅改变接收者与依赖访问，其余 112 个 Page 属性原文不变。
+- CODE 检查仍受 rawText truthy 条件限制，按原实体正则和 html/richTextNodes 判定记录日志后再调用当前自愈方法；MIXED 保留空 blocks 和逐块日志，不触发自愈。trace 读取当前 config.debug，保留数组守卫、末 20 项与对象引用。安全模式仍先 warn/写标志，再读取当前题和 renderer，保持字段/引用、blank groups.length 口径、错误传播与写回顺序。
+- 老师 key 保留原六字段、数值/字符串转换、版本 ID 优先级及 falsey 口径。反馈保留 try 外参数验证和提交时 payload/result 捕获、helper/API receiver；await 后读取当前 active key/cache/platform，不新增存活或并发拦截。成功缓存对象身份/null 原型创建、反馈标志与 toast 顺序保持；失败仍先求值当前 toast 方法，再调用当前错误 formatter，formatter 抛错继续传播。
+- 原 `run408TeacherAction` 仍直接委托既有 controller；该入口和另七个导航/重载/滚动/noop 薄入口原文保留。全部 104 个 Page 方法和四个页外 helper 包装共 108 个精确模板登记；门禁补充未知 callable 属性与 spread 的负例，阻止未登记业务方法回流。十九个同页 utils 模块继续受 300/50 预算与依赖约束覆盖，页面保留 data、实例惰性装配、依赖注入和薄入口。
+- 11 项契约原页面重放与当前通过；十四组定向 171 项、全量 Node 2312 项、渲染 5 fixtures/31 项、八条架构门禁和视觉/KaTeX通过。1400 组七入口返回值/状态/调用轨迹/字段顺序对照一致；独立实现只读审查无 P0–P3 可操作发现。
+- `reliability.yml` 注册新增小程序契约；已核对 `ci.yml` 的四个 job 仅覆盖后端/Docker/迁移，本批未新增其固定清单中的后端架构测试。详情门禁为十九模块、108 模板，页面 ceiling 为 502。证据 `/tmp/wrong-detail-remaining-batch/`；下一项为错题本请求/批量/AI 编排，既有基线问题和真实微信/外部 AI/完整闭环验收限制保持。

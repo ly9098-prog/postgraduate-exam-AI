@@ -34,6 +34,8 @@ const lifecycle = require('./utils/wrong-detail-lifecycle')
 const masterFlow = require('./utils/wrong-detail-master-flow')
 const masterUndo = require('./utils/wrong-detail-master-undo')
 const removeFlow = require('./utils/wrong-detail-remove-flow')
+const renderSafety = require('./utils/wrong-detail-render-safety')
+const teacherInteraction = require('./utils/wrong-detail-teacher-interaction')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -228,20 +230,10 @@ onTapAiAnalysis() {
 return aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options) })
 },
 toggleTeacherActions() {
-if (this.data.teacherLoadingAction) return
-this.setData({ teacherActionsExpanded: !this.data.teacherActionsExpanded })
+return teacherInteraction.toggleTeacherActions(this)
 },
 _teacherCacheKeyForWrong(wq, diagnosis, action) {
-const item = wq || {}
-const d = diagnosis || {}
-return [
-Number(item.id || 0),
-Number(item.question_id || item.questionId || 0),
-Number(d.question_version_id || d.questionVersionId || item.question_version_id || item.questionVersionId || 0),
-Number(d.id || 0),
-String(action || ''),
-String(item.wrong_answer || ''),
-].join('|')
+return teacherInteraction._teacherCacheKeyForWrong(wq, diagnosis, action)
 },
   async run408TeacherAction(e) {
     return this._teacherActionController().run(e)
@@ -254,29 +246,10 @@ String(item.wrong_answer || ''),
     return this._teacherActionCtl
   },
 close408TeacherSheet() {
-this.setData({ teacherSheetVisible: false })
+return teacherInteraction.close408TeacherSheet(this)
 },
 async feedback408Teacher(e) {
-if (this.data.teacherFeedbackSent || !this.data.teacherResult) return
-const type = String(e.currentTarget.dataset.type || '')
-const wq = this.data.wq || {}
-const questionId = Number(wq.question_id || wq.questionId || 0)
-if (!type || !questionId) return
-try {
-await aiTeacher408.submitFeedback(api, {
-questionId,
-feedbackType: type,
-result: this.data.teacherResult,
-})
-if (this._activeTeacherCacheKey) {
-if (!this._teacherFeedbackCache) this._teacherFeedbackCache = Object.create(null)
-this._teacherFeedbackCache[this._activeTeacherCacheKey] = type
-}
-this.setData({ teacherFeedbackSent: type })
-wx.showToast({ title: '反馈已记录', icon: 'success' })
-} catch (error) {
-wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
-}
+return teacherInteraction.feedback408Teacher(this, e, { requestClient: api, teacher: aiTeacher408, get platform() { return wx } })
 },
 _isCurrentAiRequest(requestId, wqId) {
 return aiRecovery._isCurrentAiRequest(this, requestId, wqId)
@@ -415,63 +388,13 @@ async removeFromWrongBook() {
 return removeFlow.removeFromWrongBook(this, { requestClient: api, get platform() { return wx } })
 },
 _checkRenderInvariant(renderModel) {
-if (!renderModel) return
-if (renderModel.mode === 'CODE' && renderModel.rawText) {
-var hasHtmlLeak = /&(?:nbsp|amp|lt|gt|#\d+);/.test(renderModel.rawText)
-if (hasHtmlLeak) {
-console.error('[CODE_HTML_LEAK] wrong-detail CODE rawText contains HTML entities')
-}
-var hasRenderViolation = renderModel.html.length > 0 || renderModel.richTextNodes.length > 0
-if (hasRenderViolation) {
-console.error('[CODE_RENDER_VIOLATION] wrong-detail CODE mode leaked into html/richTextNodes')
-}
-if ((hasHtmlLeak || hasRenderViolation) && !this.data.safeModeActive) {
-this._enterSafeMode()
-}
-}
-if (renderModel.mode === 'MIXED') {
-if (!renderModel.blocks || renderModel.blocks.length === 0) {
-console.error('[MIXED_RENDER_VIOLATION] wrong-detail MIXED mode but blocks is empty')
-return
-}
-for (var mi = 0; mi < renderModel.blocks.length; mi++) {
-var mBlock = renderModel.blocks[mi]
-if (mBlock.type === 'CODE' && mBlock.rawText) {
-if (/&(?:nbsp|amp|lt|gt|#\d+);/.test(mBlock.rawText)) {
-console.error('[CODE_HTML_LEAK] wrong-detail MIXED CODE block #' + mi + ' contains HTML entities')
-}
-}
-}
-}
+return renderSafety._checkRenderInvariant(this, renderModel)
 },
 _recordRenderTrace(trace) {
-if (!trace || !config.debug) return
-if (!Array.isArray(this.data.renderTraces)) return
-var traces = this.data.renderTraces.concat([trace]).slice(-20)
-this.setData({ renderTraces: traces })
+return renderSafety._recordRenderTrace(this, trace, { config })
 },
 _enterSafeMode() {
-console.warn('[SELF_HEAL] wrong-detail CODE render violation — entering SAFE_MODE')
-this.setData({ safeModeActive: true })
-if (this.data.wq) {
-var raw = _processWqData(this.data.wq, true)
-if (raw._renderModel) {
-var currentQuestion = Object.assign({}, this.data.wq, {
-_optionList: raw._optionList,
-_optionKeys: raw._optionKeys,
-_opts: raw._opts,
-_blankOptionGroups: raw._blankOptionGroups,
-_hasBlankOptionGroups: raw._blankOptionGroups.length > 0,
-_renderModel: raw._renderModel,
-})
-this._errorTypeLabelText = raw.errorTypeLabelText
-this.setData({
-currentQuestion,
-subjectLabelText: raw.subjectLabelText,
-})
-console.warn('[SELF_HEAL] wrong-detail re-rendered in SAFE_MODE, mode=' + raw._renderModel.mode)
-}
-}
+return renderSafety._enterSafeMode(this, { _processWqData: (wq, safeMode) => _processWqData(wq, safeMode) })
 },
 onAiSwipeStart(e) {
 return contentTransition.onAiSwipeStart(this, e)

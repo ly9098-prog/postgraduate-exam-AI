@@ -21,14 +21,14 @@ function fixture(options = {}) {
     cache.set(filename, module)
     const required = request => {
       if (request === '../../../utils/api') return api
-      if (request === '../../../config') return {}
+      if (request === '../../../config') return options.config || {}
       if (request === '../utils/ai-analysis-normalizer') return {
         normalizeAiAnalysisPayload: value => value,
         hasAiAnalysisContent: value => !!(value && value.content),
       }
       if (request === '../utils/ai-math-render') return { buildAiRichText: value => value }
       if (request === '../utils/error-diagnosis') return options.diagnosis || { TAXONOMY: [] }
-      if (request === '../utils/ai-teacher-408') return {}
+      if (request === '../utils/ai-teacher-408') return options.teacher || {}
       if (request === './teacher-presentation') return { presentTeacherResult: value => value }
       if (request === './utils/teacher-action-controller') return {
         createTeacherActionController: () => ({}),

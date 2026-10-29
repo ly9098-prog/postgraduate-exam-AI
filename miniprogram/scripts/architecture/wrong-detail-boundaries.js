@@ -6,7 +6,7 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 579
+const PAGE_CEILING = 502
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
@@ -14,7 +14,8 @@ const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
   'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js',
   'wrong-detail-diagnosis-flow.js', 'wrong-detail-load-flow.js',
-  'wrong-detail-lifecycle.js', 'wrong-detail-master-flow.js', 'wrong-detail-master-undo.js', 'wrong-detail-remove-flow.js']
+  'wrong-detail-lifecycle.js', 'wrong-detail-master-flow.js', 'wrong-detail-master-undo.js', 'wrong-detail-remove-flow.js',
+  'wrong-detail-render-safety.js', 'wrong-detail-teacher-interaction.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -127,7 +128,28 @@ const REMOVE_DELEGATES = {
   "closeRemoveConfirm": "closeRemoveConfirm() {\nreturn removeFlow.closeRemoveConfirm(this)\n}",
   "removeFromWrongBook": "async removeFromWrongBook() {\nreturn removeFlow.removeFromWrongBook(this, { requestClient: api, get platform() { return wx } })\n}"
 }
+const REMAINING_DELEGATES = {
+  "toggleTeacherActions": "toggleTeacherActions() {\nreturn teacherInteraction.toggleTeacherActions(this)\n}",
+  "_teacherCacheKeyForWrong": "_teacherCacheKeyForWrong(wq, diagnosis, action) {\nreturn teacherInteraction._teacherCacheKeyForWrong(wq, diagnosis, action)\n}",
+  "close408TeacherSheet": "close408TeacherSheet() {\nreturn teacherInteraction.close408TeacherSheet(this)\n}",
+  "feedback408Teacher": "async feedback408Teacher(e) {\nreturn teacherInteraction.feedback408Teacher(this, e, { requestClient: api, teacher: aiTeacher408, get platform() { return wx } })\n}",
+  "_checkRenderInvariant": "_checkRenderInvariant(renderModel) {\nreturn renderSafety._checkRenderInvariant(this, renderModel)\n}",
+  "_recordRenderTrace": "_recordRenderTrace(trace) {\nreturn renderSafety._recordRenderTrace(this, trace, { config })\n}",
+  "_enterSafeMode": "_enterSafeMode() {\nreturn renderSafety._enterSafeMode(this, { _processWqData: (wq, safeMode) => _processWqData(wq, safeMode) })\n}"
+}
+const PAGE_GLUE = {
+  "run408TeacherAction": "async run408TeacherAction(e) {\n    return this._teacherActionController().run(e)\n  }",
+  "goPrevWrong": "goPrevWrong(e) {\nthis._navigateTo(e.detail.index, 150, 'right')\n}",
+  "goNextWrong": "goNextWrong(e) {\nthis._navigateTo(e.detail.index, 150, 'left')\n}",
+  "goWrongQuestion": "goWrongQuestion(e) {\nthis._navigateTo(e.detail.index, 150)\n}",
+  "reloadData": "reloadData() {\nif (this.data.questionIds.length > 0) {\nthis.loadData(this.data.questionIds[this.data.currentIdx])\n} else if (this._currentWqId) {\nthis.loadData(this._currentWqId)\n} else {\nthis.goBack()\n}\n}",
+  "goBack": "goBack() {\nconst pages = getCurrentPages()\nif (pages.length > 1) wx.navigateBack()\nelse wx.redirectTo({ url: '/subpackages/study/wrong-book/wrong-book' })\n}",
+  "scrollToAiCard": "scrollToAiCard() {\nwx.pageScrollTo({ selector: '#ai-card', duration: 220 })\n}",
+  "noop": "noop() {}"
+}
 const DELEGATES = {
+  ...REMAINING_DELEGATES,
+  ...PAGE_GLUE,
   ...REMOVE_DELEGATES,
   ...MASTER_DELEGATES,
   ...LIFECYCLE_DELEGATES,
@@ -175,14 +197,28 @@ function compact(source) { return source.replace(/\s+/g, '') }
 function pageViolations(source) {
   const parsed = ts.createSourceFile(PAGE, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   const declarations = new Map()
+  const unregistered = []
   function walk(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(parsed) === 'Page' &&
+      node.arguments[0] && ts.isObjectLiteralExpression(node.arguments[0])) {
+      for (const property of node.arguments[0].properties) {
+        const callable = ts.isMethodDeclaration(property) || ts.isGetAccessor(property) ||
+          ts.isSetAccessor(property) || (ts.isPropertyAssignment(property) &&
+            (ts.isFunctionExpression(property.initializer) || ts.isArrowFunction(property.initializer)))
+        if (ts.isSpreadAssignment(property)) unregistered.push('unregistered page spread')
+        if (callable && property.name &&
+          !Object.hasOwn(DELEGATES, property.name.getText(parsed))) {
+          unregistered.push('unregistered page method: ' + property.name.getText(parsed))
+        }
+      }
+    }
     if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && node.name) {
       declarations.set(node.name.getText(parsed), node.getText(parsed))
     }
     ts.forEachChild(node, walk)
   }
   walk(parsed)
-  const errors = []
+  const errors = [...unregistered]
   for (const [name, expected] of Object.entries(DELEGATES)) {
     if (compact(declarations.get(name) || '') !== compact(expected)) errors.push('delegate drift: ' + name)
   }

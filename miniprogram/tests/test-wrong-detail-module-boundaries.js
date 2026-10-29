@@ -12,20 +12,32 @@ const page = fs.readFileSync(path.join(root, PAGE), 'utf8')
 const modules = Object.fromEntries(MODULES.map(name =>
   [name, fs.readFileSync(path.join(root, DIRECTORY, name), 'utf8')]))
 
-test('wrong-detail page and seventeen modules preserve budgets and teacher ports', () => {
+test('wrong-detail page and nineteen modules preserve budgets and teacher ports', () => {
   const result = scanWrongDetail()
   assert.deepEqual(result.errors, [])
   assert.equal(result.pageLines, PAGE_CEILING)
-  assert.equal(result.modules, 17)
+  assert.equal(result.modules, 19)
   assert.equal(result.teacherPorts, 22)
 })
 
 test('page wrappers and lazy teacher assembly cannot drift', () => {
   for (const [name, expected] of Object.entries(DELEGATES)) {
     assert.ok(page.includes(expected), name)
-    assert.ok(pageViolations(page.replace(expected, expected.replace('return ', 'throw ')))
+    assert.ok(pageViolations(page.replace(expected, expected.replace('{', '{ throw new Error("drift");')))
       .includes(`delegate drift: ${name}`), name)
   }
+})
+
+test('page cannot add unregistered callable properties or spreads', () => {
+  for (const source of [
+    'unexpectedMethod() {}', 'unexpectedMethod: function () {}',
+    'unexpectedMethod: () => {}', 'get unexpectedMethod() { return 1 }',
+  ]) {
+    assert.ok(pageViolations(page.replace('noop() {},', source + ',\nnoop() {},'))
+      .includes('unregistered page method: unexpectedMethod'), source)
+  }
+  assert.ok(pageViolations(page.replace('noop() {},', '...extra,\nnoop() {},'))
+    .includes('unregistered page spread'))
 })
 
 test('moved AI helpers must stay imported and cannot return inline', () => {
