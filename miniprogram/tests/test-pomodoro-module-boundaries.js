@@ -3,23 +3,28 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { test } = require('node:test')
 const {
-  moduleViolations, pageViolations, scanPomodoro, MODULES, PAGE_MAX_LINES,
+  moduleViolations, adapterViolations, pageViolations, scanPomodoro,
+  MODULES, PAGE_ADAPTER_MODULES, ADAPTER_BUDGETS, PAGE_CONTROLLERS,
+  RESTORE_CONTROLLERS, PAGE_MAX_LINES,
 } = require('../scripts/architecture/pomodoro-boundaries')
 
 const root = path.resolve(__dirname, '../..')
 const pageSource = fs.readFileSync(path.join(root, 'miniprogram/pages/pomodoro/pomodoro.js'), 'utf8')
 const check = (source, allowed = []) => moduleViolations('fixture.js', source, allowed).errors
 
-test('scans every governed production module and real page', () => {
+test('scans every governed production module, page adapter and the real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 75)
-  assert.equal(result.edges, 18)
+  assert.equal(result.modules, 76)
+  assert.equal(result.adapters, 7)
+  assert.equal(result.adapterLines, 1066)
+  assert.equal(result.edges, 48)
+  assert.equal(result.pageLines, PAGE_MAX_LINES)
 })
 
 test('running state migrator shell lazily reuses one controller', () => {
   const unassigned = pageSource.replace(
-    'this._runningStateMigrationController = createPomodoroRunningStateMigrator({',
+    'this._runningStateMigrationController = createPomodoroRunningStateMigrator(',
     'void createPomodoroRunningStateMigrator({'
   )
   assert.ok(pageViolations(unassigned)
@@ -35,7 +40,7 @@ test('subject loading shell lazily reuses one controller', () => {
     .includes('subject loading must delegate to its controller'))
 
   const unassigned = pageSource.replace(
-    'this._subjectLoadController = createSubjectLoadController({',
+    'this._subjectLoadController = createSubjectLoadController(',
     'void createSubjectLoadController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -149,7 +154,7 @@ test('free-session restore wrapper must create and delegate via AST calls', () =
     .includes('free-session restore must assign a controller and delegate to it'))
 
   const uncreated = pageSource.replace(
-    'this._freeSessionRestoreController = createFreeSessionRestoreController({',
+    'this._freeSessionRestoreController = createFreeSessionRestoreController(',
     'this._freeSessionRestoreController = ({'
   )
   assert.ok(pageViolations(uncreated)
@@ -165,14 +170,14 @@ test('countdown restore dispatcher must create and delegate via AST calls', () =
     .includes('countdown restore must assign a controller and delegate to it'))
 
   const uncreated = pageSource.replace(
-    'this._countdownSessionRestoreController = createCountdownSessionRestoreController({',
+    'this._countdownSessionRestoreController = createCountdownSessionRestoreController(',
     'this._countdownSessionRestoreController = ({'
   )
   assert.ok(pageViolations(uncreated)
     .includes('countdown restore must assign a controller and delegate to it'))
 
   const unassigned = pageSource.replace(
-    'this._countdownSessionRestoreController = createCountdownSessionRestoreController({',
+    'this._countdownSessionRestoreController = createCountdownSessionRestoreController(',
     'void createCountdownSessionRestoreController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -228,7 +233,7 @@ test('countdown restore dispatcher must create and delegate via AST calls', () =
 
 test('start ceremony shell must lazily reuse its controller for both modes', () => {
   const unassigned = pageSource.replace(
-    'this._startSessionController = createStartSessionController({',
+    'this._startSessionController = createStartSessionController(',
     'void createStartSessionController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -251,7 +256,7 @@ test('start ceremony shell must lazily reuse its controller for both modes', () 
 
 test('unknown-start recovery shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._unknownStartController = createUnknownStartController({',
+    'this._unknownStartController = createUnknownStartController(',
     'void createUnknownStartController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -274,7 +279,7 @@ test('unknown-start recovery shell must lazily reuse one controller', () => {
 
 test('pending sync shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._pendingSyncController = createPendingSyncController({',
+    'this._pendingSyncController = createPendingSyncController(',
     'void createPendingSyncController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -311,7 +316,7 @@ test('pending sync shell must lazily reuse one controller', () => {
 
 test('terminal conflict shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._terminalConflictController = createTerminalConflictController({',
+    'this._terminalConflictController = createTerminalConflictController(',
     'void createTerminalConflictController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -362,7 +367,7 @@ test('terminal conflict shell must lazily reuse one controller', () => {
 
 test('today stats shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._statsController = createStatsController({',
+    'this._statsController = createStatsController(',
     'void createStatsController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -378,7 +383,7 @@ test('today stats shell must lazily reuse one controller', () => {
 
 test('theme shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._themeController = createThemeController({',
+    'this._themeController = createThemeController(',
     'void createThemeController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -413,18 +418,25 @@ test('theme shell must lazily reuse one controller', () => {
     .includes('theme toggle must delegate to its controller'))
 })
 
-test('end-confirm snapshot module must stay wired into the page', () => {
-  const detached = pageSource.replace(
-    "require('./utils/end-confirm-snapshot')",
-    "require('./utils/legacy-confirm-snapshot')"
+test('every governed module must stay reachable from the page', () => {
+  const detachedPageModule = pageSource.replace(
+    "require('./utils/session-storage')",
+    "require('./utils/legacy-session-storage')"
   )
-  assert.ok(pageViolations(detached)
-    .includes('page no longer imports governed module: end-confirm-snapshot.js'))
+  assert.ok(pageViolations(detachedPageModule)
+    .includes('page no longer imports governed module: session-storage.js'))
+
+  const detachedAdapter = pageSource.replace(
+    "require('./utils/pomodoro-recovery-page-adapter')",
+    "require('./utils/legacy-recovery-page-adapter')"
+  )
+  assert.ok(pageViolations(detachedAdapter)
+    .includes('page no longer imports governed module: sync-reconciliation.js'))
 })
 
 test('active light-sync shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._activeSyncController = createActiveSyncController({',
+    'this._activeSyncController = createActiveSyncController(',
     'void createActiveSyncController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -447,7 +459,7 @@ test('active light-sync shell must lazily reuse one controller', () => {
 
 test('pause toggle shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._pauseToggleController = createPauseToggleController({',
+    'this._pauseToggleController = createPauseToggleController(',
     'void createPauseToggleController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -477,7 +489,7 @@ test('pause toggle shell must lazily reuse one controller', () => {
 
 test('resume error shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._resumeErrorController = createResumeErrorController({',
+    'this._resumeErrorController = createResumeErrorController(',
     'void createResumeErrorController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -493,7 +505,7 @@ test('resume error shell must lazily reuse one controller', () => {
 
 test('celebration dismiss shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._celebrationDismissController = createCelebrationDismissController({',
+    'this._celebrationDismissController = createCelebrationDismissController(',
     'void createCelebrationDismissController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -509,7 +521,7 @@ test('celebration dismiss shell must lazily reuse one controller', () => {
 
 test('break restore shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._breakRestoreController = createBreakRestoreController({',
+    'this._breakRestoreController = createBreakRestoreController(',
     'void createBreakRestoreController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -524,7 +536,7 @@ test('break restore shell must lazily reuse one controller', () => {
 
 test('completion celebration shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._completionCelebrationController = createCompletionCelebrationController({',
+    'this._completionCelebrationController = createCompletionCelebrationController(',
     'void createCompletionCelebrationController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -540,7 +552,7 @@ test('completion celebration shell must lazily reuse one controller', () => {
 
 test('work complete shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._workCompleteController = createWorkCompleteController({',
+    'this._workCompleteController = createWorkCompleteController(',
     'void createWorkCompleteController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -556,7 +568,7 @@ test('work complete shell must lazily reuse one controller', () => {
 
 test('free timer begin shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._freeTimerBeginController = createFreeTimerBeginController({',
+    'this._freeTimerBeginController = createFreeTimerBeginController(',
     'void createFreeTimerBeginController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -572,7 +584,7 @@ test('free timer begin shell must lazily reuse one controller', () => {
 
 test('cancel end confirm shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._cancelEndConfirmController = createCancelEndConfirmController({',
+    'this._cancelEndConfirmController = createCancelEndConfirmController(',
     'void createCancelEndConfirmController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -588,7 +600,7 @@ test('cancel end confirm shell must lazily reuse one controller', () => {
 
 test('show end free confirm shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._showEndFreeConfirmController = createShowEndFreeConfirmController({',
+    'this._showEndFreeConfirmController = createShowEndFreeConfirmController(',
     'void createShowEndFreeConfirmController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -604,7 +616,7 @@ test('show end free confirm shell must lazily reuse one controller', () => {
 
 test('pause countdown end confirm shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._pauseCountdownEndConfirmController = createPauseCountdownEndConfirmController({',
+    'this._pauseCountdownEndConfirmController = createPauseCountdownEndConfirmController(',
     'void createPauseCountdownEndConfirmController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -620,7 +632,7 @@ test('pause countdown end confirm shell must lazily reuse one controller', () =>
 
 test('confirm interrupt countdown shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._confirmInterruptCountdownController = createConfirmInterruptCountdownController({',
+    'this._confirmInterruptCountdownController = createConfirmInterruptCountdownController(',
     'void createConfirmInterruptCountdownController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -636,7 +648,7 @@ test('confirm interrupt countdown shell must lazily reuse one controller', () =>
 
 test('reset to idle shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._resetToIdleController = createResetToIdleController({',
+    'this._resetToIdleController = createResetToIdleController(',
     'void createResetToIdleController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -652,7 +664,7 @@ test('reset to idle shell must lazily reuse one controller', () => {
 
 test('update free elapsed shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._updateFreeElapsedController = createUpdateFreeElapsedController({',
+    'this._updateFreeElapsedController = createUpdateFreeElapsedController(',
     'void createUpdateFreeElapsedController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -668,7 +680,7 @@ test('update free elapsed shell must lazily reuse one controller', () => {
 
 test('begin countdown shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._beginCountdownController = createBeginCountdownController({',
+    'this._beginCountdownController = createBeginCountdownController(',
     'void createBeginCountdownController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -684,7 +696,7 @@ test('begin countdown shell must lazily reuse one controller', () => {
 
 test('pause session shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._pauseSessionController = createPauseSessionController({',
+    'this._pauseSessionController = createPauseSessionController(',
     'void createPauseSessionController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -700,7 +712,7 @@ test('pause session shell must lazily reuse one controller', () => {
 
 test('resume session shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._resumeSessionController = createResumeSessionController({',
+    'this._resumeSessionController = createResumeSessionController(',
     'void createResumeSessionController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -716,7 +728,7 @@ test('resume session shell must lazily reuse one controller', () => {
 
 test('show countdown interrupt confirm shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._showCountdownInterruptConfirmController = createShowCountdownInterruptConfirmController({',
+    'this._showCountdownInterruptConfirmController = createShowCountdownInterruptConfirmController(',
     'void createShowCountdownInterruptConfirmController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -732,7 +744,7 @@ test('show countdown interrupt confirm shell must lazily reuse one controller', 
 
 test('end session shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._endSessionController = createEndSessionController({',
+    'this._endSessionController = createEndSessionController(',
     'void createEndSessionController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -749,7 +761,7 @@ test('end session shell must lazily reuse one controller', () => {
 
 test('pause free timer shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._pauseFreeTimerController = createPauseFreeTimerController({',
+    'this._pauseFreeTimerController = createPauseFreeTimerController(',
     'void createPauseFreeTimerController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -765,7 +777,7 @@ test('pause free timer shell must lazily reuse one controller', () => {
 
 test('resume free timer shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._resumeFreeTimerController = createResumeFreeTimerController({',
+    'this._resumeFreeTimerController = createResumeFreeTimerController(',
     'void createResumeFreeTimerController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -782,7 +794,7 @@ test('resume free timer shell must lazily reuse one controller', () => {
 
 test('interrupt session shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._interruptSessionController = createInterruptSessionController({',
+    'this._interruptSessionController = createInterruptSessionController(',
     'void createInterruptSessionController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -799,7 +811,7 @@ test('interrupt session shell must lazily reuse one controller', () => {
 
 test('confirm end free timer shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._confirmEndFreeTimerController = createConfirmEndFreeTimerController({',
+    'this._confirmEndFreeTimerController = createConfirmEndFreeTimerController(',
     'void createConfirmEndFreeTimerController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -815,7 +827,7 @@ test('confirm end free timer shell must lazily reuse one controller', () => {
 
 test('free timer limit shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._freeTimerLimitController = createFreeTimerLimitController({',
+    'this._freeTimerLimitController = createFreeTimerLimitController(',
     'void createFreeTimerLimitController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -831,7 +843,7 @@ test('free timer limit shell must lazily reuse one controller', () => {
 
 test('start break shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._startBreakController = createStartBreakController({',
+    'this._startBreakController = createStartBreakController(',
     'void createStartBreakController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -847,7 +859,7 @@ test('start break shell must lazily reuse one controller', () => {
 
 test('start timer shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._startTimerController = createStartTimerController({',
+    'this._startTimerController = createStartTimerController(',
     'void createStartTimerController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -863,7 +875,7 @@ test('start timer shell must lazily reuse one controller', () => {
 
 test('draw ring shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._drawRingController = createDrawRingController({',
+    'this._drawRingController = createDrawRingController(',
     'void createDrawRingController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -879,7 +891,7 @@ test('draw ring shell must lazily reuse one controller', () => {
 
 test('canvas init shells must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._canvasInitController = createCanvasInitController({',
+    'this._canvasInitController = createCanvasInitController(',
     'void createCanvasInitController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -902,7 +914,7 @@ test('canvas init shells must lazily reuse one controller', () => {
 
 test('free elapsed shells must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._freeElapsedController = createFreeElapsedController({',
+    'this._freeElapsedController = createFreeElapsedController(',
     'void createFreeElapsedController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -935,12 +947,12 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 75)
+    assert.equal(result.modules, 76)
   }
 })
 test('confirm end timer shell must lazily reuse one controller', () => {
   const unassigned = pageSource.replace(
-    'this._confirmEndTimerController = createConfirmEndTimerController({',
+    'this._confirmEndTimerController = createConfirmEndTimerController(',
     'void createConfirmEndTimerController({'
   )
   assert.ok(pageViolations(unassigned)
@@ -956,13 +968,78 @@ test('confirm end timer shell must lazily reuse one controller', () => {
 
 test('pause sync, session action drop, and active session reconcile shells lazily reuse one controller', () => {
   const cases = [
-    ['pause sync', 'this._pauseSync = createPomodoroPauseSyncController({'],
-    ['session action drop', 'this._sessionActionDrop = createPomodoroSessionActionDropper({'],
-    ['active session reconcile', 'this._activeSessionReconcile = createPomodoroActiveSessionReconciler({'],
+    ['pause sync', 'this._pauseSync = createPomodoroPauseSyncController('],
+    ['session action drop', 'this._sessionActionDrop = createPomodoroSessionActionDropper('],
+    ['active session reconcile', 'this._activeSessionReconcile = createPomodoroActiveSessionReconciler('],
   ]
   for (const [label, assignment] of cases) {
     const unassigned = pageSource.replace(assignment, `void ${assignment.slice('this._'.length)}`)
     assert.ok(pageViolations(unassigned)
       .includes(`${label} must lazily assign its controller`))
   }
+})
+
+test('page adapters keep a frozen dependency surface and inject api from the page', () => {
+  const adapter = name => fs.readFileSync(
+    path.join(root, 'miniprogram/pages/pomodoro/utils', name), 'utf8'
+  )
+  for (const [name, allowed] of Object.entries(PAGE_ADAPTER_MODULES)) {
+    assert.ok(allowed.every(dependency => !dependency.endsWith('/utils/api')),
+      `${name} must receive api through deps`)
+  }
+  const confirm = adapter('pomodoro-confirm-page-adapter.js')
+  assert.ok(adapterViolations('pomodoro-confirm-page-adapter.js',
+    `${confirm}\nconst api = require('../../utils/api')\n`)
+    .errors.includes('api must be injected through deps, not required by an adapter'))
+  assert.ok(adapterViolations('pomodoro-confirm-page-adapter.js',
+    `${confirm}\nconst { formatElapsedSec } = require('./cancel-end-confirm-controller')\n`)
+    .errors.includes('forbidden adapter dependency: ./cancel-end-confirm-controller'))
+  assert.ok(adapterViolations('pomodoro-confirm-page-adapter.js', `${confirm}\nimport('./timer-math')\n`)
+    .errors.some(error => error.includes('dynamic imports are forbidden')))
+  assert.ok(adapterViolations('pomodoro-confirm-page-adapter.js',
+    `const { x } = require(target)\n${confirm}`)
+    .errors.includes('require must be a direct literal call'))
+  assert.deepEqual(adapterViolations('unknown-page-adapter.js', 'module.exports = {}').errors,
+    ['ungoverned pomodoro page adapter: unknown-page-adapter.js'])
+
+  const restore = adapter('pomodoro-restore-page-adapter.js')
+  const budget = ADAPTER_BUDGETS['pomodoro-restore-page-adapter.js']
+  assert.ok(adapterViolations('pomodoro-restore-page-adapter.js',
+    `${restore}\n${'// growth\n'.repeat(budget)}`)
+    .errors.includes(`adapter exceeds budget ${budget}`))
+  assert.ok(adapterViolations('pomodoro-restore-page-adapter.js',
+    `${restore}\nfunction tooLong(page) {\n${'  void page\n'.repeat(60)}}\n`)
+    .errors.some(error => error.includes('function exceeds 50 lines')))
+})
+
+test('page keeps every controller port delegated through an adapter', () => {
+  assert.equal(PAGE_CONTROLLERS.length, 50)
+  assert.equal(RESTORE_CONTROLLERS.length, 2)
+
+  const inline = pageSource.replace(
+    'buildStatsPageCapabilities(this, { api })',
+    'createStatsController({ load: () => {} })'
+  )
+  const inlineViolations = pageViolations(inline)
+  assert.ok(inlineViolations.includes('page must not build controller ports inline'))
+  assert.ok(inlineViolations
+    .includes('_getStatsController must lazily delegate to buildStatsPageCapabilities'))
+
+  const detached = pageSource.replace(
+    'buildPauseTogglePageCapabilities(this, {})',
+    'buildPauseTogglePageCapabilities(this, { api })'
+  )
+  assert.ok(pageViolations(detached)
+    .includes('_getPauseToggleController must lazily delegate to buildPauseTogglePageCapabilities'))
+
+  const restoreDetached = pageSource.replace(
+    'buildCountdownSessionRestorePageCapabilities(this, { api })',
+    'buildLegacyCountdownRestorePageCapabilities(this, { api })'
+  )
+  assert.ok(pageViolations(restoreDetached)
+    .includes('_restoreSession must build its ports through buildCountdownSessionRestorePageCapabilities'))
+
+  const padded = `${pageSource}\n${'// growth\n'.repeat(PAGE_MAX_LINES)}`
+  assert.ok(pageViolations(padded)
+    .includes(`page exceeds legacy ceiling ${PAGE_MAX_LINES}`))
 })

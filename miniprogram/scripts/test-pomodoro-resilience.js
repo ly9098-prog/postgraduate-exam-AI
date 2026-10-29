@@ -15,6 +15,15 @@ function t(name, fn) {
 }
 
 const src = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+const pageSupportSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pomodoro-page-support.js'), 'utf8')
+const recoveryAdapterSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pomodoro-recovery-page-adapter.js'), 'utf8')
+
+function builderText(source, name) {
+  const start = source.indexOf(`function ${name}(`)
+  if (start < 0) throw new Error(`missing builder ${name}`)
+  const end = source.indexOf('\n}', start)
+  return source.slice(start, end < 0 ? source.length : end + 2)
+}
 const countdownRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/countdown-session-restore-controller.js'), 'utf8')
 const freeRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'), 'utf8')
 const startSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/start-session-controller.js'), 'utf8')
@@ -99,7 +108,7 @@ const togglePause = method('toggle', pauseToggleSrc, true)
 const acquirePauseToggleLock = method('acquire', pauseToggleSrc, true)
 const releasePauseToggleLock = method('release', pauseToggleSrc, true)
 t('pause/resume has a short independent tap cooldown', () => {
-  assert.ok(src.includes('POMODORO_PAUSE_TOGGLE_COOLDOWN_MS = 500'))
+  assert.ok(pageSupportSrc.includes('POMODORO_PAUSE_TOGGLE_COOLDOWN_MS = 500'))
   assert.ok(togglePause.includes('!acquire(options, state)'))
   assert.ok(acquirePauseToggleLock.includes('if (state.locked) return false'))
   assert.ok(acquirePauseToggleLock.includes('setTimeout'))
@@ -128,13 +137,13 @@ t('network listener is registered once with a removable callback', () => {
   assert.ok(registerNetworkStatusListener.includes('this._getSyncRetryController().register()'))
 })
 t('network controller receives live page visibility and pending work', () => {
-  const factory = method('_getSyncRetryController')
-  assert.ok(factory.includes('isVisible: () => this._pageVisible'))
-  assert.ok(factory.includes('hasPending: () => !!this._getPendingPomodoroSync()'))
-  assert.ok(factory.includes('retry: () => this._retryPendingPomodoroSync()'))
+  const factory = builderText(recoveryAdapterSrc, 'buildSyncRetryPageCapabilities')
+  assert.ok(factory.includes('isVisible: () => page._pageVisible'))
+  assert.ok(factory.includes('hasPending: () => !!page._getPendingPomodoroSync()'))
+  assert.ok(factory.includes('retry: () => page._retryPendingPomodoroSync()'))
 })
 t('network reconnect reuses existing terminal-conflict reconciliation', () => {
-  const factory = method('_getSyncRetryController')
+  const factory = builderText(recoveryAdapterSrc, 'buildSyncRetryPageCapabilities')
   assert.ok(factory.includes('_consumeAnyPomodoroTerminalConflict'))
   assert.ok(factory.includes('_handlePomodoroTerminalConflict'))
 })

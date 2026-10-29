@@ -52,12 +52,60 @@ const wx = {
   setBackgroundTextStyle() {},
 }
 
+
+const POMODORO_UTILS = path.resolve(__dirname, '../pages/pomodoro/utils')
+const realmModules = new Map()
+const realmStubs = Object.create(null)
+let realmContext = null
+
+function resolveLocalFile(request, fromDir) {
+  const base = path.resolve(fromDir, request)
+  for (const candidate of [base, `${base}.js`, path.join(base, 'index.js')]) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate
+  }
+  return null
+}
+
+// Evaluate a module inside the sandbox realm so wx/setTimeout resolve to the sandbox stubs.
+function loadRealmModule(filename) {
+  const cached = realmModules.get(filename)
+  if (cached) return cached.exports
+  const module = { exports: {} }
+  realmModules.set(filename, module)
+  const dir = path.dirname(filename)
+  const localRequire = (request) => {
+    if (Object.prototype.hasOwnProperty.call(realmStubs, request)) return realmStubs[request]
+    const resolved = resolveLocalFile(request, dir)
+    if (!resolved) throw new Error('unexpected require: ' + request)
+    return loadRealmModule(resolved)
+  }
+  const wrapper = vm.runInContext(
+    `(function (module, exports, require) {\n${fs.readFileSync(filename, 'utf8')}\n})`,
+    realmContext,
+    { filename },
+  )
+  wrapper(module, module.exports, localRequire)
+  return module.exports
+}
+
+const PAGE_ADAPTERS = {
+  './utils/pomodoro-page-support': 'pomodoro-page-support.js',
+  './utils/pomodoro-session-page-adapter': 'pomodoro-session-page-adapter.js',
+  './utils/pomodoro-session-control-page-adapter': 'pomodoro-session-control-page-adapter.js',
+  './utils/pomodoro-confirm-page-adapter': 'pomodoro-confirm-page-adapter.js',
+  './utils/pomodoro-celebration-page-adapter': 'pomodoro-celebration-page-adapter.js',
+  './utils/pomodoro-recovery-page-adapter': 'pomodoro-recovery-page-adapter.js',
+  './utils/pomodoro-view-page-adapter': 'pomodoro-view-page-adapter.js',
+  './utils/pomodoro-restore-page-adapter': 'pomodoro-restore-page-adapter.js',
+}
+
 const sandbox = {
   console,
   wx,
   Page(definition) { capturedPage = definition },
   require(request) {
     if (request === './utils/timer-math') return require('../pages/pomodoro/utils/timer-math')
+    if (PAGE_ADAPTERS[request]) return loadRealmModule(path.join(POMODORO_UTILS, PAGE_ADAPTERS[request]))
     if (request === './utils/session-storage') return require('../pages/pomodoro/utils/session-storage')
     if (request === './utils/pending-sync-queue') return require('../pages/pomodoro/utils/pending-sync-queue')
     if (request === './utils/sync-retry-controller') return require('../pages/pomodoro/utils/sync-retry-controller')
@@ -292,7 +340,13 @@ const sandbox = {
   },
   clearTimeout(timer) { clearedTimers.push(timer) },
 }
-vm.runInNewContext(source, sandbox, { filename: 'pomodoro.js' })
+realmContext = vm.createContext(sandbox)
+Object.assign(realmStubs, {
+  '../../../utils/api': api,
+  '../../../utils/storage': sandbox.require('../../utils/storage'),
+  '../../../utils/china-time': sandbox.require('../../utils/china-time'),
+})
+vm.runInContext(source, realmContext, { filename: 'pomodoro.js' })
 assert.ok(capturedPage, 'Page definition was not captured')
 
 function createPage() {

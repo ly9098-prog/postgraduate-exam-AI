@@ -395,6 +395,7 @@ jobs:
             miniprogram/tests/test-question-adapter-boundaries.js
           node --test \
             miniprogram/tests/test-pomodoro-module-boundaries.js \
+            miniprogram/tests/test-pomodoro-page-adapter-contracts.js \
             miniprogram/tests/test-pomodoro-hide-storage.js \
             miniprogram/tests/test-pomodoro-show-recovery.js \
             miniprogram/tests/test-pomodoro-confirm-recovery.js \

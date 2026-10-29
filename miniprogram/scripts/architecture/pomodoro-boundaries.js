@@ -13,6 +13,7 @@ const MODULES = {
   'completion-recovery.js': [],
   'confirm-recovery.js': ['./timer-math'],
   'hide-storage.js': [],
+  'pomodoro-page-support.js': ['../../../utils/china-time'],
   'show-recovery.js': [],
   'sync-retry-controller.js': [],
   'subject-options.js': [],
@@ -82,9 +83,88 @@ const MODULES = {
   'session-action-dropper.js': [],
   'running-state-migrator.js': [],
 }
+// Page-adapter modules hold the controller capability objects. They may reach for
+// platform globals (wx/setTimeout/console) and closed-over page state, but their
+// dependency surface is frozen here and the api client must be injected by the page.
+const PAGE_ADAPTER_MODULES = {
+  'pomodoro-session-page-adapter.js': ['../../../utils/storage', './pomodoro-page-support', './subject-cache', './subject-options', './subject-scope', './timer-math'],
+  'pomodoro-session-control-page-adapter.js': ['../../../utils/storage', './pomodoro-page-support', './timer-math'],
+  'pomodoro-confirm-page-adapter.js': ['./timer-math'],
+  'pomodoro-celebration-page-adapter.js': ['../../../utils/storage', './celebration-dismiss', './completion-celebration', './pomodoro-page-support'],
+  'pomodoro-recovery-page-adapter.js': ['../../../utils/storage', './pomodoro-page-support', './sync-reconciliation', './terminal-conflict-handler', './terminal-conflict-state', './timer-math', './unknown-start-helpers'],
+  'pomodoro-view-page-adapter.js': ['../../../utils/china-time', './canvas-layout', './pomodoro-page-support', './pomodoro-theme'],
+  'pomodoro-restore-page-adapter.js': ['../../../utils/storage', './pomodoro-page-support', './session-restore', './timer-math'],
+}
+const ADAPTER_BUDGETS = {
+  'pomodoro-session-page-adapter.js': 162,
+  'pomodoro-session-control-page-adapter.js': 225,
+  'pomodoro-confirm-page-adapter.js': 183,
+  'pomodoro-celebration-page-adapter.js': 89,
+  'pomodoro-recovery-page-adapter.js': 222,
+  'pomodoro-view-page-adapter.js': 138,
+  'pomodoro-restore-page-adapter.js': 47,
+}
+// [page accessor, page cache field, controller factory, capability builder, injected deps]
+const PAGE_CONTROLLERS = [
+  ["_getSyncRetryController", "_syncRetryController", "createSyncRetryController", "buildSyncRetryPageCapabilities", "{}"],
+  ["_getPauseToggleController", "_pauseToggleController", "createPauseToggleController", "buildPauseTogglePageCapabilities", "{}"],
+  ["_getSubjectLoadController", "_subjectLoadController", "createSubjectLoadController", "buildSubjectLoadPageCapabilities", "{ api }"],
+  ["_runningStateMigrator", "_runningStateMigrationController", "createPomodoroRunningStateMigrator", "buildPomodoroRunningStateMigratorPageCapabilities", "{}"],
+  ["_getUnknownStartController", "_unknownStartController", "createUnknownStartController", "buildUnknownStartPageCapabilities", "{ api }"],
+  ["_getStartSessionController", "_startSessionController", "createStartSessionController", "buildStartSessionPageCapabilities", "{}"],
+  ["_getFreeTimerBeginController", "_freeTimerBeginController", "createFreeTimerBeginController", "buildFreeTimerBeginPageCapabilities", "{ api }"],
+  ["_getCancelEndConfirmController", "_cancelEndConfirmController", "createCancelEndConfirmController", "buildCancelEndConfirmPageCapabilities", "{ api }"],
+  ["_getShowEndFreeConfirmController", "_showEndFreeConfirmController", "createShowEndFreeConfirmController", "buildShowEndFreeConfirmPageCapabilities", "{ api }"],
+  ["_getPauseCountdownEndConfirmController", "_pauseCountdownEndConfirmController", "createPauseCountdownEndConfirmController", "buildPauseCountdownEndConfirmPageCapabilities", "{ api }"],
+  ["_getConfirmInterruptCountdownController", "_confirmInterruptCountdownController", "createConfirmInterruptCountdownController", "buildConfirmInterruptCountdownPageCapabilities", "{ api }"],
+  ["_getResetToIdleController", "_resetToIdleController", "createResetToIdleController", "buildResetToIdlePageCapabilities", "{}"],
+  ["_getUpdateFreeElapsedController", "_updateFreeElapsedController", "createUpdateFreeElapsedController", "buildUpdateFreeElapsedPageCapabilities", "{}"],
+  ["_getBeginCountdownController", "_beginCountdownController", "createBeginCountdownController", "buildBeginCountdownPageCapabilities", "{ api }"],
+  ["_getPauseSessionController", "_pauseSessionController", "createPauseSessionController", "buildPauseSessionPageCapabilities", "{ api }"],
+  ["_getResumeSessionController", "_resumeSessionController", "createResumeSessionController", "buildResumeSessionPageCapabilities", "{ api }"],
+  ["_getShowCountdownInterruptConfirmController", "_showCountdownInterruptConfirmController", "createShowCountdownInterruptConfirmController", "buildShowCountdownInterruptConfirmPageCapabilities", "{}"],
+  ["_getConfirmEndTimerController", "_confirmEndTimerController", "createConfirmEndTimerController", "buildConfirmEndTimerPageCapabilities", "{}"],
+  ["_getEndSessionController", "_endSessionController", "createEndSessionController", "buildEndSessionPageCapabilities", "{ api }"],
+  ["_getPauseFreeTimerController", "_pauseFreeTimerController", "createPauseFreeTimerController", "buildPauseFreeTimerPageCapabilities", "{ api }"],
+  ["_getResumeFreeTimerController", "_resumeFreeTimerController", "createResumeFreeTimerController", "buildResumeFreeTimerPageCapabilities", "{ api }"],
+  ["_getInterruptSessionController", "_interruptSessionController", "createInterruptSessionController", "buildInterruptSessionPageCapabilities", "{}"],
+  ["_getConfirmEndFreeTimerController", "_confirmEndFreeTimerController", "createConfirmEndFreeTimerController", "buildConfirmEndFreeTimerPageCapabilities", "{}"],
+  ["_getFreeTimerLimitController", "_freeTimerLimitController", "createFreeTimerLimitController", "buildFreeTimerLimitPageCapabilities", "{ api }"],
+  ["_getFreeTimerController", "_freeTimerController", "createFreeTimerController", "buildFreeTimerPageCapabilities", "{}"],
+  ["_getResumeErrorController", "_resumeErrorController", "createResumeErrorController", "buildResumeErrorPageCapabilities", "{ api }"],
+  ["_pauseSyncController", "_pauseSync", "createPomodoroPauseSyncController", "buildPomodoroPauseSyncPageCapabilities", "{}"],
+  ["_getPendingSyncStore", "_pendingSyncStore", "createPendingSyncQueue", "buildPendingSyncQueuePageCapabilities", "{ api }"],
+  ["_getSessionActionDropController", "_sessionActionDrop", "createPomodoroSessionActionDropper", "buildPomodoroSessionActionDropperPageCapabilities", "{}"],
+  ["_getTerminalConflictController", "_terminalConflictController", "createTerminalConflictController", "buildTerminalConflictPageCapabilities", "{ api }"],
+  ["_getPendingSyncController", "_pendingSyncController", "createPendingSyncController", "buildPendingSyncPageCapabilities", "{ api }"],
+  ["_getFreeElapsedController", "_freeElapsedController", "createFreeElapsedController", "buildFreeElapsedPageCapabilities", "{ api }"],
+  ["_getCompletionCelebrationController", "_completionCelebrationController", "createCompletionCelebrationController", "buildCompletionCelebrationPageCapabilities", "{}"],
+  ["_getWorkCompleteController", "_workCompleteController", "createWorkCompleteController", "buildWorkCompletePageCapabilities", "{ api }"],
+  ["_getCelebrationDismissController", "_celebrationDismissController", "createCelebrationDismissController", "buildCelebrationDismissPageCapabilities", "{}"],
+  ["_getStartBreakController", "_startBreakController", "createStartBreakController", "buildStartBreakPageCapabilities", "{ api }"],
+  ["_getStartTimerController", "_startTimerController", "createStartTimerController", "buildStartTimerPageCapabilities", "{ api }"],
+  ["_getSkipBreakController", "_skipBreakController", "createSkipBreakController", "buildSkipBreakPageCapabilities", "{}"],
+  ["_getActiveSyncController", "_activeSyncController", "createActiveSyncController", "buildActiveSyncPageCapabilities", "{ api }"],
+  ["_activeSessionReconciler", "_activeSessionReconcile", "createPomodoroActiveSessionReconciler", "buildPomodoroActiveSessionReconcilerPageCapabilities", "{ api }"],
+  ["_getBreakRestoreController", "_breakRestoreController", "createBreakRestoreController", "buildBreakRestorePageCapabilities", "{ api }"],
+  ["_getCanvasInitController", "_canvasInitController", "createCanvasInitController", "buildCanvasInitPageCapabilities", "{}"],
+  ["_getDrawRingController", "_drawRingController", "createDrawRingController", "buildDrawRingPageCapabilities", "{ api }"],
+  ["_getStatsController", "_statsController", "createStatsController", "buildStatsPageCapabilities", "{ api }"],
+  ["_getThemeController", "_themeController", "createThemeController", "buildThemePageCapabilities", "{}"],
+  ["_getFontSizeController", "_fontSizeController", "createFontSizeController", "buildFontSizePageCapabilities", "{}"],
+  ["_getSubjectViewController", "_subjectViewController", "createSubjectViewController", "buildSubjectViewPageCapabilities", "{}"],
+  ["_getPresetViewController", "_presetViewController", "createPresetViewController", "buildPresetViewPageCapabilities", "{}"],
+  ["_getCelebrationTypeController", "_celebrationTypeController", "createCelebrationTypeController", "buildCelebrationTypePageCapabilities", "{}"],
+  ["_getDateExamController", "_dateExamController", "createDateExamController", "buildDateExamPageCapabilities", "{ api }"],
+]
+// Restore shells keep their dispatch/delegation statements but must still build ports via adapters.
+const RESTORE_CONTROLLERS = [
+  ["_restoreSession", "_countdownSessionRestoreController", "createCountdownSessionRestoreController", "buildCountdownSessionRestorePageCapabilities", "{ api }"],
+  ["_restoreFreeSession", "_freeSessionRestoreController", "createFreeSessionRestoreController", "buildFreeSessionRestorePageCapabilities", "{ api }"],
+]
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2185
+const PAGE_MAX_LINES = 1596
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -253,9 +333,87 @@ function moduleViolations(filename, source, allowed = []) {
   return { errors, imports: [...imports] }
 }
 
-function pageViolations(source) {
+function adapterImportMap(read = filename => fs.readFileSync(filename, 'utf8')) {
+  const map = new Map()
+  for (const name of Object.keys(PAGE_ADAPTER_MODULES)) {
+    const source = read(path.join(ROOT, UTILS, name))
+    map.set(name, [...source.matchAll(/require\(\s*'([^']+)'\s*\)/g)].map(match => match[1]))
+  }
+  return map
+}
+
+function governedImportMap(read = filename => fs.readFileSync(filename, 'utf8')) {
+  const map = new Map()
+  for (const name of Object.keys(MODULES)) {
+    const source = read(path.join(ROOT, UTILS, name))
+    map.set(name, [...source.matchAll(/require\(\s*'([^']+)'\s*\)/g)].map(match => match[1]))
+  }
+  return map
+}
+
+function adapterViolations(relativeModule, source) {
+  const { file, errors } = parseSource(relativeModule, source)
+  const budget = ADAPTER_BUDGETS[relativeModule]
+  if (budget === undefined) return { errors: [`ungoverned pomodoro page adapter: ${relativeModule}`], imports: [] }
+  if (ts.isExternalModule(file)) errors.push('ES module syntax is forbidden in page adapters')
+  if (lineCount(source) > budget) errors.push(`adapter exceeds budget ${budget}`)
+  const allowed = PAGE_ADAPTER_MODULES[relativeModule]
+  const imports = new Set()
+  function walk(node) {
+    functionSize(node, file, errors)
+    if (ts.isIdentifier(node) && node.text === 'require') {
+      const call = node.parent
+      if (!ts.isCallExpression(call) || call.expression !== node || call.arguments.length !== 1 ||
+          !ts.isStringLiteral(call.arguments[0])) {
+        errors.push('require must be a direct literal call')
+      } else {
+        const dependency = call.arguments[0].text
+        imports.add(dependency)
+        if (dependency === '../../../utils/api' || dependency === '../../utils/api') {
+          errors.push('api must be injected through deps, not required by an adapter')
+        }
+        if (!allowed.includes(dependency)) errors.push(`forbidden adapter dependency: ${dependency}`)
+      }
+    }
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ||
+        (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)) {
+      errors.push('ES imports and dynamic imports are forbidden in page adapters')
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(file)
+  return { errors, imports: [...imports] }
+}
+
+function pageViolations(source, adapterImports = adapterImportMap(), moduleImports = governedImportMap()) {
   const { file, errors } = parseSource(PAGE, source)
   if (lineCount(source) > PAGE_MAX_LINES) errors.push(`page exceeds legacy ceiling ${PAGE_MAX_LINES}`)
+  for (const [method, field, factory, builder, deps] of PAGE_CONTROLLERS) {
+    const expected = [
+      `  ${method}() {`,
+      `    if (!this.${field}) {`,
+      `      this.${field} = ${factory}(`,
+      `        ${builder}(this, ${deps})`,
+      '      )',
+      '    }',
+      `    return this.${field}`,
+      '  },',
+    ].join('\n')
+    if (source.split(expected).length - 1 !== 1) {
+      errors.push(`${method} must lazily delegate to ${builder}`)
+    }
+  }
+  for (const [method, field, factory, builder, deps] of RESTORE_CONTROLLERS) {
+    const expected = [
+      `      this.${field} = ${factory}(`,
+      `        ${builder}(this, ${deps})`,
+      '      )',
+    ].join('\n')
+    if (source.split(expected).length - 1 !== 1) {
+      errors.push(`${method} must build its ports through ${builder}`)
+    }
+  }
+  if (/create\w+\(\{/.test(source)) errors.push('page must not build controller ports inline')
   const methods = new Set()
   const imports = new Set()
   const pages = []
@@ -921,9 +1079,24 @@ function pageViolations(source) {
     }
   }
   for (const name of PAGE_METHODS) if (!methods.has(name)) errors.push(`missing governed method: ${name}`)
+  const reachable = new Set()
+  const pending = []
+  for (const target of imports) {
+    const fromPage = /^\.\/utils\/(.+)$/.exec(target)
+    if (fromPage) pending.push(`${fromPage[1]}.js`)
+  }
+  while (pending.length) {
+    const name = pending.shift()
+    if (reachable.has(name)) continue
+    reachable.add(name)
+    const targets = adapterImports.get(name) || moduleImports.get(name) || []
+    for (const dependency of targets) {
+      const local = /^\.\/(.+)$/.exec(dependency)
+      if (local) pending.push(`${local[1]}.js`)
+    }
+  }
   for (const name of Object.keys(MODULES)) {
-    const target = `./utils/${name.slice(0, -3)}`
-    if (!imports.has(target)) errors.push(`page no longer imports governed module: ${name}`)
+    if (!reachable.has(name)) errors.push(`page no longer imports governed module: ${name}`)
   }
   return errors
 }
@@ -1111,15 +1284,36 @@ function returnsControllerCall(method, accessorName, delegateName, expectedArgum
 
 function scanPomodoro(root = ROOT, read = filename => fs.readFileSync(filename, 'utf8')) {
   const violations = []
+  const moduleImports = new Map()
   let edges = 0
   for (const [name, allowed] of Object.entries(MODULES)) {
     const relative = `${UTILS}/${name}`
     const result = moduleViolations(relative, read(path.join(root, relative)), allowed)
     violations.push(...result.errors.map(error => `${relative}: ${error}`))
     edges += result.imports.length
+    moduleImports.set(name, result.imports)
   }
-  violations.push(...pageViolations(read(path.join(root, PAGE))).map(error => `${PAGE}: ${error}`))
-  return { violations, modules: Object.keys(MODULES).length, edges }
+  const adapterImports = new Map()
+  let adapterLines = 0
+  for (const name of Object.keys(PAGE_ADAPTER_MODULES)) {
+    const relative = `${UTILS}/${name}`
+    const source = read(path.join(root, relative))
+    const result = adapterViolations(name, source)
+    violations.push(...result.errors.map(error => `${relative}: ${error}`))
+    adapterImports.set(name, result.imports)
+    edges += result.imports.length
+    adapterLines += lineCount(source)
+  }
+  const pageSource = read(path.join(root, PAGE))
+  violations.push(...pageViolations(pageSource, adapterImports, moduleImports).map(error => `${PAGE}: ${error}`))
+  return {
+    violations,
+    modules: Object.keys(MODULES).length,
+    adapters: Object.keys(PAGE_ADAPTER_MODULES).length,
+    edges,
+    adapterLines,
+    pageLines: lineCount(pageSource),
+  }
 }
 
 if (require.main === module) {
@@ -1128,8 +1322,23 @@ if (require.main === module) {
     console.error(result.violations.join('\n'))
     process.exitCode = 1
   } else {
-    console.log(`Pomodoro boundaries passed: ${result.modules} modules, ${result.edges} internal edges`)
+    console.log(
+      `Pomodoro boundaries passed: page ${result.pageLines} lines, `
+      + `${result.modules} modules, ${result.adapters} page adapters, `
+      + `${result.adapterLines} adapter lines, ${result.edges} dependency edges`,
+    )
   }
 }
 
-module.exports = { moduleViolations, pageViolations, scanPomodoro, MODULES, PAGE_MAX_LINES }
+module.exports = {
+  moduleViolations,
+  adapterViolations,
+  pageViolations,
+  scanPomodoro,
+  MODULES,
+  PAGE_ADAPTER_MODULES,
+  ADAPTER_BUDGETS,
+  PAGE_CONTROLLERS,
+  RESTORE_CONTROLLERS,
+  PAGE_MAX_LINES,
+}

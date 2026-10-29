@@ -42,6 +42,9 @@ function t(desc, fn) {
 console.log('\n--- 1. Source code constants ---')
 
 var js = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+var pageSupportSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/pomodoro-page-support.js'), 'utf8')
+var recoveryAdapterSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/pomodoro-recovery-page-adapter.js'), 'utf8')
+var sessionControlAdapterSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/pomodoro-session-control-page-adapter.js'), 'utf8')
 var confirmEndFreeTimerCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/confirm-end-free-timer-controller.js'), 'utf8')
 var freeTimerLimitCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/free-timer-limit-controller.js'), 'utf8')
 var resetToIdleCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/reset-to-idle-controller.js'), 'utf8')
@@ -55,18 +58,18 @@ var activeSyncSrc = fs.readFileSync(
 )
 
 t('FREE_TIMER_MAX_MS is defined', function () {
-  assert.ok(js.indexOf('FREE_TIMER_MAX_MS') >= 0)
+  assert.ok(pageSupportSrc.indexOf('FREE_TIMER_MAX_MS') >= 0)
 })
 
 t('FREE_TIMER_MAX_MS equals exactly 5 hours in ms', function () {
   // Extract the constant value
-  var match = js.match(/FREE_TIMER_MAX_MS\s*=\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)/)
+  var match = pageSupportSrc.match(/FREE_TIMER_MAX_MS\s*=\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)/)
   if (match) {
     var val = parseInt(match[1], 10) * parseInt(match[2], 10) * parseInt(match[3], 10) * parseInt(match[4], 10)
     assert.strictEqual(val, 18000000, '5*60*60*1000 = 18000000')
   } else {
     // Try a direct number
-    var directMatch = js.match(/FREE_TIMER_MAX_MS\s*=\s*(\d+)/)
+    var directMatch = pageSupportSrc.match(/FREE_TIMER_MAX_MS\s*=\s*(\d+)/)
     if (directMatch) {
       assert.strictEqual(parseInt(directMatch[1], 10), 18000000)
     } else {
@@ -76,8 +79,10 @@ t('FREE_TIMER_MAX_MS equals exactly 5 hours in ms', function () {
 })
 
 t('Limit check uses >= not ===', function () {
-  var limitCheck = js.match(/FREE_TIMER_MAX_MS[^;]*>=/g)
-  assert.ok(limitCheck && limitCheck.length >= 1, 'should use >= for limit comparison')
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('options.maxMs()') >= 0,
+    'limit controller must read the injected max')
+  assert.ok(activeSyncSrc.indexOf('elapsedMs >= options.maxMs') >= 0,
+    'light sync must use >= for the free timer cap')
 })
 
 t('_freeTimerFinalizing field exists', function () {
@@ -147,8 +152,8 @@ t('_restoreFreeSession calls _checkFreeTimerLimitAndAutoEnd after interval start
 t('active light sync caps free timer display', function () {
   assert.ok(activeSyncSrc.indexOf('options.maxMs') >= 0,
     'active light sync should cap the free display via options.maxMs')
-  assert.ok(js.indexOf('maxMs: FREE_TIMER_MAX_MS') >= 0,
-    'page must inject FREE_TIMER_MAX_MS as the sync cap')
+  assert.ok(recoveryAdapterSrc.indexOf('maxMs: FREE_TIMER_MAX_MS') >= 0,
+    'active sync adapter must inject FREE_TIMER_MAX_MS as the sync cap')
 })
 
 t('onUnload clears timer interval', function () {
@@ -269,9 +274,8 @@ t('_restoreFreeSession caps elapsed at max and calls _checkFreeTimerLimitAndAuto
 })
 
 t('Free timer controller checks the limit before scheduling the next tick', function () {
-  var controllerMethod = extractMethod(js, '_getFreeTimerController')
-  assert.ok(controllerMethod.indexOf('shouldFinalize: () => this._checkFreeTimerLimitAndAutoEnd()') >= 0,
-    'free timer controller must check the limit after each tick')
+  assert.ok(sessionControlAdapterSrc.indexOf('shouldFinalize: () => page._checkFreeTimerLimitAndAutoEnd()') >= 0,
+    'free timer capability must check the limit after each tick')
 })
 
 t('Countdown-related methods do not reference FREE_TIMER_MAX_MS', function () {

@@ -1,3 +1,70 @@
+const { PHASE, PRESETS, parseServerTime } = require('./utils/pomodoro-page-support')
+const {
+  buildSubjectLoadPageCapabilities,
+  buildStartSessionPageCapabilities,
+  buildFreeTimerBeginPageCapabilities,
+  buildBeginCountdownPageCapabilities,
+  buildPauseTogglePageCapabilities,
+  buildStartTimerPageCapabilities,
+  buildStartBreakPageCapabilities,
+  buildSkipBreakPageCapabilities,
+} = require('./utils/pomodoro-session-page-adapter')
+const {
+  buildPauseSessionPageCapabilities,
+  buildResumeSessionPageCapabilities,
+  buildPauseFreeTimerPageCapabilities,
+  buildResumeFreeTimerPageCapabilities,
+  buildInterruptSessionPageCapabilities,
+  buildEndSessionPageCapabilities,
+  buildResetToIdlePageCapabilities,
+  buildUpdateFreeElapsedPageCapabilities,
+  buildFreeTimerPageCapabilities,
+  buildFreeTimerLimitPageCapabilities,
+  buildFreeElapsedPageCapabilities,
+  buildPomodoroPauseSyncPageCapabilities,
+} = require('./utils/pomodoro-session-control-page-adapter')
+const {
+  buildCancelEndConfirmPageCapabilities,
+  buildShowEndFreeConfirmPageCapabilities,
+  buildPauseCountdownEndConfirmPageCapabilities,
+  buildConfirmInterruptCountdownPageCapabilities,
+  buildShowCountdownInterruptConfirmPageCapabilities,
+  buildConfirmEndTimerPageCapabilities,
+  buildConfirmEndFreeTimerPageCapabilities,
+} = require('./utils/pomodoro-confirm-page-adapter')
+const {
+  buildCompletionCelebrationPageCapabilities,
+  buildWorkCompletePageCapabilities,
+  buildCelebrationDismissPageCapabilities,
+  buildBreakRestorePageCapabilities,
+  buildCelebrationTypePageCapabilities,
+} = require('./utils/pomodoro-celebration-page-adapter')
+const {
+  buildSyncRetryPageCapabilities,
+  buildUnknownStartPageCapabilities,
+  buildResumeErrorPageCapabilities,
+  buildPendingSyncQueuePageCapabilities,
+  buildPomodoroSessionActionDropperPageCapabilities,
+  buildTerminalConflictPageCapabilities,
+  buildPendingSyncPageCapabilities,
+  buildActiveSyncPageCapabilities,
+  buildPomodoroActiveSessionReconcilerPageCapabilities,
+  buildPomodoroRunningStateMigratorPageCapabilities,
+} = require('./utils/pomodoro-recovery-page-adapter')
+const {
+  buildCanvasInitPageCapabilities,
+  buildDrawRingPageCapabilities,
+  buildStatsPageCapabilities,
+  buildThemePageCapabilities,
+  buildFontSizePageCapabilities,
+  buildSubjectViewPageCapabilities,
+  buildPresetViewPageCapabilities,
+  buildDateExamPageCapabilities,
+} = require('./utils/pomodoro-view-page-adapter')
+const {
+  buildCountdownSessionRestorePageCapabilities,
+  buildFreeSessionRestorePageCapabilities,
+} = require('./utils/pomodoro-restore-page-adapter')
 const api = require('../../utils/api')
 const { readStorage, writeStorage, removeStorage } = require('./utils/session-storage')
 const { createPendingSyncQueue } = require('./utils/pending-sync-queue')
@@ -7,35 +74,21 @@ const { buildCompletionRecovery } = require('./utils/completion-recovery')
 const { restoreConfirmSnapshot } = require('./utils/confirm-recovery')
 const { recoverOnShow } = require('./utils/show-recovery')
 const { cancelUnknownStartOnHide, persistSessionOnHide } = require('./utils/hide-storage')
-const { filter408SubjectTree } = require('./utils/subject-scope')
-const {
-  readSubjectCache,
-  writeSubjectCache,
-} = require('./utils/subject-cache')
+
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
-const { buildSubjectChoices, subjectIconByCode } = require('./utils/subject-options')
+const { subjectIconByCode } = require('./utils/subject-options')
 const {
   buildApplySubjectsPlan,
   createSubjectLoadController,
 } = require('./utils/apply-subjects-controller')
 const { buildEffectivePausedMs } = require('./utils/effective-paused-ms')
-const { createCountdownController } = require('./utils/countdown-controller')
+
 const { createFreeTimerController } = require('./utils/free-timer-controller')
-const { buildRingCache, shouldDrawRing } = require('./utils/ring-geometry')
+const { buildRingCache } = require('./utils/ring-geometry')
 const conflictState = require('./utils/terminal-conflict-state')
-const { CANVAS_INIT_MAX_RETRIES } = require('./utils/canvas-layout')
-const {
-  canReconcilePendingSync,
-  decidePendingSyncReconciliation,
-} = require('./utils/sync-reconciliation')
-const {
-  resolvePausedMs,
-  computeCountdownRestore,
-  computeFreeRestore,
-  resolveRestoredSubject,
-} = require('./utils/session-restore')
+
 const {
   createCountdownSessionRestoreController,
 } = require('./utils/countdown-session-restore-controller')
@@ -46,11 +99,7 @@ const { createPendingSyncController } = require('./utils/pending-sync-controller
 const { createTerminalConflictController } = require('./utils/terminal-conflict-controller')
 const { createStatsController } = require('./utils/stats-controller')
 const { createThemeController } = require('./utils/theme-controller')
-const {
-  isValidConfirmSnapshot,
-  buildFreeConfirmSnapshot,
-  buildCountdownInterruptSnapshot,
-} = require('./utils/end-confirm-snapshot')
+const { isValidConfirmSnapshot } = require('./utils/end-confirm-snapshot')
 const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { createPauseToggleController } = require('./utils/pause-toggle-controller')
 const { createPomodoroPauseSyncController } = require('./utils/pause-sync-controller')
@@ -91,58 +140,24 @@ const { createSubjectViewController } = require('./utils/subject-view-controller
 const { createPresetViewController } = require('./utils/preset-view-controller')
 const { createCelebrationTypeController } = require('./utils/celebration-type-controller')
 const { createDateExamController } = require('./utils/date-exam-controller')
-const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
+
 const {
   findSubjectById,
 } = require('./utils/subject-selection')
-const { formatElapsedSec, formatCountdownDisplay } = require('./utils/timer-math')
-const { buildCompletionCelebration } = require('./utils/completion-celebration')
-const { handleTerminalConflict } = require('./utils/terminal-conflict-handler')
+const { formatCountdownDisplay } = require('./utils/timer-math')
+
 const {
   getLocalPauseAdjustment,
   mergeLocalPauseAdjustment,
   clearLocalPauseAdjustment,
 } = require('./utils/pause-adjustment')
-const { resolveBreakSec } = require('./utils/celebration-dismiss')
+
 const { buildEndConfirmViewModel } = require('./utils/end-confirm-view-model')
-const {
-  buildUnknownStartPayload,
-  matchesUnknownStartAttempt,
-  buildUnknownStartAttempt,
-  startCancellationAt,
-} = require('./utils/unknown-start-helpers')
+
 const { buildCachedActiveSession } = require('./utils/cached-session-builder')
-const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
+
 const { pomodoroTaskTypes } = require('../../utils/storage')
-
-const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
-
-const PRESETS = [
-  { key: 'standard', label: '标准', work: 25, break: 5 },
-  { key: 'long', label: '长时间', work: 50, break: 10 },
-  { key: 'custom', label: '自定义', work: 25, break: 5 },
-  { key: 'free', label: '自由计时', work: 0, break: 0 },
-]
-
-const FREE_TIMER_MAX_MS = 5 * 60 * 60 * 1000 // 5 hours max for free timer
-const POMODORO_UNKNOWN_START_KEY = 'pomodoro_unknown_start'
-const POMODORO_TERMINAL_CONFLICT_KEY = 'pomodoro_terminal_conflict'
-const POMODORO_PAUSE_TOGGLE_COOLDOWN_MS = 500
-
-function parseServerTime(value) {
-  return parseServerUtc(value)
-}
-
-const MOTTOES = [
-  '击败了昨天的自己',
-  '每一步都算数',
-  '坚持就是胜利',
-  '离上岸又近一步',
-  '今天的你比昨天更强',
-  '积少成多，聚沙成塔',
-  '专注是最好的努力',
-  '为梦想全力以赴',
-]
+ // 5 hours max for free timer
 
 Page({
   data: {
@@ -491,23 +506,9 @@ Page({
 
   _getSyncRetryController() {
     if (!this._syncRetryController) {
-      this._syncRetryController = createSyncRetryController({
-        setTimeout: (fn, delay) => setTimeout(fn, delay),
-        clearTimeout: timer => clearTimeout(timer),
-        isVisible: () => this._pageVisible,
-        hasPending: () => !!this._getPendingPomodoroSync(),
-        retry: () => this._retryPendingPomodoroSync(),
-        warn: (message, error) => console.warn(message, error),
-        consumeConflict: () => this._consumeAnyPomodoroTerminalConflict(),
-        handleConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
-        loadStats: () => this.loadTodayStats(),
-        canListen: () => typeof wx.onNetworkStatusChange === 'function' &&
-          typeof wx.offNetworkStatusChange === 'function',
-        onNetworkStatusChange: handler => wx.onNetworkStatusChange(handler),
-        offNetworkStatusChange: handler => {
-          if (typeof wx.offNetworkStatusChange === 'function') wx.offNetworkStatusChange(handler)
-        },
-      })
+      this._syncRetryController = createSyncRetryController(
+        buildSyncRetryPageCapabilities(this, {})
+      )
     }
     return this._syncRetryController
   },
@@ -538,22 +539,9 @@ Page({
 
   _getPauseToggleController() {
     if (!this._pauseToggleController) {
-      this._pauseToggleController = createPauseToggleController({
-        cooldownMs: POMODORO_PAUSE_TOGGLE_COOLDOWN_MS,
-        setTimeout: (callback, delay) => setTimeout(callback, delay),
-        clearTimeout: id => clearTimeout(id),
-        phase: () => this.data.phase,
-        runningPhase: PHASE.RUNNING,
-        sessionId: () => this._timerState.sessionId,
-        actionLoading: () => this.data.actionLoading,
-        showEndConfirm: () => this.data.showEndConfirm,
-        isFreeTimer: () => this.data.isFreeTimer,
-        isPaused: () => this.data.isPaused,
-        pauseFree: () => this._pauseFreeTimer(),
-        resumeFree: () => this._resumeFreeTimer(),
-        pauseCountdown: () => this._pauseSession(),
-        resumeCountdown: () => this._resumeSession(),
-      })
+      this._pauseToggleController = createPauseToggleController(
+        buildPauseTogglePageCapabilities(this, {})
+      )
     }
     return this._pauseToggleController
   },
@@ -566,16 +554,9 @@ Page({
 
   _getSubjectLoadController() {
     if (!this._subjectLoadController) {
-      this._subjectLoadController = createSubjectLoadController({
-        readSubjectCache,
-        fetchSubjects: () => api.get('/practice/subjects'),
-        filterSubjectTree: filter408SubjectTree,
-        buildSubjectChoices,
-        writeSubjectCache,
-        applySubjects: flat => this._applySubjects(flat),
-        setSubjectsState: patch => this.setData(patch),
-        logError: (message, error) => console.error(message, error),
-      })
+      this._subjectLoadController = createSubjectLoadController(
+        buildSubjectLoadPageCapabilities(this, { api })
+      )
     }
     return this._subjectLoadController
   },
@@ -607,11 +588,9 @@ Page({
 
   _runningStateMigrator() {
     if (!this._runningStateMigrationController) {
-      this._runningStateMigrationController = createPomodoroRunningStateMigrator({
-        safeGetPomodoroStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
-        safeSetPomodoroStorage: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
-        safeRemovePomodoroStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-      })
+      this._runningStateMigrationController = createPomodoroRunningStateMigrator(
+        buildPomodoroRunningStateMigratorPageCapabilities(this, {})
+      )
     }
     return this._runningStateMigrationController
   },
@@ -715,20 +694,9 @@ Page({
 
   _getUnknownStartController() {
     if (!this._unknownStartController) {
-      this._unknownStartController = createUnknownStartController({
-        page: this,
-        storageKey: POMODORO_UNKNOWN_START_KEY,
-        post: (path, payload) => api.post(path, payload),
-        createClientStartId: () => api.createClientStartId(),
-        now: () => api.now(),
-        parseServerTime,
-        buildAttempt: buildUnknownStartAttempt,
-        buildPayload: buildUnknownStartPayload,
-        matches: matchesUnknownStartAttempt,
-        startCancellationAt,
-        recordSession: (session, taskType) => pomodoroTaskTypes.recordSession(session, taskType),
-        reconcile: attempt => this._reconcileUnknownStartAttempt(attempt),
-      })
+      this._unknownStartController = createUnknownStartController(
+        buildUnknownStartPageCapabilities(this, { api })
+      )
     }
     return this._unknownStartController
   },
@@ -745,15 +713,9 @@ Page({
 
   _getStartSessionController() {
     if (!this._startSessionController) {
-      this._startSessionController = createStartSessionController({
-        page: this,
-        phases: PHASE,
-        ceremonyDelayMs: 2500,
-        debugCeremonyDelayMs: 1000,
-        wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
-        showToast: payload => wx.showToast(payload),
-        pomodoroTaskTypes,
-      })
+      this._startSessionController = createStartSessionController(
+        buildStartSessionPageCapabilities(this, {})
+      )
     }
     return this._startSessionController
   },
@@ -774,420 +736,162 @@ Page({
 
   _getFreeTimerBeginController() {
     if (!this._freeTimerBeginController) {
-      this._freeTimerBeginController = createFreeTimerBeginController({
-        parseServerTime,
-        now: () => api.now(),
-        maxMs: FREE_TIMER_MAX_MS,
-        formatElapsedSec,
-        clearTimer: () => this._clearTimer(),
-        timer: () => this._timerState,
-        runningPhase: PHASE.RUNNING,
-        setData: data => this.setData(data),
-        updateComputedFields: () => this._updateComputedFields(),
-        autoFinishFreeTimer: () => this._autoFinishFreeTimer(),
-        startFreeTimerInterval: () => this._startFreeTimerInterval(),
-        nextTick: callback => wx.nextTick(callback),
-        initCanvas: force => this._initCanvas(force),
-        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
-      })
+      this._freeTimerBeginController = createFreeTimerBeginController(
+        buildFreeTimerBeginPageCapabilities(this, { api })
+      )
     }
     return this._freeTimerBeginController
   },
 
   _getCancelEndConfirmController() {
     if (!this._cancelEndConfirmController) {
-      this._cancelEndConfirmController = createCancelEndConfirmController({
-        isActionLoading: () => this.data.actionLoading,
-        getEndConfirmMode: () => this._timerState.endConfirmMode,
-        getConfirmTimerSnapshot: () => this._confirmTimerSnapshot,
-        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
-        now: () => api.now(),
-        incrementConfirmActionSeq: () => { this._confirmActionSeq = (this._confirmActionSeq || 0) + 1 },
-        isPaused: () => this.data.isPaused,
-        applyTimerState: patch => Object.assign(this._timerState, patch),
-        safeGetStorage: key => this._safeGetPomodoroStorage(key, 'cancel end confirm'),
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'cancel confirm resume adjustment'),
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
-        setData: data => this.setData(data),
-        setCountdownTotalSec: v => { this._countdownTotalSec = v },
-        startTimer: (totalSec, opts) => this._startTimer(totalSec, opts),
-        startFreeTimerInterval: () => this._startFreeTimerInterval(),
-        restartFreeTimerInterval: () => this._restartFreeTimerInterval(),
-        nextTick: callback => wx.nextTick(callback),
-        initCanvas: force => this._initCanvas(force),
-        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
-        redrawFreeRingAfterOverlay: () => this._redrawFreeRingAfterOverlay(),
-        retryPendingSync: () => this._retryPendingPomodoroSync(),
-        warn: msg => console.warn(msg),
-      })
+      this._cancelEndConfirmController = createCancelEndConfirmController(
+        buildCancelEndConfirmPageCapabilities(this, { api })
+      )
     }
     return this._cancelEndConfirmController
   },
 
   _getShowEndFreeConfirmController() {
     if (!this._showEndFreeConfirmController) {
-      this._showEndFreeConfirmController = createShowEndFreeConfirmController({
-        getSessionId: () => this._timerState.sessionId,
-        isActionLoading: () => this.data.actionLoading,
-        now: () => api.now(),
-        isPaused: () => !!this.data.isPaused,
-        getElapsedSec: () => this._timerState.elapsedSec,
-        formatElapsedSec,
-        incrementConfirmActionSeq: () => {
-          this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
-          return this._confirmActionSeq
-        },
-        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
-        getPauseStartTime: () => this._timerState.pauseStartTime || null,
-        getSessionStartTime: () => this._timerState.sessionStartTime,
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'free confirm snapshot'),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'free confirm rollback'),
-        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
-        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        setData: data => this.setData(data),
-        postPauseWithRetry: snapshot =>
-          this._postPauseWithRetry(this._timerState.sessionId, snapshot.openedAt)
-            .then(() => {
-              if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
-              snapshot.backendPauseDone = true
-              this._confirmTimerSnapshot = snapshot
-              this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
-            }),
-        warn: (msg, e) => console.warn(msg, e),
-      })
+      this._showEndFreeConfirmController = createShowEndFreeConfirmController(
+        buildShowEndFreeConfirmPageCapabilities(this, { api })
+      )
     }
     return this._showEndFreeConfirmController
   },
 
   _getPauseCountdownEndConfirmController() {
     if (!this._pauseCountdownEndConfirmController) {
-      this._pauseCountdownEndConfirmController = createPauseCountdownEndConfirmController({
-        getSessionId: () => this._timerState.sessionId,
-        isActionLoading: () => this.data.actionLoading,
-        now: () => api.now(),
-        getCurrentTotalSec: () => this._getCurrentTotalSec(),
-        getCountdownEndAt: () => this._countdownEndAt,
-        getRemainingSec: () => this._timerState.remainingSec,
-        isPaused: () => !!this.data.isPaused,
-        getPhase: () => this.data.phase,
-        incrementConfirmActionSeq: () => {
-          this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
-          return this._confirmActionSeq
-        },
-        getSessionStartTime: () => this._timerState.sessionStartTime,
-        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
-        getPauseStartTime: () => this._timerState.pauseStartTime || null,
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'countdown confirm snapshot'),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'countdown confirm rollback'),
-        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
-        clearTimer: () => this._clearTimer(),
-        setCountdownEndAt: v => { this._countdownEndAt = v },
-        formatCountdownDisplay: sec => this._formatCountdownDisplay(sec),
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        setData: data => this.setData(data),
-        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
-        postPauseWithRetry: snapshot =>
-          this._postPauseWithRetry(this._timerState.sessionId, snapshot.openedAt)
-            .then(() => {
-              if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
-              snapshot.backendPauseDone = true
-              this._confirmTimerSnapshot = snapshot
-              this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
-            }),
-        warn: (msg, e) => console.warn(msg, e),
-      })
+      this._pauseCountdownEndConfirmController = createPauseCountdownEndConfirmController(
+        buildPauseCountdownEndConfirmPageCapabilities(this, { api })
+      )
     }
     return this._pauseCountdownEndConfirmController
   },
 
   _getConfirmInterruptCountdownController() {
     if (!this._confirmInterruptCountdownController) {
-      this._confirmInterruptCountdownController = createConfirmInterruptCountdownController({
-        getSessionId: () => this._timerState.sessionId,
-        isActionLoading: () => this.data.actionLoading,
-        getConfirmTimerSnapshot: () => this._confirmTimerSnapshot,
-        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
-        setTotalPausedMs: v => { this._timerState.totalPausedMs = v },
-        now: () => api.now(),
-        incrementConfirmActionSeq: () => { this._confirmActionSeq = (this._confirmActionSeq || 0) + 1 },
-        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        setData: data => this.setData(data),
-        retryPendingSync: () => this._retryPendingPomodoroSync(),
-        consumeTerminalConflict: (sessionId, action) => this._consumePomodoroTerminalConflict(sessionId, action),
-        handleTerminalConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
-        showToast: toast => wx.showToast(toast),
-        loadTodayStats: () => this.loadTodayStats(),
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
-        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
-        resetToIdle: () => this._resetToIdle(),
-      })
+      this._confirmInterruptCountdownController = createConfirmInterruptCountdownController(
+        buildConfirmInterruptCountdownPageCapabilities(this, { api })
+      )
     }
     return this._confirmInterruptCountdownController
   },
 
   _getResetToIdleController() {
     if (!this._resetToIdleController) {
-      this._resetToIdleController = createResetToIdleController({
-        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
-        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
-        invalidateCanvas: () => {
-          this._canvasInitSeq = (this._canvasInitSeq || 0) + 1
-          this._canvasReady = false
-          this._canvasInitPending = false
-          this._ctx = null
-          this._pendingDraw = null
-          this._lastDrawnProgress = undefined
-          this._lastDrawnIsBreak = undefined
-          this._ringCache = null
-        },
-        resetTimerState: () => { this._timerState = this._createTimerState() },
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
-        getSelectedTaskType: () => pomodoroTaskTypes.getSelected(),
-        taskTypeLabel: type => pomodoroTaskTypes.label(type),
-        idlePhase: () => PHASE.IDLE,
-        setData: data => this.setData(data),
-        setCompletionBreakSec: v => { this._completionBreakSec = v },
-        updateComputedFields: () => this._updateComputedFields(),
-      })
+      this._resetToIdleController = createResetToIdleController(
+        buildResetToIdlePageCapabilities(this, {})
+      )
     }
     return this._resetToIdleController
   },
 
   _getUpdateFreeElapsedController() {
     if (!this._updateFreeElapsedController) {
-      this._updateFreeElapsedController = createUpdateFreeElapsedController({
-        isFreeTimer: () => this.data.isFreeTimer,
-        showEndConfirm: () => this.data.showEndConfirm,
-        isPaused: () => this.data.isPaused,
-        getElapsedSec: () => this._timerState.elapsedSec,
-        setData: data => this.setData(data),
-        setFreeFriendlyText: v => { this._timerState.freeFriendlyText = v },
-        getEffectiveFreeElapsedMs: () => this._getEffectiveFreeElapsedMs(),
-        maxMs: () => FREE_TIMER_MAX_MS,
-        setElapsedSec: v => { this._timerState.elapsedSec = v },
-      })
+      this._updateFreeElapsedController = createUpdateFreeElapsedController(
+        buildUpdateFreeElapsedPageCapabilities(this, {})
+      )
     }
     return this._updateFreeElapsedController
   },
 
   _getBeginCountdownController() {
     if (!this._beginCountdownController) {
-      this._beginCountdownController = createBeginCountdownController({
-        parseServerTime,
-        isDebugPreset: () => this.data.selectedPreset === 'debug',
-        getWorkDurationMinutes: () => this.data.workDuration,
-        now: () => api.now(),
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        runningPhase: () => PHASE.RUNNING,
-        setData: data => this.setData(data),
-        updateComputedFields: () => this._updateComputedFields(),
-        onWorkComplete: () => this._onWorkComplete(),
-        startTimer: (totalSec, opts) => this._startTimer(totalSec, opts),
-      })
+      this._beginCountdownController = createBeginCountdownController(
+        buildBeginCountdownPageCapabilities(this, { api })
+      )
     }
     return this._beginCountdownController
   },
 
   _getPauseSessionController() {
     if (!this._pauseSessionController) {
-      this._pauseSessionController = createPauseSessionController({
-        getSessionId: () => this._timerState.sessionId,
-        isActionLoading: () => this.data.actionLoading,
-        now: () => api.now(),
-        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        clearTimer: () => this._clearTimer(),
-        setPauseStartTime: v => { this._timerState.pauseStartTime = v },
-        setData: data => this.setData(data),
-        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'countdown pause snapshot'),
-        retryPendingSync: () => this._retryPendingPomodoroSync(),
-        showToast: toast => wx.showToast(toast),
-      })
+      this._pauseSessionController = createPauseSessionController(
+        buildPauseSessionPageCapabilities(this, { api })
+      )
     }
     return this._pauseSessionController
   },
 
   _getResumeSessionController() {
     if (!this._resumeSessionController) {
-      this._resumeSessionController = createResumeSessionController({
-        getSessionStartTime: () => this._timerState.sessionStartTime,
-        warn: (msg, val) => console.warn(msg, val),
-        resetToIdle: () => this._resetToIdle(),
-        getSessionId: () => this._timerState.sessionId,
-        isActionLoading: () => this.data.actionLoading,
-        now: () => api.now(),
-        getPauseStartTime: () => this._timerState.pauseStartTime,
-        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
-        isDebugPreset: () => this.data.selectedPreset === 'debug',
-        getWorkDurationMinutes: () => this.data.workDuration,
-        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'countdown resume adjustment'),
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'countdown resume snapshot'),
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        setData: data => this.setData(data),
-        startTimer: (totalSec, opts) => this._startTimer(totalSec, opts),
-        retryPendingSync: () => this._retryPendingPomodoroSync(),
-        showToast: toast => wx.showToast(toast),
-      })
+      this._resumeSessionController = createResumeSessionController(
+        buildResumeSessionPageCapabilities(this, { api })
+      )
     }
     return this._resumeSessionController
   },
 
   _getShowCountdownInterruptConfirmController() {
     if (!this._showCountdownInterruptConfirmController) {
-      this._showCountdownInterruptConfirmController = createShowCountdownInterruptConfirmController({
-        isActionLoading: () => this.data.actionLoading,
-        pauseCountdown: () => this._pauseCountdownForEndConfirm(),
-        getConfirmTimerSnapshot: () => this._confirmTimerSnapshot,
-        setData: data => this.setData(data),
-        nextTick: callback => wx.nextTick(callback),
-        initCanvas: force => this._initCanvas(force),
-        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
-      })
+      this._showCountdownInterruptConfirmController = createShowCountdownInterruptConfirmController(
+        buildShowCountdownInterruptConfirmPageCapabilities(this, {})
+      )
     }
     return this._showCountdownInterruptConfirmController
   },
 
   _getConfirmEndTimerController() {
     if (!this._confirmEndTimerController) {
-      this._confirmEndTimerController = createConfirmEndTimerController({
-        isActionLoading: () => this.data.actionLoading,
-        getEndConfirmMode: () => this._timerState.endConfirmMode,
-        confirmEndFreeTimer: () => this._confirmEndFreeTimer(),
-        confirmInterruptCountdown: () => this._confirmInterruptCountdown(),
-        warn: (msg, detail) => console.warn(msg, detail),
-        getSessionId: () => this._timerState.sessionId,
-        getSnapshotMode: () => this._confirmTimerSnapshot && this._confirmTimerSnapshot.mode,
-        showToast: toast => wx.showToast(toast),
-      })
+      this._confirmEndTimerController = createConfirmEndTimerController(
+        buildConfirmEndTimerPageCapabilities(this, {})
+      )
     }
     return this._confirmEndTimerController
   },
 
   _getEndSessionController() {
     if (!this._endSessionController) {
-      this._endSessionController = createEndSessionController({
-        getSessionId: () => this._timerState.sessionId,
-        clearTimer: () => this._clearTimer(),
-        completeWithRetry: (sessionId, now) => this._completePomodoroWithRetry(sessionId, now),
-        now: () => api.now(),
-        consumeTerminalConflict: (sessionId, action) => this._consumePomodoroTerminalConflict(sessionId, action),
-        handleTerminalConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
-        loadTodayStats: () => this.loadTodayStats(),
-        resetToIdle: () => this._resetToIdle(),
-      })
+      this._endSessionController = createEndSessionController(
+        buildEndSessionPageCapabilities(this, { api })
+      )
     }
     return this._endSessionController
   },
 
   _getPauseFreeTimerController() {
     if (!this._pauseFreeTimerController) {
-      this._pauseFreeTimerController = createPauseFreeTimerController({
-        getSessionId: () => this._timerState.sessionId,
-        isActionLoading: () => this.data.actionLoading,
-        now: () => api.now(),
-        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        updateFreeElapsed: () => this._updateFreeElapsed(),
-        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        setData: data => this.setData(data),
-        getElapsedSec: () => this._timerState.elapsedSec,
-        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'free pause snapshot'),
-        retryPendingSync: () => this._retryPendingPomodoroSync(),
-        showToast: toast => wx.showToast(toast),
-      })
+      this._pauseFreeTimerController = createPauseFreeTimerController(
+        buildPauseFreeTimerPageCapabilities(this, { api })
+      )
     }
     return this._pauseFreeTimerController
   },
 
   _getResumeFreeTimerController() {
     if (!this._resumeFreeTimerController) {
-      this._resumeFreeTimerController = createResumeFreeTimerController({
-        getSessionId: () => this._timerState.sessionId,
-        isActionLoading: () => this.data.actionLoading,
-        now: () => api.now(),
-        getPauseStartTime: () => this._timerState.pauseStartTime,
-        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
-        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
-        showPersistenceError: () => this._showPomodoroPersistenceError(),
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'free resume adjustment'),
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'free resume snapshot'),
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        setData: data => this.setData(data),
-        startFreeTimerInterval: () => this._startFreeTimerInterval(),
-        retryPendingSync: () => this._retryPendingPomodoroSync(),
-        showToast: toast => wx.showToast(toast),
-      })
+      this._resumeFreeTimerController = createResumeFreeTimerController(
+        buildResumeFreeTimerPageCapabilities(this, { api })
+      )
     }
     return this._resumeFreeTimerController
   },
 
   _getInterruptSessionController() {
     if (!this._interruptSessionController) {
-      this._interruptSessionController = createInterruptSessionController({
-        getSessionId: () => this._timerState.sessionId,
-        isFreeTimer: () => this.data.isFreeTimer,
-        showEndFreeConfirm: () => this._showEndFreeConfirm(),
-        showCountdownInterruptConfirm: () => this._showCountdownInterruptConfirm(),
-      })
+      this._interruptSessionController = createInterruptSessionController(
+        buildInterruptSessionPageCapabilities(this, {})
+      )
     }
     return this._interruptSessionController
   },
 
   _getConfirmEndFreeTimerController() {
     if (!this._confirmEndFreeTimerController) {
-      this._confirmEndFreeTimerController = createConfirmEndFreeTimerController({
-        isActionLoading: () => this.data.actionLoading,
-        getSessionId: () => this._timerState.sessionId,
-        incrementConfirmActionSeq: () => { this._confirmActionSeq = (this._confirmActionSeq || 0) + 1 },
-        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
-        setData: data => this.setData(data),
-        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
-        completeFreeTimerSession: () => this._completeFreeTimerSession(),
-      })
+      this._confirmEndFreeTimerController = createConfirmEndFreeTimerController(
+        buildConfirmEndFreeTimerPageCapabilities(this, {})
+      )
     }
     return this._confirmEndFreeTimerController
   },
 
   _getFreeTimerLimitController() {
     if (!this._freeTimerLimitController) {
-      this._freeTimerLimitController = createFreeTimerLimitController({
-        finalizing: () => this._freeTimerFinalizing,
-        setFinalizing: value => { this._freeTimerFinalizing = value },
-        autoFinish: () => this._autoFinishFreeTimer(),
-        isFreeTimer: () => this.data.isFreeTimer,
-        isPaused: () => this.data.isPaused,
-        getEffectiveFreeElapsedMs: () => this._getEffectiveFreeElapsedMs(),
-        maxMs: FREE_TIMER_MAX_MS,
-        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
-        formatElapsedSec,
-        setElapsedSec: value => { this._timerState.elapsedSec = value },
-        setData: data => this.setData(data),
-        showToast: toast => wx.showToast(toast),
-        getSessionId: () => this._timerState.sessionId,
-        now: () => api.now(),
-        completeWithRetry: (sessionId, clientActionAt) =>
-          this._completePomodoroWithRetry(sessionId, clientActionAt),
-        consumeTerminalConflict: (sessionId, requestedAction) =>
-          this._consumePomodoroTerminalConflict(sessionId, requestedAction),
-        handleTerminalConflict: (sessionId, conflict) =>
-          this._handlePomodoroTerminalConflict(sessionId, conflict),
-        loadTodayStats: () => this.loadTodayStats(),
-        resetToIdle: () => this._resetToIdle(),
-      })
+      this._freeTimerLimitController = createFreeTimerLimitController(
+        buildFreeTimerLimitPageCapabilities(this, { api })
+      )
     }
     return this._freeTimerLimitController
   },
@@ -1198,14 +902,9 @@ Page({
 
   _getFreeTimerController() {
     if (!this._freeTimerController) {
-      this._freeTimerController = createFreeTimerController({
-        setTimeout: (fn, delay) => setTimeout(fn, delay),
-        clearTimeout: timer => clearTimeout(timer),
-        getElapsedMs: () => this._getEffectiveFreeElapsedMs(),
-        isBlocked: () => this.data.isPaused || this.data.showEndConfirm,
-        onTick: () => this._updateFreeElapsed(),
-        shouldFinalize: () => this._checkFreeTimerLimitAndAutoEnd(),
-      })
+      this._freeTimerController = createFreeTimerController(
+        buildFreeTimerPageCapabilities(this, {})
+      )
     }
     return this._freeTimerController
   },
@@ -1236,24 +935,9 @@ Page({
 
   _getResumeErrorController() {
     if (!this._resumeErrorController) {
-      this._resumeErrorController = createResumeErrorController({
-        getActive: path => api.get(path),
-        parseServerTime,
-        showToast: toast => wx.showToast(toast),
-        resetIdle: () => this._resetToIdle(),
-        timer: () => this._timerState,
-        isFreeTimer: () => this.data.isFreeTimer,
-        mergeLocalPauseAdjustment: (sessionId, serverPausedMs) =>
-          this._mergeLocalPauseAdjustment(sessionId, serverPausedMs),
-        getEffectiveFreeElapsedMs: () => this._getEffectiveFreeElapsedMs(),
-        formatElapsedSec,
-        setData: data => this.setData(data),
-        startFreeTimerInterval: () => this._startFreeTimerInterval(),
-        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        now: () => api.now(),
-        getCurrentTotalSec: () => this._getCurrentTotalSec(),
-        startTimer: totalSec => this._startTimer(totalSec),
-      })
+      this._resumeErrorController = createResumeErrorController(
+        buildResumeErrorPageCapabilities(this, { api })
+      )
     }
     return this._resumeErrorController
   },
@@ -1286,11 +970,9 @@ Page({
 
   _pauseSyncController() {
     if (!this._pauseSync) {
-      this._pauseSync = createPomodoroPauseSyncController({
-        setPendingPomodoroSync: (action, sessionId, clientActionAt) =>
-          this._setPendingPomodoroSync(action, sessionId, clientActionAt),
-        retryPendingPomodoroSync: () => this._retryPendingPomodoroSync(),
-      })
+      this._pauseSync = createPomodoroPauseSyncController(
+        buildPomodoroPauseSyncPageCapabilities(this, {})
+      )
     }
     return this._pauseSync
   },
@@ -1373,14 +1055,9 @@ Page({
 
   _getPendingSyncStore() {
     if (!this._pendingSyncStore) {
-      this._pendingSyncStore = createPendingSyncQueue({
-        storage: {
-          read: (key, context) => this._safeGetPomodoroStorage(key, context),
-          write: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
-          remove: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        },
-        now: () => api.now(),
-      })
+      this._pendingSyncStore = createPendingSyncQueue(
+        buildPendingSyncQueuePageCapabilities(this, { api })
+      )
     }
     return this._pendingSyncStore
   },
@@ -1419,12 +1096,9 @@ Page({
 
   _getSessionActionDropController() {
     if (!this._sessionActionDrop) {
-      this._sessionActionDrop = createPomodoroSessionActionDropper({
-        getPendingPomodoroSyncQueue: () => this._getPendingPomodoroSyncQueue(),
-        writePendingPomodoroSyncQueue: queue => this._writePendingPomodoroSyncQueue(queue),
-        safeGetPomodoroStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
-        safeRemovePomodoroStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-      })
+      this._sessionActionDrop = createPomodoroSessionActionDropper(
+        buildPomodoroSessionActionDropperPageCapabilities(this, {})
+      )
     }
     return this._sessionActionDrop
   },
@@ -1435,27 +1109,9 @@ Page({
 
   _getTerminalConflictController() {
     if (!this._terminalConflictController) {
-      this._terminalConflictController = createTerminalConflictController({
-        storageKey: POMODORO_TERMINAL_CONFLICT_KEY,
-        getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
-        setStorage: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
-        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        now: () => api.now(),
-        createConflict: conflictState.createTerminalConflict,
-        isValidConflict: conflictState.isValidTerminalConflict,
-        matchesConflict: conflictState.matchesTerminalConflict,
-        isStorageConflict: value => conflictState.isStorageConflict(value),
-        handleTerminalConflict,
-        dropSessionActions: sessionId => this._dropPendingPomodoroSessionActions(sessionId),
-        persistenceError: () => this._showPomodoroPersistenceError(),
-        getCompletionBreakSec: () => this._completionBreakSec,
-        setCompletionBreakSec: value => { this._completionBreakSec = value },
-        clearTimer: () => this._clearTimer(),
-        setData: data => this.setData(data),
-        resetIdle: () => this._resetToIdle(),
-        showToast: toast => wx.showToast(toast),
-        loadStats: () => this.loadTodayStats(),
-      })
+      this._terminalConflictController = createTerminalConflictController(
+        buildTerminalConflictPageCapabilities(this, { api })
+      )
     }
     return this._terminalConflictController
   },
@@ -1490,46 +1146,9 @@ Page({
 
   _getPendingSyncController() {
     if (!this._pendingSyncController) {
-      this._pendingSyncController = createPendingSyncController({
-        getQueue: () => this._getPendingPomodoroSyncQueue(),
-        clearPending: expected => this._clearPendingPomodoroSync(expected),
-        updatePending: (expected, patch) => this._updatePendingPomodoroSync(expected, patch),
-        enqueue: (action, sessionId, clientActionAt) => (
-          this._setPendingPomodoroSync(action, sessionId, clientActionAt)
-        ),
-        hasPending: (sessionId, action) => this._hasPendingPomodoroAction(sessionId, action),
-        canReconcile: error => canReconcilePendingSync(error),
-        decideReconciliation: (pending, error, active) => (
-          decidePendingSyncReconciliation(pending, error, active)
-        ),
-        formatClientActionAt: timestamp => {
-          try {
-            return new Date(timestamp).toISOString()
-          } catch (_) {
-            return null
-          }
-        },
-        post: (path, body) => api.post(path, body),
-        getActive: () => api.get('/pomodoro/active'),
-        now: () => api.now(),
-        isVisible: () => this._pageVisible,
-        restoreSession: active => this._restoreSession(active),
-        maybeClearAdjustment: sessionId => this._maybeClearLocalPauseAdjustment(sessionId),
-        dropSessionActions: sessionId => this._dropPendingPomodoroSessionActions(sessionId),
-        getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
-        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        setCompletionBreakSec: value => { this._completionBreakSec = value },
-        setData: data => this.setData(data),
-        recordTerminalConflict: (sessionId, action, status) => (
-          this._recordPomodoroTerminalConflict(sessionId, action, status)
-        ),
-        readConflict: () => this._readPomodoroTerminalConflict(),
-        isStorageConflict: value => this._isPomodoroStorageError(value),
-        clearRetryTimer: reset => this._clearPendingPomodoroSyncRetryTimer(reset),
-        scheduleRetry: error => this._schedulePendingPomodoroSyncRetry(error),
-        persistenceError: () => this._showPomodoroPersistenceError(),
-        logError: (...args) => console.error(...args),
-      })
+      this._pendingSyncController = createPendingSyncController(
+        buildPendingSyncPageCapabilities(this, { api })
+      )
     }
     return this._pendingSyncController
   },
@@ -1588,14 +1207,9 @@ Page({
 
   _getFreeElapsedController() {
     if (!this._freeElapsedController) {
-      this._freeElapsedController = createFreeElapsedController({
-        now: () => api.now(),
-        getSessionId: () => this._timerState.sessionId,
-        getSessionStartTime: () => this._timerState.sessionStartTime,
-        getTotalPausedMs: () => this._timerState.totalPausedMs,
-        mergeLocalPauseAdjustment: (sessionId, totalPausedMs) =>
-          this._mergeLocalPauseAdjustment(sessionId, totalPausedMs),
-      })
+      this._freeElapsedController = createFreeElapsedController(
+        buildFreeElapsedPageCapabilities(this, { api })
+      )
     }
     return this._freeElapsedController
   },
@@ -1639,27 +1253,9 @@ Page({
 
   _getCompletionCelebrationController() {
     if (!this._completionCelebrationController) {
-      this._completionCelebrationController = createCompletionCelebrationController({
-        buildCompletionCelebration,
-        data: () => this.data,
-        mottoes: MOTTOES,
-        nextCelebrationType: () => this._nextCelebrationType(),
-        recordSession: (session, taskType) => pomodoroTaskTypes.recordSession(session, taskType),
-        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        setStorage: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
-        clearConfirmSnapshot: () => { this._confirmTimerSnapshot = null },
-        timer: () => this._timerState,
-        setCompletionBreakSec: value => { this._completionBreakSec = value },
-        invalidateCanvas: () => {
-          this._canvasInitSeq = (this._canvasInitSeq || 0) + 1
-          this._canvasInitPending = false
-          this._canvasReady = false
-          this._ctx = null
-          this._ringCache = null
-          this._pendingDraw = null
-        },
-        setData: data => this.setData(data),
-      })
+      this._completionCelebrationController = createCompletionCelebrationController(
+        buildCompletionCelebrationPageCapabilities(this, {})
+      )
     }
     return this._completionCelebrationController
   },
@@ -1670,19 +1266,9 @@ Page({
 
   _getWorkCompleteController() {
     if (!this._workCompleteController) {
-      this._workCompleteController = createWorkCompleteController({
-        timer: () => this._timerState,
-        resetIdle: () => this._resetToIdle(),
-        now: () => api.now(),
-        clearTimer: () => this._clearTimer(),
-        vibrateLong: () => wx.vibrateLong(),
-        completeWithRetry: (sessionId, completedAt) => this._completePomodoroWithRetry(sessionId, completedAt),
-        consumeTerminalConflict: (sessionId, action) => this._consumePomodoroTerminalConflict(sessionId, action),
-        handleTerminalConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
-        loadStats: () => this.loadTodayStats(),
-        showToast: toast => wx.showToast(toast),
-        showCompletionCelebration: sessionId => this._showCompletionCelebration(sessionId),
-      })
+      this._workCompleteController = createWorkCompleteController(
+        buildWorkCompletePageCapabilities(this, { api })
+      )
     }
     return this._workCompleteController
   },
@@ -1693,75 +1279,27 @@ Page({
 
   _getCelebrationDismissController() {
     if (!this._celebrationDismissController) {
-      this._celebrationDismissController = createCelebrationDismissController({
-        getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
-        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        resolveBreakSec,
-        getCompletionBreakSec: () => this._completionBreakSec,
-        setCompletionBreakSec: value => { this._completionBreakSec = value },
-        view: () => this.data,
-        setData: data => this.setData(data),
-        persistenceError: () => this._showPomodoroPersistenceError(),
-        startBreak: breakSec => this._startBreak(breakSec),
-        resetIdle: () => this._resetToIdle(),
-      })
+      this._celebrationDismissController = createCelebrationDismissController(
+        buildCelebrationDismissPageCapabilities(this, {})
+      )
     }
     return this._celebrationDismissController
   },
 
   _getStartBreakController() {
     if (!this._startBreakController) {
-      this._startBreakController = createStartBreakController({
-        now: () => api.now(),
-        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'break snapshot'),
-        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        formatCountdownDisplay: sec => this._formatCountdownDisplay(sec),
-        breakPhase: () => PHASE.BREAK,
-        setData: data => this.setData(data),
-        clearTimer: () => this._clearTimer(),
-        initCanvas: force => this._initCanvas(force),
-        setCountdownTotalSec: value => { this._countdownTotalSec = value },
-        setCountdownEndAt: value => { this._countdownEndAt = value },
-        getCountdownEndAt: () => this._countdownEndAt,
-        getRemainingSec: () => this._timerState.remainingSec,
-        getProgress: () => this._timerState.progress,
-        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
-        resetToIdle: () => this._resetToIdle(),
-        getTimerController: () => this._timerController,
-        setTimerController: controller => { this._timerController = controller },
-        setTimeout: (fn, delay) => setTimeout(fn, delay),
-        clearTimeout: timer => clearTimeout(timer),
-        clearInterval: timer => clearInterval(timer),
-      })
+      this._startBreakController = createStartBreakController(
+        buildStartBreakPageCapabilities(this, { api })
+      )
     }
     return this._startBreakController
   },
 
   _getStartTimerController() {
     if (!this._startTimerController) {
-      this._startTimerController = createStartTimerController({
-        clearTimer: () => this._clearTimer(),
-        initCanvas: force => this._initCanvas(force),
-        setTimeout: (fn, delay) => setTimeout(fn, delay),
-        clearTimeout: timer => clearTimeout(timer),
-        clearInterval: timer => clearInterval(timer),
-        setTimerController: controller => { this._timerController = controller },
-        getRemainingSec: () => this._timerState.remainingSec,
-        formatCountdownDisplay: sec => this._formatCountdownDisplay(sec),
-        now: () => api.now(),
-        setCountdownTotalSec: value => { this._countdownTotalSec = value },
-        setCountdownEndAt: value => { this._countdownEndAt = value },
-        setTimerFields: patch => Object.assign(this._timerState, patch),
-        setData: data => this.setData(data),
-        isPaused: () => this.data.isPaused,
-        showEndConfirm: () => this.data.showEndConfirm,
-        getCountdownEndAt: () => this._countdownEndAt,
-        getProgress: () => this._timerState.progress,
-        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
-        isBreakPhase: () => this.data.phase === 'break',
-        onWorkComplete: () => this._onWorkComplete(),
-      })
+      this._startTimerController = createStartTimerController(
+        buildStartTimerPageCapabilities(this, { api })
+      )
     }
     return this._startTimerController
   },
@@ -1777,11 +1315,9 @@ Page({
 
   _getSkipBreakController() {
     if (!this._skipBreakController) {
-      this._skipBreakController = createSkipBreakController({
-        clearTimer: () => this._clearTimer(),
-        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        resetIdle: () => this._resetToIdle(),
-      })
+      this._skipBreakController = createSkipBreakController(
+        buildSkipBreakPageCapabilities(this, {})
+      )
     }
     return this._skipBreakController
   },
@@ -1798,31 +1334,9 @@ Page({
 
   _getActiveSyncController() {
     if (!this._activeSyncController) {
-      this._activeSyncController = createActiveSyncController({
-        now: () => api.now(),
-        view: () => this.data,
-        timer: () => this._timerState,
-        runningPhase: PHASE.RUNNING,
-        parseServerTime,
-        setData: data => this.setData(data),
-        updateComputedFields: () => this._updateComputedFields(),
-        mergeLocalPauseAdjustment: (sessionId, serverPausedMs, failClosed) =>
-          this._mergeLocalPauseAdjustment(sessionId, serverPausedMs, failClosed),
-        persistenceError: () => this._showPomodoroPersistenceError(),
-        canvasReady: () => !!this._canvasReady,
-        ctx: () => this._ctx,
-        nextTick: callback => wx.nextTick(callback),
-        isPageVisible: () => this._pageVisible,
-        initCanvas: force => this._initCanvas(force),
-        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
-        maxMs: FREE_TIMER_MAX_MS,
-        formatElapsedSec,
-        autoFinishFreeTimer: () => this._autoFinishFreeTimer(),
-        startFreeTimerInterval: () => this._startFreeTimerInterval(),
-        clearTimer: () => this._clearTimer(),
-        onWorkComplete: () => this._onWorkComplete(),
-        startTimer: (totalSec, timerOptions) => this._startTimer(totalSec, timerOptions),
-      })
+      this._activeSyncController = createActiveSyncController(
+        buildActiveSyncPageCapabilities(this, { api })
+      )
     }
     return this._activeSyncController
   },
@@ -1851,14 +1365,9 @@ Page({
 
   _activeSessionReconciler() {
     if (!this._activeSessionReconcile) {
-      this._activeSessionReconcile = createPomodoroActiveSessionReconciler({
-        safeGetPomodoroStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
-        buildCachedActiveSession: local => this._buildCachedActiveSession(local),
-        getActive: path => api.get(path),
-        safeRemovePomodoroStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        hasPendingPomodoroAction: (sessionId, actions) => this._hasPendingPomodoroAction(sessionId, actions),
-        clearLocalPauseAdjustment: sessionId => this._clearLocalPauseAdjustment(sessionId),
-      })
+      this._activeSessionReconcile = createPomodoroActiveSessionReconciler(
+        buildPomodoroActiveSessionReconcilerPageCapabilities(this, { api })
+      )
     }
     return this._activeSessionReconcile
   },
@@ -1868,39 +1377,18 @@ Page({
       return this._restoreFreeSession(session)
     }
     if (!this._countdownSessionRestoreController) {
-      this._countdownSessionRestoreController = createCountdownSessionRestoreController({
-        page: this,
-        now: () => api.now(),
-        parseServerTime,
-        resolvePausedMs,
-        computeCountdownRestore,
-        resolveRestoredSubject,
-        formatCountdownDisplay,
-        runningPhase: PHASE.RUNNING,
-        pomodoroTaskTypes,
-        nextTick: callback => wx.nextTick(callback),
-        vibrateLong: () => wx.vibrateLong(),
-        showToast: payload => wx.showToast(payload),
-      })
+      this._countdownSessionRestoreController = createCountdownSessionRestoreController(
+        buildCountdownSessionRestorePageCapabilities(this, { api })
+      )
     }
     return this._countdownSessionRestoreController.restore(session)
   },
 
   _restoreFreeSession(session) {
     if (!this._freeSessionRestoreController) {
-      this._freeSessionRestoreController = createFreeSessionRestoreController({
-        page: this,
-        now: () => api.now(),
-        parseServerTime,
-        resolvePausedMs,
-        computeFreeRestore,
-        resolveRestoredSubject,
-        formatElapsedSec,
-        maxMs: FREE_TIMER_MAX_MS,
-        runningPhase: PHASE.RUNNING,
-        pomodoroTaskTypes,
-        nextTick: callback => wx.nextTick(callback),
-      })
+      this._freeSessionRestoreController = createFreeSessionRestoreController(
+        buildFreeSessionRestorePageCapabilities(this, { api })
+      )
     }
     return this._freeSessionRestoreController.restore(session)
   },
@@ -1911,13 +1399,9 @@ Page({
 
   _getBreakRestoreController() {
     if (!this._breakRestoreController) {
-      this._breakRestoreController = createBreakRestoreController({
-        getStorageSync: key => wx.getStorageSync(key),
-        now: () => api.now(),
-        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-        resetIdle: () => this._resetToIdle(),
-        startBreak: (totalSec, breakOptions) => this._startBreak(totalSec, breakOptions),
-      })
+      this._breakRestoreController = createBreakRestoreController(
+        buildBreakRestorePageCapabilities(this, { api })
+      )
     }
     return this._breakRestoreController
   },
@@ -1947,33 +1431,9 @@ Page({
 
   _getCanvasInitController() {
     if (!this._canvasInitController) {
-      this._canvasInitController = createCanvasInitController({
-        canvasReady: () => this._canvasReady,
-        getCtx: () => this._ctx,
-        canvasInitPending: () => this._canvasInitPending,
-        getCanvasInitSeq: () => this._canvasInitSeq,
-        setCanvasInitSeq: value => { this._canvasInitSeq = value },
-        setCanvasInitPending: value => { this._canvasInitPending = value },
-        setCanvasReady: value => { this._canvasReady = value },
-        setCtx: value => { this._ctx = value },
-        setRingCache: value => { this._ringCache = value },
-        ringCanvasPaintReady: () => this.data.ringCanvasPaintReady,
-        setData: data => this.setData(data),
-        setLastDrawnProgress: value => { this._lastDrawnProgress = value },
-        setLastDrawnIsBreak: value => { this._lastDrawnIsBreak = value },
-        setLastDrawnAt: value => { this._lastDrawnAt = value },
-        maxRetries: () => CANVAS_INIT_MAX_RETRIES,
-        nextTick: fn => wx.nextTick(fn),
-        isPageVisible: () => this._pageVisible,
-        createSelectorQuery: () => wx.createSelectorQuery().in(this),
-        setTimeout: (fn, delay) => setTimeout(fn, delay),
-        getWindowInfo: () => (wx.getWindowInfo ? wx.getWindowInfo() : {}),
-        setDpr: value => { this._dpr = value },
-        setCanvasSize: value => { this._canvasSize = value },
-        getPendingDraw: () => this._pendingDraw,
-        setPendingDraw: value => { this._pendingDraw = value },
-        drawRing: (totalSec, isBreak) => this.drawRing(totalSec, isBreak),
-      })
+      this._canvasInitController = createCanvasInitController(
+        buildCanvasInitPageCapabilities(this, {})
+      )
     }
     return this._canvasInitController
   },
@@ -1984,30 +1444,9 @@ Page({
 
   _getDrawRingController() {
     if (!this._drawRingController) {
-      this._drawRingController = createDrawRingController({
-        getCtx: () => this._ctx,
-        setPendingDraw: value => { this._pendingDraw = value },
-        isPageVisible: () => this._pageVisible,
-        showEndConfirm: () => this.data.showEndConfirm,
-        ringCanvasVisible: () => this.data.ringCanvasVisible,
-        canvasInitPending: () => this._canvasInitPending,
-        initCanvas: force => this._initCanvas(force),
-        getProgress: () => this._timerState.progress,
-        now: () => api.now(),
-        getLastDrawnProgress: () => this._lastDrawnProgress,
-        getLastDrawnIsBreak: () => this._lastDrawnIsBreak,
-        getLastDrawnAt: () => this._lastDrawnAt,
-        setLastDrawnProgress: v => { this._lastDrawnProgress = v },
-        setLastDrawnIsBreak: v => { this._lastDrawnIsBreak = v },
-        setLastDrawnAt: v => { this._lastDrawnAt = v },
-        isFreeTimer: () => this.data.isFreeTimer,
-        themeMode: () => this.data.themeMode,
-        getRingCache: () => this._ringCache,
-        setRingCache: v => { this._ringCache = v },
-        buildRingCache: isBreak => this._buildRingCache(isBreak),
-        ringCanvasPaintReady: () => this.data.ringCanvasPaintReady,
-        setData: data => this.setData(data),
-      })
+      this._drawRingController = createDrawRingController(
+        buildDrawRingPageCapabilities(this, { api })
+      )
     }
     return this._drawRingController
   },
@@ -2024,11 +1463,9 @@ Page({
 
   _getStatsController() {
     if (!this._statsController) {
-      this._statsController = createStatsController({
-        get: path => api.get(path),
-        setTodayDurationSec: value => { this._timerState.todayDurationSec = value },
-        setData: data => this.setData(data),
-      })
+      this._statsController = createStatsController(
+        buildStatsPageCapabilities(this, { api })
+      )
     }
     return this._statsController
   },
@@ -2042,30 +1479,13 @@ Page({
     wx.navigateTo({ url: '/subpackages/productivity/pomodoro-stats/index' })
   },
 
-
   /* ==================== Theme ==================== */
 
   _getThemeController() {
     if (!this._themeController) {
-      this._themeController = createThemeController({
-        normalizeTheme: mode => pomodoroTheme.normalizeTheme(mode),
-        getTheme: () => pomodoroTheme.getTheme(),
-        setTheme: value => pomodoroTheme.setTheme(value),
-        applyNativeTheme: value => pomodoroTheme.applyNativeTheme(value),
-        getCurrentMode: () => this.data.themeMode,
-        setData: (data, callback) => this.setData(data, callback),
-        setTimeout: (callback, delay) => setTimeout(callback, delay),
-        clearTimeout: id => clearTimeout(id),
-        afterThemeApplied: () => {
-          this._ringCache = null
-          this._lastDrawnProgress = undefined
-          this._lastDrawnIsBreak = undefined
-          if ((this.data.phase === PHASE.RUNNING || this.data.phase === PHASE.BREAK) &&
-              this.data.ringCanvasVisible && !this.data.showEndConfirm) {
-            wx.nextTick(() => this.drawRing(this._getCurrentTotalSec(), this.data.phase === PHASE.BREAK))
-          }
-        },
-      })
+      this._themeController = createThemeController(
+        buildThemePageCapabilities(this, {})
+      )
     }
     return this._themeController
   },
@@ -2094,11 +1514,9 @@ Page({
 
   _getFontSizeController() {
     if (!this._fontSizeController) {
-      this._fontSizeController = createFontSizeController({
-        getCurrentLevel: () => this.data.fontSizeLevel,
-        setLevel: value => this.setData({ fontSizeLevel: value }),
-        persist: value => wx.setStorageSync('pomodoro_font_size', value),
-      })
+      this._fontSizeController = createFontSizeController(
+        buildFontSizePageCapabilities(this, {})
+      )
     }
     return this._fontSizeController
   },
@@ -2121,9 +1539,9 @@ Page({
 
   _getSubjectViewController() {
     if (!this._subjectViewController) {
-      this._subjectViewController = createSubjectViewController({
-        getSubjects: () => this.data.subjects,
-      })
+      this._subjectViewController = createSubjectViewController(
+        buildSubjectViewPageCapabilities(this, {})
+      )
     }
     return this._subjectViewController
   },
@@ -2132,16 +1550,15 @@ Page({
     return this._getSubjectViewController().color()
   },
 
-
   presetLabel(key) {
     return this._getPresetViewController().label(key)
   },
 
   _getPresetViewController() {
     if (!this._presetViewController) {
-      this._presetViewController = createPresetViewController({
-        getPresets: () => PRESETS,
-      })
+      this._presetViewController = createPresetViewController(
+        buildPresetViewPageCapabilities(this, {})
+      )
     }
     return this._presetViewController
   },
@@ -2152,10 +1569,9 @@ Page({
 
   _getCelebrationTypeController() {
     if (!this._celebrationTypeController) {
-      this._celebrationTypeController = createCelebrationTypeController({
-        getIndex: () => wx.getStorageSync('pomodoro_anim_idx'),
-        setIndex: value => wx.setStorageSync('pomodoro_anim_idx', value),
-      })
+      this._celebrationTypeController = createCelebrationTypeController(
+        buildCelebrationTypePageCapabilities(this, {})
+      )
     }
     return this._celebrationTypeController
   },
@@ -2170,13 +1586,9 @@ Page({
 
   _getDateExamController() {
     if (!this._dateExamController) {
-      this._dateExamController = createDateExamController({
-        now: () => api.now(),
-        getChinaWallParts,
-        getChinaDayStartUtcMs,
-        utc: parts => Date.UTC(parts.year, parts.month, parts.day),
-        getUtcDay: ms => new Date(ms).getUTCDay(),
-      })
+      this._dateExamController = createDateExamController(
+        buildDateExamPageCapabilities(this, { api })
+      )
     }
     return this._dateExamController
   },
