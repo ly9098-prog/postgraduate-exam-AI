@@ -275,3 +275,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 2026-10-30 小程序导出Public API按一个完整批次收敛预览/创建/分页与详情、下载/文件响应、删除、重试/原记录重导出和WebSocket鉴权交接；原请求声明和动态端口保留，生成器/processor/worker及数据库结构保持原实现。七个职责模块遵循300/50预算，保留锁、幂等冲突回滚、文件失败回滚、旧文件可读与日志上下文finally边界。兼容说明见 `EXPORT_REQUEST_COMPATIBILITY.md`；命令/结果/hash见 `refactor-results/miniprogram-export-interface-2026-10-30.json`。无真实文件删除或生产操作，其他小程序接口与真实环境验收继续。
 
 2026-10-30 小程序错题Public API整链收敛至六个职责模块：代码/普通文本及选项清洗、AI标记/响应投影、当前题目与复习聚合查询、列表/任务流/详情读取、更新/批量缓存编排、诊断读取/确认/建议。原三个统计/分类薄入口保留，原23函数声明和动态端口语义保持，历史question_version_id用于复习计数而当前Question用于展示的边界保持。兼容说明见 `WRONG_BOOK_REQUEST_COMPATIBILITY.md`；命令/数量/hash见 `refactor-results/miniprogram-wrong-interface-2026-10-30.json`。底层service/事务与小程序页面实现未改，后续继续核实practice提交/记录/知识状态请求职责和其余Public API覆盖。
+
+2026-10-30 小程序章节知识诊断请求链路将历史scope清洗、根章节/最近会话/汇总与响应投影集中到一个 `knowledge_diagnosis_projection.py`；service保留原查询及调用编排，Public API薄路由保留。统计页与学习中心的实际消费者纳入契约。兼容说明见 `KNOWLEDGE_DIAGNOSIS_COMPATIBILITY.md`，验收命令/数量/hash见 `refactor-results/miniprogram-knowledge-diagnosis-2026-10-30.json`。既有 `knowledge_diagnosis_logic.py` 聚合/排名依赖保持原实现，其长函数仍属于后续语义盘点，不能据本批认定知识领域全部完成。优先级仍为小程序接口、后台管理系统接口、OCR接口；真实客户端与全栈验收待完成。

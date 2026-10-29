@@ -609,6 +609,7 @@ jobs:
             tests/test_services/test_study_plan_compatibility.py \
             tests/test_services/test_study_plan_completion_contract.py \
             tests/architecture/test_study_plan_boundaries.py \
+            tests/architecture/test_knowledge_diagnosis_boundaries.py \
             tests/test_services/test_dashboard_stats_compatibility.py \
             tests/test_services/test_review_scheduler_compatibility.py \
             tests/test_services/test_error_diagnosis_compatibility.py \
@@ -714,6 +715,7 @@ jobs:
             tests/test_api/test_practice_request_contract.py \
             tests/architecture/test_practice_request_boundaries.py \
             tests/test_services/test_study_plan_request_contract.py \
+            tests/test_services/test_knowledge_diagnosis_contract.py \
             tests/test_api/test_import_page_range.py \
             tests/test_api/test_image_import_status.py \
             tests/test_api/test_import_sse_metrics.py \
