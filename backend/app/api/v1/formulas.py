@@ -1,40 +1,108 @@
-import random
+import random  # noqa: F401 - live formula-library port
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_, select
+from fastapi import (  # noqa: F401 - live formula-library port
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+)
+from sqlalchemy import and_, func, or_, select  # noqa: F401 - live formula-library port
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.subject_scope import EXAM408_FORMULA_SCOPE
-from app.core.time_utils import serialize_utc_datetime
+from app.core.subject_scope import (
+    EXAM408_FORMULA_SCOPE,  # noqa: F401 - live formula-library port
+)
+from app.core.time_utils import (
+    serialize_utc_datetime,  # noqa: F401 - live formula-library port
+)
 from app.models.formula import (
     FormulaCard,
-    FormulaCardTag,
+    FormulaCardTag,  # noqa: F401 - live formula-library port
     FormulaCategory,
     FormulaGraphAsset,
     FormulaGraphSpec,
-    FormulaTag,
-    UserFormulaFavorite,
+    FormulaTag,  # noqa: F401 - live formula-library port
+    UserFormulaFavorite,  # noqa: F401 - live formula-library port
 )
 from app.models.user import User
-from app.schemas.common import paginated_response
-from app.schemas.formula import FormulaGraphAssetResponse
+from app.schemas.common import (
+    paginated_response,  # noqa: F401 - live formula-library port
+)
+from app.schemas.formula import (
+    FormulaGraphAssetResponse,  # noqa: F401 - live formula-library port
+)
 from app.services.formula_graph_asset_service import (
-    choose_effective_graph_asset,
-    is_function_graph,
-    load_graph_assets_map,
-    resolve_graph_asset_public_url,
+    choose_effective_graph_asset,  # noqa: F401 - live formula-library port
+    is_function_graph,  # noqa: F401 - live formula-library port
+    load_graph_assets_map,  # noqa: F401 - live formula-library port
+    resolve_graph_asset_public_url,  # noqa: F401 - live formula-library port
+)
+from app.services.formula_library_access import (
+    add_formula_favorite as library_add_formula_favorite,
+)
+from app.services.formula_library_access import (
+    get_formula_detail as library_get_formula_detail,
+)
+from app.services.formula_library_access import (
+    get_random_formula as library_get_random_formula,
+)
+from app.services.formula_library_access import (
+    remove_formula_favorite as library_remove_formula_favorite,
+)
+from app.services.formula_library_catalog import (
+    _build_category_tree as library__build_category_tree,
+)
+from app.services.formula_library_catalog import (
+    _get_active_categories as library__get_active_categories,
+)
+from app.services.formula_library_catalog import (
+    get_formula_catalog as library_get_formula_catalog,
+)
+from app.services.formula_library_catalog import (
+    get_formula_tags as library_get_formula_tags,
+)
+from app.services.formula_library_filters import (
+    _apply_library_type_filter as library__apply_library_type_filter,
+)
+from app.services.formula_library_filters import (
+    _apply_list_filters as library__apply_list_filters,
+)
+from app.services.formula_library_filters import (
+    _apply_study_card_type_filter as library__apply_study_card_type_filter,
+)
+from app.services.formula_library_filters import (
+    _exam_scope_values as library__exam_scope_values,
+)
+from app.services.formula_library_filters import (
+    _validate_chapter as library__validate_chapter,
+)
+from app.services.formula_library_listing import (
+    list_favorite_formulas as library_list_favorite_formulas,
+)
+from app.services.formula_library_listing import list_formulas as library_list_formulas
+from app.services.formula_library_projection import (
+    _batch_load_specs as library__batch_load_specs,
+)
+from app.services.formula_library_projection import (
+    _batch_load_tags as library__batch_load_tags,
+)
+from app.services.formula_library_projection import (
+    _card_to_response as library__card_to_response,
+)
+from app.services.formula_library_projection import (
+    _graph_spec_to_dict as library__graph_spec_to_dict,
 )
 from app.services.formula_study_card_service import (
     public_card_type_catalog,
-    validate_study_card_type,
+    validate_study_card_type,  # noqa: F401 - live formula-library port
 )
 from app.services.formula_subject_scope import (
-    apply_formula_subject_filter,
-    collapse_formula_catalog_subjects,
-    expand_formula_subject_code,
-    formula_catalog_category_ids,
+    apply_formula_subject_filter,  # noqa: F401 - live formula-library port
+    collapse_formula_catalog_subjects,  # noqa: F401 - live formula-library port
+    expand_formula_subject_code,  # noqa: F401 - live formula-library port
+    formula_catalog_category_ids,  # noqa: F401 - live formula-library port
 )
 
 router = APIRouter(prefix="/api/v1/formulas", tags=["formulas"])
@@ -42,45 +110,11 @@ router = APIRouter(prefix="/api/v1/formulas", tags=["formulas"])
 
 def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
     """Build nested category tree from flat list."""
-    cat_map = {}
-    for cat in categories:
-        cat_map[cat.id] = {
-            "id": cat.id,
-            "parent_id": cat.parent_id,
-            "exam_scope": cat.exam_scope,
-            "node_type": cat.node_type,
-            "code": cat.code,
-            "name": cat.name,
-            "description": cat.description,
-            "sort_order": cat.sort_order,
-            "is_active": cat.is_active,
-            "children": [],
-        }
-    roots = []
-    for cat_id, cat_dict in cat_map.items():
-        parent_id = cat_dict["parent_id"]
-        if parent_id is None:
-            roots.append(cat_dict)
-        elif parent_id in cat_map:
-            cat_map[parent_id]["children"].append(cat_dict)
-
-    # Sort children at each level
-    def _sort_tree(nodes):
-        nodes.sort(key=lambda n: n["sort_order"])
-        for node in nodes:
-            _sort_tree(node["children"])
-        return nodes
-
-    return _sort_tree(roots)
+    return library__build_category_tree(categories, ports=_formula_library_port)
 
 
 def _exam_scope_values(exam_scope: str | None) -> tuple[str, ...] | None:
-    raw = str(exam_scope or "").strip().lower()
-    if not raw:
-        return None
-    # Formula scope is strict as well: stale aliases must fail to match instead
-    # of silently reading a mixed historical dataset.
-    return (EXAM408_FORMULA_SCOPE,) if raw == EXAM408_FORMULA_SCOPE else (raw,)
+    return library__exam_scope_values(exam_scope, ports=_formula_library_port)
 
 
 async def _get_active_categories(
@@ -88,17 +122,9 @@ async def _get_active_categories(
     exam_scope: str | None = None,
     subject_code: str | None = None,
 ) -> list[FormulaCategory]:
-    query = select(FormulaCategory).where(FormulaCategory.is_active)
-    scope_values = _exam_scope_values(exam_scope)
-    if scope_values:
-        query = query.where(FormulaCategory.exam_scope.in_(scope_values))
-    category_ids = formula_catalog_category_ids(subject_code)
-    if category_ids is not None:
-        query = query.where(FormulaCategory.id.in_(category_ids))
-    result = await db.execute(
-        query.order_by(FormulaCategory.sort_order.asc(), FormulaCategory.id.asc())
+    return await library__get_active_categories(
+        db, exam_scope, subject_code, ports=_formula_library_port
     )
-    return list(result.scalars().all())
 
 
 async def _card_to_response(
@@ -116,114 +142,28 @@ async def _card_to_response(
         tags_map: Pre-loaded tags keyed by card_id (avoids N+1 in list endpoints).
         specs_map: Pre-loaded graph specs keyed by card_id (avoids N+1).
     """
-    tags = (tags_map or {}).get(card.id)
-    if tags is None:
-        tags_result = await db.execute(
-            select(FormulaTag)
-            .join(FormulaCardTag, FormulaCardTag.tag_id == FormulaTag.id)
-            .where(FormulaCardTag.formula_card_id == card.id)
-        )
-        tags = [
-            {"id": t.id, "code": t.code, "name": t.name, "sort_order": t.sort_order}
-            for t in tags_result.scalars().all()
-        ]
-
-    # Graph asset response (never expose file paths)
-    graph_asset_resp = None
-    if graph_asset:
-        graph_asset_resp = FormulaGraphAssetResponse.model_validate(graph_asset)
-    elif card.card_type != "pure_formula":
-        from app.services.formula_graph_asset_service import (
-            get_effective_graph_asset_for_card,
-        )
-
-        effective = await get_effective_graph_asset_for_card(db, card.id)
-        if effective:
-            graph_asset_resp = FormulaGraphAssetResponse.model_validate(effective)
-
-    if graph_asset_resp:
-        graph_asset_resp.image_url = resolve_graph_asset_public_url(graph_asset_resp.image_url)
-        graph_asset_resp.thumbnail_url = resolve_graph_asset_public_url(graph_asset_resp.thumbnail_url)
-        graph_asset_resp.original_svg_url = resolve_graph_asset_public_url(graph_asset_resp.original_svg_url)
-
-    # Load multi-graph specs (FormulaGraphSpec)
-    graph_specs = (specs_map or {}).get(card.id)
-    if graph_specs is None:
-        specs_result = await db.execute(
-            select(FormulaGraphSpec)
-            .where(FormulaGraphSpec.formula_card_id == card.id)
-            .order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
-        )
-        graph_specs = [_graph_spec_to_dict(s) for s in specs_result.scalars().all()]
-
-    return {
-        "id": card.id,
-        "exam_scope": card.exam_scope,
-        "category_id": card.category_id,
-        "title": card.title,
-        "aliases": card.aliases,
-        "search_text": card.search_text,
-        "card_type": card.card_type,
-        "study_card_type": card.study_card_type or "formula",
-        "template_type": card.template_type or "standard",
-        "is_function_graph": is_function_graph(card, effective_asset=graph_asset),
-        "summary": card.summary,
-        "formula_blocks": card.formula_blocks,
-        "conditions": card.conditions,
-        "symbol_notes": card.symbol_notes,
-        "secondary_conclusions": card.secondary_conclusions,
-        "error_tips": card.error_tips,
-        "examples": card.examples,
-        "function_properties": card.function_properties,
-        "graph_asset": graph_asset_resp,
-        # Flat legacy fields for miniprogram compatibility
-        "graph_image_url": graph_asset_resp.image_url if graph_asset_resp else None,
-        "graph_thumbnail_url": graph_asset_resp.thumbnail_url
-        if graph_asset_resp
-        else None,
-        "sort_order": card.sort_order,
-        "status": card.status,
-        "tags": tags,
-        "published_at": serialize_utc_datetime(card.published_at)
-        if card.published_at
-        else None,
-        "version": card.version,
-        "created_at": serialize_utc_datetime(card.created_at)
-        if card.created_at
-        else None,
-        "updated_at": serialize_utc_datetime(card.updated_at)
-        if card.updated_at
-        else None,
-        # Multi-graph support: stable graph specs with independent assets
-        "graph_specs": graph_specs,
-    }
+    return await library__card_to_response(
+        db,
+        card,
+        graph_asset,
+        tags_map=tags_map,
+        specs_map=specs_map,
+        ports=_formula_library_port,
+    )
 
 
 def _graph_spec_to_dict(spec: FormulaGraphSpec) -> dict:
     """Convert a FormulaGraphSpec to a dict for API response."""
-    d = {
-        "slug": spec.slug,
-        "title": spec.title,
-        "source_ref": spec.source_ref,
-        "status": spec.status,
-        "sort_order": spec.sort_order,
-        "alt_text": spec.alt_text,
-        "description": spec.description,
-    }
-    # Include confirmed asset info if available
-    if spec.confirmed_asset_id:
-        d["asset_id"] = spec.confirmed_asset_id
-    return d
+    return library__graph_spec_to_dict(spec, ports=_formula_library_port)
 
 
 # ── Shared library_type filter ──
 
 
 def _apply_study_card_type_filter(query, study_card_type: str | None):
-    if not study_card_type or study_card_type == "all":
-        return query
-    normalized = validate_study_card_type(study_card_type)
-    return query.where(FormulaCard.study_card_type == normalized)
+    return library__apply_study_card_type_filter(
+        query, study_card_type, ports=_formula_library_port
+    )
 
 
 def _apply_library_type_filter(query, library_type: str | None):
@@ -232,29 +172,8 @@ def _apply_library_type_filter(query, library_type: str | None):
     Not provided / ``"formula"`` — no filtering (show all published cards).
     ``"function_graph"`` — only cards where ``is_function_graph()`` is true.
     """
-    if library_type is None or library_type == "formula":
-        return query
-
-    if library_type == "function_graph":
-        exists_subq = (
-            select(FormulaGraphAsset.id).where(
-                FormulaGraphAsset.formula_card_id == FormulaCard.id,
-                FormulaGraphAsset.image_url.isnot(None),
-            )
-        ).exists()
-        return query.where(
-            or_(
-                FormulaCard.card_type == "function_graph",
-                and_(
-                    ~FormulaCard.card_type.in_(["function_graph", "pure_formula"]),
-                    exists_subq,
-                ),
-            )
-        )
-
-    raise HTTPException(
-        status_code=400,
-        detail=f"无效的 library_type: '{library_type}'，允许的值: formula, function_graph",
+    return library__apply_library_type_filter(
+        query, library_type, ports=_formula_library_port
     )
 
 
@@ -276,58 +195,16 @@ async def get_formula_catalog(
     Only includes chapters that have at least one published, non-deleted card
     matching the optional library_type and favorite_only filters.
     """
-    categories = await _get_active_categories(db, exam_scope, subject_code)
-    tree = _build_category_tree(categories)
-
-    # Count published + non-deleted cards per category_id
-    count_query = select(
-        FormulaCard.category_id,
-        func.count(FormulaCard.id).label("cnt"),
-    ).where(
-        FormulaCard.status == "published",
-        FormulaCard.deleted_at.is_(None),
+    return await library_get_formula_catalog(
+        subject_code,
+        library_type,
+        study_card_type,
+        favorite_only,
+        exam_scope,
+        current_user,
+        db,
+        ports=_formula_library_port,
     )
-
-    scope_values = _exam_scope_values(exam_scope)
-    if scope_values:
-        count_query = count_query.where(FormulaCard.exam_scope.in_(scope_values))
-
-    if library_type:
-        count_query = _apply_library_type_filter(count_query, library_type)
-    count_query = _apply_study_card_type_filter(count_query, study_card_type)
-    count_query = apply_formula_subject_filter(count_query, subject_code)
-
-    if favorite_only and current_user:
-        fav_subq = select(UserFormulaFavorite.formula_card_id).where(
-            UserFormulaFavorite.user_id == current_user.id
-        )
-        count_query = count_query.where(FormulaCard.id.in_(fav_subq))
-
-    count_query = count_query.group_by(FormulaCard.category_id)
-    count_result = await db.execute(count_query)
-    counts_by_cat = {row[0]: row[1] for row in count_result.all()}
-
-    # Walk the tree: compute total available_count per chapter (lineage → group descendants)
-    def _inject_counts(nodes, parent_accumulator=0):
-        for node in nodes:
-            node_cards = counts_by_cat.get(node["id"], 0)
-            if node.get("children"):
-                child_accumulator = _inject_counts(node["children"], 0)
-                node_cards += child_accumulator
-            node["available_count"] = node_cards
-            parent_accumulator += node_cards
-        return parent_accumulator
-
-    _inject_counts(tree, 0)
-
-    # Prune empty chapters from subject-level children
-    for subject in tree:
-        if subject.get("children"):
-            subject["children"] = [
-                ch for ch in subject["children"] if ch.get("available_count", 0) > 0
-            ]
-
-    return {"items": collapse_formula_catalog_subjects(tree, subject_code)}
 
 
 # ── Batch loading helpers (eliminate N+1) ──
@@ -337,53 +214,14 @@ async def _batch_load_tags(
     db: AsyncSession, card_ids: list[int]
 ) -> dict[int, list[dict]]:
     """Load tags for all card_ids at once. Returns {card_id: [tag_dict, ...]}."""
-    if not card_ids:
-        return {}
-    result = await db.execute(
-        select(
-            FormulaCardTag.formula_card_id,
-            FormulaTag.id,
-            FormulaTag.code,
-            FormulaTag.name,
-            FormulaTag.sort_order,
-        )
-        .join(FormulaTag, FormulaCardTag.tag_id == FormulaTag.id)
-        .where(FormulaCardTag.formula_card_id.in_(card_ids))
-    )
-    tags_by_card: dict[int, list[dict]] = {}
-    for row in result.all():
-        cid = row.formula_card_id
-        if cid not in tags_by_card:
-            tags_by_card[cid] = []
-        tags_by_card[cid].append(
-            {
-                "id": row.id,
-                "code": row.code,
-                "name": row.name,
-                "sort_order": row.sort_order,
-            }
-        )
-    return tags_by_card
+    return await library__batch_load_tags(db, card_ids, ports=_formula_library_port)
 
 
 async def _batch_load_specs(
     db: AsyncSession, card_ids: list[int]
 ) -> dict[int, list[dict]]:
     """Load graph specs for all card_ids at once. Returns {card_id: [spec_dict, ...]}."""
-    if not card_ids:
-        return {}
-    result = await db.execute(
-        select(FormulaGraphSpec)
-        .where(FormulaGraphSpec.formula_card_id.in_(card_ids))
-        .order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
-    )
-    specs_by_card: dict[int, list[dict]] = {}
-    for spec in result.scalars().all():
-        cid = spec.formula_card_id
-        if cid not in specs_by_card:
-            specs_by_card[cid] = []
-        specs_by_card[cid].append(_graph_spec_to_dict(spec))
-    return specs_by_card
+    return await library__batch_load_specs(db, card_ids, ports=_formula_library_port)
 
 
 # ── 408 study-card types ──
@@ -403,14 +241,7 @@ async def get_formula_tags(
     db: AsyncSession = Depends(get_db),
 ):
     """Get available fixed tags."""
-    result = await db.execute(select(FormulaTag).order_by(FormulaTag.sort_order.asc()))
-    tags = result.scalars().all()
-    return {
-        "items": [
-            {"id": t.id, "code": t.code, "name": t.name, "sort_order": t.sort_order}
-            for t in tags
-        ]
-    }
+    return await library_get_formula_tags(db, ports=_formula_library_port)
 
 
 # ── List ──
@@ -420,36 +251,9 @@ async def _validate_chapter(
     db: AsyncSession, chapter_id: int, subject_code: str | None
 ) -> None:
     """Validate that chapter_id is a valid chapter node and belongs to the specified subject."""
-    result = await db.execute(
-        select(FormulaCategory).where(
-            FormulaCategory.id == chapter_id,
-            FormulaCategory.is_active,
-            FormulaCategory.node_type == "chapter",
-        )
+    return await library__validate_chapter(
+        db, chapter_id, subject_code, ports=_formula_library_port
     )
-    chapter = result.scalar_one_or_none()
-    if not chapter:
-        raise HTTPException(
-            status_code=400,
-            detail=f"章节 ID {chapter_id} 不存在或不是章节目录",
-        )
-
-    # Verify chapter belongs to any stored subject in the logical request scope.
-    subject_codes = expand_formula_subject_code(subject_code)
-    if subject_codes:
-        subject_result = await db.execute(
-            select(FormulaCategory.id).where(
-                FormulaCategory.is_active,
-                FormulaCategory.code.in_(subject_codes),
-                FormulaCategory.node_type == "subject",
-            )
-        )
-        subject_ids = set(subject_result.scalars().all())
-        if subject_ids and chapter.parent_id not in subject_ids:
-            raise HTTPException(
-                status_code=400,
-                detail=f"章节 ID {chapter_id} 不属于学科 {subject_code}",
-            )
 
 
 def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
@@ -464,42 +268,15 @@ def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
     Accept both supported storage shapes: cards may belong directly to a
     chapter or to one of that chapter's groups.
     """
-    query = apply_formula_subject_filter(query, subject_code)
-
-    if chapter_id:
-        scoped_category_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.is_active,
-            or_(
-                FormulaCategory.id == chapter_id,
-                FormulaCategory.parent_id == chapter_id,
-            ),
-        )
-        query = query.where(FormulaCard.category_id.in_(scoped_category_ids_subq))
-
-    if category_id:
-        query = query.where(FormulaCard.category_id == category_id)
-
-    if tags:
-        tag_codes = [t.strip() for t in tags.split(",") if t.strip()]
-        if tag_codes:
-            matching_card_ids = (
-                select(FormulaCardTag.formula_card_id)
-                .join(FormulaTag, FormulaCardTag.tag_id == FormulaTag.id)
-                .where(FormulaTag.code.in_(tag_codes))
-                .group_by(FormulaCardTag.formula_card_id)
-                .having(func.count(FormulaCardTag.formula_card_id) == len(tag_codes))
-            )
-            query = query.where(FormulaCard.id.in_(matching_card_ids))
-
-    if q:
-        like_pattern = f"%{q}%"
-        query = query.where(
-            or_(
-                FormulaCard.title.ilike(like_pattern),
-                FormulaCard.search_text.ilike(like_pattern),
-            )
-        )
-    return query
+    return library__apply_list_filters(
+        query,
+        subject_code,
+        chapter_id,
+        category_id,
+        tags,
+        q,
+        ports=_formula_library_port,
+    )
 
 
 @router.get("")
@@ -519,63 +296,22 @@ async def list_formulas(
     db: AsyncSession = Depends(get_db),
 ):
     """List published formula cards with filtering."""
-    # Validate chapter_id belongs to subject before querying
-    if chapter_id is not None:
-        await _validate_chapter(db, chapter_id, subject_code)
-
-    base_query = select(FormulaCard).where(
-        FormulaCard.status == "published",
-        FormulaCard.deleted_at.is_(None),
+    return await library_list_formulas(
+        subject_code,
+        chapter_id,
+        category_id,
+        tags,
+        q,
+        favorite_only,
+        library_type,
+        study_card_type,
+        exam_scope,
+        page,
+        page_size,
+        current_user,
+        db,
+        ports=_formula_library_port,
     )
-    scope_values = _exam_scope_values(exam_scope)
-    if scope_values:
-        base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
-
-    base_query = _apply_library_type_filter(base_query, library_type)
-    base_query = _apply_study_card_type_filter(base_query, study_card_type)
-    base_query = _apply_list_filters(
-        base_query, subject_code, chapter_id, category_id, tags, q
-    )
-
-    # Favorite only
-    if favorite_only and current_user:
-        fav_card_ids = select(UserFormulaFavorite.formula_card_id).where(
-            UserFormulaFavorite.user_id == current_user.id
-        )
-        base_query = base_query.where(FormulaCard.id.in_(fav_card_ids))
-
-    # Count
-    count_q = select(func.count()).select_from(base_query.subquery())
-    total_result = await db.execute(count_q)
-    total = total_result.scalar() or 0
-
-    # Pagination
-    offset = (page - 1) * page_size
-    query = base_query.order_by(FormulaCard.sort_order.asc(), FormulaCard.id.asc())
-    query = query.offset(offset).limit(page_size)
-    result = await db.execute(query)
-    cards = list(result.scalars().all())
-
-    # Batch-load graph assets
-    card_ids = [c.id for c in cards]
-    assets_map = await load_graph_assets_map(db, card_ids)
-    tags_map = await _batch_load_tags(db, card_ids)
-    specs_map = await _batch_load_specs(db, card_ids)
-
-    items = []
-    for card in cards:
-        effective = choose_effective_graph_asset(assets_map.get(card.id, []))
-        items.append(
-            await _card_to_response(
-                db,
-                card,
-                graph_asset=effective,
-                tags_map=tags_map,
-                specs_map=specs_map,
-            )
-        )
-
-    return paginated_response(items, total, page, page_size)
 
 
 @router.get("/{formula_id}")
@@ -585,20 +321,9 @@ async def get_formula_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single published formula card."""
-    query = select(FormulaCard).where(
-        FormulaCard.id == formula_id,
-        FormulaCard.status == "published",
-        FormulaCard.deleted_at.is_(None),
+    return await library_get_formula_detail(
+        formula_id, exam_scope, db, ports=_formula_library_port
     )
-    scope_values = _exam_scope_values(exam_scope)
-    if scope_values:
-        query = query.where(FormulaCard.exam_scope.in_(scope_values))
-    result = await db.execute(query)
-    card = result.scalar_one_or_none()
-    if not card:
-        raise HTTPException(status_code=404, detail="Formula not found")
-
-    return await _card_to_response(db, card)
 
 
 # ── Favorites ──
@@ -623,57 +348,21 @@ async def list_favorite_formulas(
 
     Supports the same filters as /formulas but implicitly scoped to favorites.
     """
-    fav_q = select(UserFormulaFavorite.formula_card_id).where(
-        UserFormulaFavorite.user_id == current_user.id
+    return await library_list_favorite_formulas(
+        subject_code,
+        chapter_id,
+        category_id,
+        tags,
+        q,
+        library_type,
+        study_card_type,
+        exam_scope,
+        page,
+        page_size,
+        current_user,
+        db,
+        ports=_formula_library_port,
     )
-
-    base_query = select(FormulaCard).where(
-        FormulaCard.id.in_(fav_q),
-        FormulaCard.status == "published",
-        FormulaCard.deleted_at.is_(None),
-    )
-    scope_values = _exam_scope_values(exam_scope)
-    if scope_values:
-        base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
-
-    base_query = _apply_library_type_filter(base_query, library_type)
-    base_query = _apply_study_card_type_filter(base_query, study_card_type)
-
-    # Reuse shared filter logic via _apply_list_filters
-    base_query = _apply_list_filters(
-        base_query, subject_code, chapter_id, category_id, tags, q
-    )
-
-    count_q = select(func.count()).select_from(base_query.subquery())
-    total_result = await db.execute(count_q)
-    total = total_result.scalar() or 0
-
-    offset = (page - 1) * page_size
-    query = base_query.order_by(FormulaCard.sort_order.asc(), FormulaCard.id.asc())
-    query = query.offset(offset).limit(page_size)
-    result = await db.execute(query)
-    cards = list(result.scalars().all())
-
-    # Batch-load graph assets, tags, and specs (eliminate N+1)
-    card_ids = [c.id for c in cards]
-    assets_map = await load_graph_assets_map(db, card_ids)
-    tags_map = await _batch_load_tags(db, card_ids)
-    specs_map = await _batch_load_specs(db, card_ids)
-
-    items = []
-    for card in cards:
-        effective = choose_effective_graph_asset(assets_map.get(card.id, []))
-        items.append(
-            await _card_to_response(
-                db,
-                card,
-                graph_asset=effective,
-                tags_map=tags_map,
-                specs_map=specs_map,
-            )
-        )
-
-    return paginated_response(items, total, page, page_size)
 
 
 # ── Random ──
@@ -696,66 +385,19 @@ async def get_random_formula(
 
     When the candidate pool is exhausted, clear exclude_ids and retry once.
     """
-    base_query = select(FormulaCard).where(
-        FormulaCard.status == "published",
-        FormulaCard.deleted_at.is_(None),
+    return await library_get_random_formula(
+        subject_code,
+        chapter_id,
+        category_id,
+        tags,
+        exclude_ids,
+        library_type,
+        study_card_type,
+        exam_scope,
+        current_user,
+        db,
+        ports=_formula_library_port,
     )
-    scope_values = _exam_scope_values(exam_scope)
-    if scope_values:
-        base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
-
-    base_query = _apply_library_type_filter(base_query, library_type)
-    base_query = _apply_study_card_type_filter(base_query, study_card_type)
-
-    # Keep random mode on exactly the same subject/chapter semantics as the
-    # normal and favorites lists. This is especially important for 408 cards,
-    # which are stored directly on chapter categories.
-    base_query = _apply_list_filters(
-        base_query, subject_code, chapter_id, category_id, tags, None
-    )
-
-    # Exclude IDs (parse comma-separated string)
-    if exclude_ids:
-        try:
-            excluded = [int(x.strip()) for x in exclude_ids.split(",") if x.strip()]
-            if excluded:
-                base_query = base_query.where(FormulaCard.id.notin_(excluded))
-        except ValueError:
-            pass
-
-    count_q = select(func.count()).select_from(base_query.subquery())
-    total_result = await db.execute(count_q)
-    total = total_result.scalar() or 0
-
-    if total == 0 and exclude_ids:
-        # Retry once without exclude_ids
-        return await get_random_formula(
-            subject_code=subject_code,
-            chapter_id=chapter_id,
-            category_id=category_id,
-            tags=tags if tags else None,
-            library_type=library_type,
-            study_card_type=study_card_type,
-            exam_scope=exam_scope,
-            exclude_ids=None,
-            current_user=current_user,
-            db=db,
-        )
-
-    if total == 0:
-        raise HTTPException(status_code=404, detail="No formulas available")
-
-    random_card = (
-        base_query.order_by(FormulaCard.id.asc())
-        .offset(random.randint(0, total - 1))
-        .limit(1)
-    )
-    result = await db.execute(random_card)
-    card = result.scalar_one_or_none()
-    if not card:
-        raise HTTPException(status_code=404, detail="No formulas available")
-
-    return await _card_to_response(db, card)
 
 
 # ── Favorite Toggle ──
@@ -768,31 +410,9 @@ async def add_formula_favorite(
     db: AsyncSession = Depends(get_db),
 ):
     """Add a formula to favorites (idempotent)."""
-    # Verify card exists and is published
-    result = await db.execute(
-        select(FormulaCard).where(
-            FormulaCard.id == formula_id,
-            FormulaCard.status == "published",
-            FormulaCard.deleted_at.is_(None),
-        )
+    return await library_add_formula_favorite(
+        formula_id, current_user, db, ports=_formula_library_port
     )
-    card = result.scalar_one_or_none()
-    if not card:
-        raise HTTPException(status_code=404, detail="Formula not found")
-
-    # Check if already favorited
-    existing = await db.execute(
-        select(UserFormulaFavorite).where(
-            UserFormulaFavorite.user_id == current_user.id,
-            UserFormulaFavorite.formula_card_id == formula_id,
-        )
-    )
-    if not existing.scalar_one_or_none():
-        fav = UserFormulaFavorite(user_id=current_user.id, formula_card_id=formula_id)
-        db.add(fav)
-        await db.commit()
-
-    return {"status": "ok"}
 
 
 @router.delete("/{formula_id}/favorite")
@@ -802,15 +422,19 @@ async def remove_formula_favorite(
     db: AsyncSession = Depends(get_db),
 ):
     """Remove a formula from favorites (idempotent)."""
-    result = await db.execute(
-        select(UserFormulaFavorite).where(
-            UserFormulaFavorite.user_id == current_user.id,
-            UserFormulaFavorite.formula_card_id == formula_id,
-        )
+    return await library_remove_formula_favorite(
+        formula_id, current_user, db, ports=_formula_library_port
     )
-    fav = result.scalar_one_or_none()
-    if fav:
-        await db.delete(fav)
-        await db.commit()
 
-    return {"status": "ok"}
+
+def _formula_library_port(name):
+    """Resolve protocol/model/helper dependencies when the service uses them."""
+    namespace = globals()
+    if name in namespace:
+        return namespace[name]
+    bound_builtins = namespace["__builtins__"]
+    if not isinstance(bound_builtins, dict):
+        bound_builtins = vars(bound_builtins)
+    if name in bound_builtins:
+        return bound_builtins[name]
+    raise NameError(f"name '{name}' is not defined", name=name)

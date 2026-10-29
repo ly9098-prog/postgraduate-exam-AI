@@ -1,5 +1,9 @@
 # 全栈重构源码盘点
 
+## 当前接口执行优先级（2026-10-29）
+
+用户明确顺序：**小程序接口 > 后台管理系统接口 > OCR 接口**。先按小程序真实调用链处理Public API及必要后端职责，再处理Admin API/管理端接口编排，最后处理OCR专用导入、识别与恢复接口。下文历史批次及热点表不是调度顺序；保持完整业务链路一批与兼容验证，不按文件长度机械排序。当前OCR后续只有只读盘点、无新增实现；错题AI剩余长函数已核对为依赖装配，避免只为行数再拆。当前优先完成小程序公式库Public API整条消费链路。
+
 > 核对日期：2026-10-23（§1 计数为当日复跑；各批次叙事截止 2026-10-22）；对应 `prompts/tasks/current_task.md` 阶段 0/4。
 > 本清单登记真实入口、结构证据、回归入口和后续决策，不代表所有业务语义已审查完毕。
 
@@ -265,3 +269,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第一百一十二阶段（2026-10-22）运行时启动/关闭失败边界：HTTP lifespan 以同一 try/finally 覆盖 startup 与 yield，yield 前 db/executor/OCR 失败也走有序清理，已有启动异常不被清理错误或清理取消覆盖；standalone 资源拆为 `StandaloneRuntimeResources(role, registry, ocr)`，worker OCR client 在 gateway 构造窗口保留并按自身 shutdown 关闭，gateway 普通失败或取消不跳过暂存 worker/shared client，显式 resources 不回落全局 singleton；新增 `runtime_startup_cleanup` 统一保留原失败及 SystemError 身份。readiness 将 Alembic stale 作为关键失败返回 503，生产 checks 继续脱敏。OCR shutdown 定向 47 项、全量 architecture 255 项通过；tests/core 为 1,620 passed、4 skipped、3 failed，后者为交接既有 safe_remote_fetch/staging orphan 用例失败。Ruff、compileall、diff 通过；已本地提交 `5c62d707`，本轮未重新执行 33 路径哈希核对；未运行真实 PostgreSQL/Redis/OCR/AI、生产退出或客户端验收。
 
 2026-10-29 按新工作流完成 OCR 冻结投影/VL 重绑定/跨页合并一个完整批次，原五入口为薄委托，职责归四模块；行为与既有异常/部分写回保持。兼容边界见 `PIPELINE_ORCHESTRATOR_COMPATIBILITY.md` §16，命令、数字、源码 hash 与既有门禁失败记录见 `refactor-results/ocr-freeze-cross-page-2026-10-29.json`。余下 OCR 工件/诊断/后台编排和 AI 长函数继续，不以本批完成代表全栈验收。
+
+2026-10-29 小程序公式库Public API按一个完整批次收敛目录/筛选/分页/详情/随机/收藏及响应投影，原鉴权/Query/事务与动态依赖保持，分类薄入口保留现状。职责及外部边界见 `FORMULA_LIBRARY_COMPATIBILITY.md`，结果与hash见 `refactor-results/miniprogram-formula-interface-2026-10-29.json`。本批遵循“小程序接口 > 后台管理系统接口 > OCR接口”；AI既有纯装配不按行数机械拆分，其他小程序接口仍需继续盘点。
