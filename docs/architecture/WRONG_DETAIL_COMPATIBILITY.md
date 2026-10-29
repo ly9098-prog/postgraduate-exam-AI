@@ -99,3 +99,13 @@
 - 渲染检查仍先执行 invariant，再读取当前 trace 方法和 trace 字段。预取沿用 300000ms 缓存边界，在请求开始记录时间，拒绝覆盖时间戳大于或等于开始时间的缓存；结果还须页面存活和缓存存在。预取不返回 Promise，Promise 拒绝吞掉，同步请求异常仍传播。
 - 15 项加载契约在原页面与当前页面全部通过；十组定向共 121 项通过，1000 组八入口返回值/状态/调用轨迹/字段顺序对照一致。全量 Node 2262 passed，渲染 5 fixtures/31 passed，八条架构门禁及视觉/KaTeX通过。
 - 独立实现只读审查无 P0–P3 可操作发现，独立运行 121 项定向与详情门禁通过。CI 增加加载契约；详情门禁为十三个模块、59 条委托，页面 ceiling 为 867。证据 `/tmp/wrong-detail-load-batch/`；生命周期、掌握/撤销、删除及其他剩余页面职责继续核查，前述 data envelope 限制、legacy 源断言失败和真实环境验收限制保持。
+
+
+## 12. 生命周期、导航来源与底部操作栏（2026-10-29 后续批次）
+
+- 本批页面由 867→771 行。加载入口/状态初始化/参数初始化/导航来源、show/hide/滚动/交互、底部操作栏 timer/调度/展示和卸载十二方法迁入 `utils/wrong-detail-lifecycle.js`（146 行，函数均 ≤50 行）。页面方法名、参数、async 和单次委托保持；无页面状态依赖的导航来源函数不接收 page。十二方法体仅改变接收者及 platform 访问，其余 107 个 Page 属性原文不变。
+- 初始化保留 render guard 先于状态赋值、null 原型 teacher 缓存、每次初始化的新对象、data 与既有 controller 身份；参数初始化保留 ID 校验、列表身份/重复 ID 与 index fallback、非等待 load 后才展示操作栏。同步 load 异常继续阻止后续展示。
+- 导航来源每次实际访问 storage 时读取当前 wx，保留 receiver、source 过滤与严格小于 30 分钟 TTL。仍只过滤非有限值，保留重复项/零/负数、未来时间戳与无 source 记录的既有规则；异常和当前 ID 缺失回退单题列表。
+- 操作栏继续使用单一定时器与 3000ms 空闲阈值，交互更新时间、到期后重新计算剩余等待、当前时钟/timer 与页面存活守卫保持。卸载按序失效 AI/teacher/diagnosis 序号、清理切题和返回 timer、调用当前 bottom/undo hook、清缓存与 marker、reset render guard；hook 异常仍保留部分清理并传播。
+- 14 项契约原页重放与当前均通过；十一组定向 135 项、全量 Node 2276 项、渲染 5 fixtures/31 项、八条架构门禁与视觉/KaTeX检查通过。1000 组生命周期/导航/timer/卸载状态及调用轨迹对照一致；独立实现只读审查无 P0–P3 可操作发现。
+- CI 增加生命周期契约；详情门禁为十四模块、71 条委托，页面 ceiling 为 771。证据 `/tmp/wrong-detail-lifecycle-batch/`；掌握/撤销、删除、渲染安全等剩余页面职责继续核查，既有 data envelope/legacy 源断言和真实环境限制保持。

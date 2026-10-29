@@ -36,7 +36,7 @@ function fixture(options = {}) {
       if (request === '../utils/subject-meta') return { getSubjectName: value => value }
       if (request === '../utils/answer') return { isTrueFalseType: () => false }
       if (request === '../utils/question-runner-adapter') return ({})
-      if (request === '../utils/stem-render') return {
+      if (request === '../utils/stem-render') return options.renderGuard || {
         buildRenderModel: () => ({}), resetRenderGuard: () => {}, setRenderGuardPage: () => {},
       }
       const resolved = require.resolve(path.resolve(path.dirname(filename), request))

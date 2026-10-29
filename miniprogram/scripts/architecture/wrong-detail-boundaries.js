@@ -6,14 +6,15 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 867
+const PAGE_CEILING = 771
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
   'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js',
   'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
   'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js',
-  'wrong-detail-diagnosis-flow.js', 'wrong-detail-load-flow.js']
+  'wrong-detail-diagnosis-flow.js', 'wrong-detail-load-flow.js',
+  'wrong-detail-lifecycle.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -86,7 +87,22 @@ const LOAD_DELEGATES = {
   "_handleLoadDataError": "_handleLoadDataError(e, loadSeq) {\nreturn loadFlow._handleLoadDataError(this, e, loadSeq)\n}",
   "_prefetchWrongQuestion": "_prefetchWrongQuestion(idx) {\nreturn loadFlow._prefetchWrongQuestion(this, idx, { requestClient: api })\n}"
 }
+const LIFECYCLE_DELEGATES = {
+  "onLoad": "onLoad(options) {\nreturn lifecycle.onLoad(this, options)\n}",
+  "_initWrongDetailState": "_initWrongDetailState() {\nreturn lifecycle._initWrongDetailState(this, { setRenderGuardPage })\n}",
+  "_initWrongDetailFromOptions": "_initWrongDetailFromOptions(options) {\nreturn lifecycle._initWrongDetailFromOptions(this, options)\n}",
+  "_resolveQuestionIds": "_resolveQuestionIds(options, currentId) {\nreturn lifecycle._resolveQuestionIds(options, currentId, { get platform() { return wx } })\n}",
+  "onShow": "onShow() {\nreturn lifecycle.onShow(this)\n}",
+  "onHide": "onHide() {\nreturn lifecycle.onHide(this)\n}",
+  "onPageScroll": "onPageScroll() {\nreturn lifecycle.onPageScroll(this)\n}",
+  "onPageInteraction": "onPageInteraction() {\nreturn lifecycle.onPageInteraction(this)\n}",
+  "_clearBottomActionsTimer": "_clearBottomActionsTimer() {\nreturn lifecycle._clearBottomActionsTimer(this)\n}",
+  "_scheduleBottomActionsAutoHide": "_scheduleBottomActionsAutoHide() {\nreturn lifecycle._scheduleBottomActionsAutoHide(this)\n}",
+  "_showBottomActions": "_showBottomActions() {\nreturn lifecycle._showBottomActions(this)\n}",
+  "onUnload": "onUnload() {\nreturn lifecycle.onUnload(this, { resetRenderGuard })\n}"
+}
 const DELEGATES = {
+  ...LIFECYCLE_DELEGATES,
   ...LOAD_DELEGATES,
   ...DIAGNOSIS_DELEGATES,
   ...AI_REQUEST_DELEGATES,

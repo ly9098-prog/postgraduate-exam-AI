@@ -30,6 +30,7 @@ const aiRegeneration = require('./utils/wrong-detail-ai-regeneration')
 const aiRequest = require('./utils/wrong-detail-ai-request')
 const diagnosisFlow = require('./utils/wrong-detail-diagnosis-flow')
 const loadFlow = require('./utils/wrong-detail-load-flow')
+const lifecycle = require('./utils/wrong-detail-lifecycle')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -140,140 +141,43 @@ _diagnosisRequestSeq: 0,
 _bottomActionsTimer: null,
 _bottomActionsLastActiveAt: 0,
   onLoad(options) {
-    this._initWrongDetailState()
-    this._initWrongDetailFromOptions(options)
-  },
+return lifecycle.onLoad(this, options)
+},
 
   _initWrongDetailState() {
-    setRenderGuardPage('wrong-detail')
-    this._alive = true
-    this._aiRequestId = 0
-    this._currentWqId = null
-    this._aiGenerationMarker = ''
-    this._switching = false
-    this._navigationSeq = 0
-    this._aiSwipeStart = null
-    this._contentTransitionStartedAt = 0
-    this._contentTransitionDirection = ''
-    this._teacherRequestSeq = 0
-    this._diagnosisRequestSeq = 0
-    this._teacherCache = Object.create(null)
-    this._teacherInflight = Object.create(null)
-    this._teacherFeedbackCache = Object.create(null)
-    this._activeTeacherCacheKey = ''
-    this._wqCache = {}
-    this._switchMaskTimer = null
-    this._contentTransitionTimer = null
-    this._switchWatchdogTimer = null
-    this._masterUndoTimer = null
-    this._masterAdvanceTimer = null
-    this._removeBackTimer = null
-    this._bottomActionsTimer = null
-    this._bottomActionsLastActiveAt = 0
-    this._masterUndoInFlight = false
-    this._pendingMasterUndo = null
-  },
+return lifecycle._initWrongDetailState(this, { setRenderGuardPage })
+},
 
   _initWrongDetailFromOptions(options) {
-    const currentId = Number(options.id)
-    if (!Number.isFinite(currentId) || currentId <= 0) {
-      this.setData({ loading: false, errorText: '错题ID无效', wq: null })
-      return
-    }
-    const questionIds = this._resolveQuestionIds(options, currentId)
-    const currentIdx = questionIds.indexOf(currentId)
-    this.setData({
-      questionIds,
-      currentIdx: currentIdx >= 0 ? currentIdx : 0,
-      totalQuestions: questionIds.length,
-    })
-    this.loadData(currentId)
-    this._showBottomActions()
-  },
+return lifecycle._initWrongDetailFromOptions(this, options)
+},
 
   _resolveQuestionIds(options, currentId) {
-    let questionIds = []
-    try {
-      if (options.source === 'wrong-book' || options.source === 'practice-result' || options.source === 'exam-result') {
-        const nav = wx.getStorageSync('wrong_detail_nav')
-        if (nav && Array.isArray(nav.ids) && Date.now() - Number(nav.ts || 0) < 30 * 60 * 1000) {
-          const normalized = nav.ids.map(Number).filter(Number.isFinite)
-          const sourceMatches = !nav.source || nav.source === options.source
-          if (sourceMatches && normalized.includes(currentId)) questionIds = normalized
-        }
-      }
-    } catch (_) {}
-    if (!questionIds.length) questionIds = [currentId]
-    return questionIds
-  },
+return lifecycle._resolveQuestionIds(options, currentId, { get platform() { return wx } })
+},
 onShow() {
-if (this._alive && this.data.wq) this._showBottomActions()
+return lifecycle.onShow(this)
 },
 onHide() {
-this._clearBottomActionsTimer()
+return lifecycle.onHide(this)
 },
 onPageScroll() {
-this._showBottomActions()
+return lifecycle.onPageScroll(this)
 },
 onPageInteraction() {
-this._showBottomActions()
+return lifecycle.onPageInteraction(this)
 },
 _clearBottomActionsTimer() {
-if (!this._bottomActionsTimer) return
-clearTimeout(this._bottomActionsTimer)
-this._bottomActionsTimer = null
+return lifecycle._clearBottomActionsTimer(this)
 },
 _scheduleBottomActionsAutoHide() {
-if (!this._alive || this._bottomActionsTimer) return
-const tick = () => {
-this._bottomActionsTimer = null
-if (!this._alive) return
-const idleFor = Date.now() - Number(this._bottomActionsLastActiveAt || 0)
-const wait = Math.max(0, 3000 - idleFor)
-if (wait > 0) {
-this._bottomActionsTimer = setTimeout(tick, wait)
-return
-}
-if (this.data.bottomActionsVisible) this.setData({ bottomActionsVisible: false })
-}
-this._bottomActionsTimer = setTimeout(tick, 3000)
+return lifecycle._scheduleBottomActionsAutoHide(this)
 },
 _showBottomActions() {
-if (!this._alive) return
-this._bottomActionsLastActiveAt = Date.now()
-if (!this.data.bottomActionsVisible) this.setData({ bottomActionsVisible: true })
-this._scheduleBottomActionsAutoHide()
+return lifecycle._showBottomActions(this)
 },
 onUnload() {
-this._alive = false
-this._aiRequestId++
-this._teacherRequestSeq++
-this._diagnosisRequestSeq++
-if (this._switchMaskTimer) {
-clearTimeout(this._switchMaskTimer)
-this._switchMaskTimer = null
-}
-if (this._contentTransitionTimer) {
-clearTimeout(this._contentTransitionTimer)
-this._contentTransitionTimer = null
-}
-if (this._switchWatchdogTimer) {
-clearTimeout(this._switchWatchdogTimer)
-this._switchWatchdogTimer = null
-}
-if (this._removeBackTimer) {
-clearTimeout(this._removeBackTimer)
-this._removeBackTimer = null
-}
-this._clearBottomActionsTimer()
-this._clearMasterUndo()
-this._wqCache = null
-this._teacherCache = null
-this._teacherInflight = null
-this._teacherFeedbackCache = null
-this._activeTeacherCacheKey = ''
-this._aiGenerationMarker = ''
-resetRenderGuard()
+return lifecycle.onUnload(this, { resetRenderGuard })
 },
   async loadData(wqId) {
 return loadFlow.loadData(this, wqId, { requestClient: api })
