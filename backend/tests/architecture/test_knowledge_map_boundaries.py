@@ -10,13 +10,10 @@ PROJECTIONS = (
     "knowledge_map_summary",
     "knowledge_map_hierarchy",
     "knowledge_map_nodes",
+    "knowledge_map_topology",
+    "knowledge_map_relations",
+    "knowledge_map_detail",
 )
-LEGACY_FUNCTIONS = {
-    "get_overview": 62,
-    "get_subject_map": 76,
-    "_relation_payloads": 74,
-    "get_point_detail": 172,
-}
 
 
 def budget_violations(source, ceiling, function_ceilings=None):
@@ -44,7 +41,13 @@ def dependency_violations(source):
             modules = []
         for module in modules:
             if not (
-                module in {"__future__", "collections", "app.core.time_utils"}
+                module
+                in {
+                    "__future__",
+                    "collections",
+                    "app.core.time_utils",
+                    "app.core.subject_scope",
+                }
                 or module.startswith("app.models.")
                 or module == "app.services.knowledge_map_summary"
             ):
@@ -62,9 +65,9 @@ def test_projection_budgets_and_dependencies(module):
     assert dependency_violations(source) == []
 
 
-def test_service_frozen_legacy_budgets():
+def test_service_budgets_and_projection_ownership():
     source = (SERVICES / "knowledge_map_service.py").read_text()
-    assert budget_violations(source, 633, LEGACY_FUNCTIONS) == []
+    assert budget_violations(source, 195) == []
     functions = {
         node.name
         for node in ast.parse(source).body
@@ -78,6 +81,28 @@ def test_service_frozen_legacy_budgets():
             "_node_payload",
         }
     )
+    assert "select(" not in source
+    assert "db.execute" not in source
+    assert "db.scalars" not in source
+
+
+def test_all_map_modules_are_registered_and_bounded():
+    expected = {*PROJECTIONS, "knowledge_map_service", "knowledge_map_queries"}
+    assert {path.stem for path in SERVICES.glob("knowledge_map*.py")} == expected
+    for name in expected:
+        source = (SERVICES / f"{name}.py").read_text()
+        assert budget_violations(source, 300) == [], name
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == "db":
+                    assert node.func.attr not in {
+                        "commit",
+                        "rollback",
+                        "flush",
+                        "delete",
+                        "add",
+                        "add_all",
+                    }, name
 
 
 @pytest.mark.parametrize(

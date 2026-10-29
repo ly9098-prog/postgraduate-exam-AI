@@ -597,6 +597,8 @@ jobs:
             tests/architecture/test_adaptive_learning_projection_boundaries.py \
             tests/test_services/test_knowledge_map_compatibility.py \
             tests/test_services/test_knowledge_map_projections.py \
+            tests/test_services/test_knowledge_map_topology.py \
+            tests/test_services/test_knowledge_map_detail_contracts.py \
             tests/architecture/test_knowledge_map_boundaries.py \
             tests/test_services/test_ai_analysis_compatibility.py \
             tests/test_services/test_ai_analysis_cache_compatibility.py \

@@ -126,3 +126,24 @@ def _node_payload(
         if state and state.last_practiced_at
         else None,
     }
+
+
+def _detail_node(
+    point: KnowledgePoint,
+    states: dict[int, UserKnowledgeState],
+    trainable: dict[int, int],
+    parent_map: dict[int, int],
+    hierarchy_meta: dict[int, dict],
+    syllabus_item: SyllabusKnowledgePoint,
+) -> dict:
+    point_meta = hierarchy_meta.get(int(point.id), {})
+    return _node_payload(
+        point,
+        state=states.get(int(point.id)),
+        trainable_question_count=trainable.get(int(point.id), 0),
+        parent_id=parent_map.get(int(point.id)),
+        depth=len(point_meta.get("ancestor_ids", [])),
+        child_count=int(point_meta.get("direct_child_count", 0) or 0),
+        hierarchy_meta=point_meta,
+        syllabus_item=syllabus_item,
+    )
