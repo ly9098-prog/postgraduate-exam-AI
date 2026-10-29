@@ -16,7 +16,7 @@ const PAGES = {
   'subpackages/exam/result/index.js': 302,
   'subpackages/exam/paper-list/index.js': 283,
   'subpackages/exam/history/index.js': 235,
-  'subpackages/productivity/pomodoro-stats/index.js': 1165,
+  'subpackages/productivity/pomodoro-stats/index.js': 645,
 }
 
 const FUNCTION_BUDGET = 50

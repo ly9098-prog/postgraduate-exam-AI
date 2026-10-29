@@ -598,3 +598,16 @@
 - 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
   `study_report_service` 的两个明细入口，不覆盖任务队列、OCR 导入编排、AI 分析执行等学习域大函数，
   也不声称学习域整体完成。
+
+
+## 17. Pomodoro 统计页装配与视图写回收敛（2026-10-29）
+
+本批以整个 pomodoro-stats 页面剩余职责为范围，统一提取生命周期/主题、科目分布/累计、日期设置、动画、画布交互的 controller 能力装配，以及加载视图、累计摘要、服务端日期校正与时长显示写回。复用已有 controller、纯投影及 load/date/canvas page capabilities；页面保留 data、薄入口和依赖注入，不更改 WXML/WXSS、统计口径、API、存储键或功能。
+
+- 六个新增模块为 `stats-lifecycle-page-adapter`、`stats-distribution-page-adapter`、`stats-date-page-adapter`、`stats-animation-page-adapter`、`stats-canvas-page-adapter` 和 `stats-load-view-flow`；职责边界内保留原惰性实例字段和返回身份，原 helper、对象及构造器从页面注入。
+- 原 shorthand timer 端口仍在首次创建 controller 时捕获；原 callback 内的 timer/platform/console/Date 调用使用 getter，保持实际调用时解析。平台、canvas cancelAnimationFrame、theme 与存储方法的 receiver 保持；实例缓存、token/请求序号和 timer 写回时点不变。
+- onLoad 保留 initialize→私有字段赋值→setData→当前 init 顺序。init 先等待 settings，再非等待地启动科目加载，仅捕获该 Promise 的拒绝；生命周期、主题和动画决策仍由原 controller 承担，未新增取消、回滚或存活守卫。
+- 加载视图仍先展开调用方 overrides，再以页面当前字段和 formatter 覆盖；字段顺序、历史延迟展示、原累计自定义分支、服务端日期校正与 settingsLoaded 标记保留。时长显示保留文本与 segments 身份，缓存重置仍先分配新对象再调用当前 shade cache。
+- `pomodoro-stats-boundaries.js` 核对 pageConfig 的全部直接属性模板/顺序、六个 const require 绑定、唯一 Page(pageConfig) 注册，以及新增职责模块无额外导入/裸平台依赖/动态执行；模块与函数预算继续由既有门禁约束。原条件注册和 formatDuration 导出保持；独立审查发现条件/导出未冻结的门禁缺口后，已按原顶层语句模板补充检查与负例，仅门禁增量复验，业务代码未改变。CI 注册新门禁与两项契约。
+
+验收命令、数字、模块行数和证据限制集中于 `refactor-results/pomodoro-stats-page-2026-10-29.json`。原页/当前直接契约、47个方法逆向 AST token（含字符串值）与全部属性顺序对照、controller端口返回/状态/轨迹对照均通过；引擎TypeError中的this/page名归一化，未宣称诊断文本逐字一致。临时证据目录见清单，禁止重跑 extract.js。本轮页面剩余装配与视图写回提取完成，真实微信编译/模拟器/真机、真实网络/外部服务及完整学习闭环仍未验收。

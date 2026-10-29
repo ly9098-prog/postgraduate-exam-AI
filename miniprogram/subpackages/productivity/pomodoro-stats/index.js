@@ -1,3 +1,9 @@
+const lifecyclePage = require('./stats-lifecycle-page-adapter')
+const distributionPage = require('./stats-distribution-page-adapter')
+const datePage = require('./stats-date-page-adapter')
+const animationPage = require('./stats-animation-page-adapter')
+const canvasPage = require('./stats-canvas-page-adapter')
+const loadViewFlow = require('./stats-load-view-flow')
 const api = require('../../../utils/api')
 const pomodoroTheme = require('../utils/pomodoro-theme')
 const chinaTime = require('../utils/china-time')
@@ -156,35 +162,16 @@ var pageConfig = {
   },
 
   onLoad() {
-    const initialized = this._getPageInitController().initialize()
-    Object.assign(this, initialized.internal)
-    this.setData(initialized.data)
-    this._init()
-  },
+return lifecyclePage.onLoad(this)
+},
 
   _getPageInitController() {
-    if (!this._pageInitController) {
-      this._pageInitController = createPageInitController({
-        getTheme: () => pomodoroTheme.getTheme(),
-        applyNativeTheme: themeMode => pomodoroTheme.applyNativeTheme(themeMode),
-        getChinaStudyDate: minute => chinaTime.getChinaStudyDate(minute),
-        getDefaultDayStartMinute: () => 0,
-        shiftDate: (date, delta) => this._shiftDate(date, delta),
-        createShadeColorCache,
-        createPieRenderCache: () => ({ sectors: null, wallSteps: null, labelLayout: null }),
-      })
-    }
-    return this._pageInitController
-  },
+return lifecyclePage._getPageInitController(this, { chinaTime, createPageInitController, createShadeColorCache, pomodoroTheme })
+},
 
   async _init() {
-    await this._ensureSettings()
-    this._ensureSubjectMeta().catch(err => {
-      console.warn('加载科目树失败，将使用原始分布数据', err)
-    })
-    // 首次加载由 onReady 的 loadData 完成（其内部 await _ensureSettings），
-    // 此处不再重复触发，避免首屏并发两次 4 请求批次。
-  },
+return lifecyclePage._init(this, { getConsole: () => console })
+},
 
   /**
    * 获取统计日设置（后端权威），据此校正当前中国统计日 / selectedDate。
@@ -196,24 +183,8 @@ var pageConfig = {
   },
 
   _getSettingsController() {
-    if (!this._settingsController) {
-      this._settingsController = createSettingsController({
-        isLoaded: () => this._settingsLoaded,
-        markLoaded: () => { this._settingsLoaded = true },
-        getSettings: () => api.get('/pomodoro/settings'),
-        getTodayDate: () => this.data._todayDate,
-        getSelectedDate: () => this.data.selectedDate,
-        getCustomRangeStartDate: () => this.data.customRangeStartDate,
-        getChinaStudyDate: minute => chinaTime.getChinaStudyDate(minute),
-        minuteToTimeText: minute => chinaTime.minuteToTimeText(minute),
-        getStudyDayRangeText: minute => this._studyDayRangeText(minute),
-        shiftDate: (date, delta) => this._shiftDate(date, delta),
-        setData: patch => this.setData(patch),
-        logError: (message, e) => console.error(message, e),
-      })
-    }
-    return this._settingsController
-  },
+return lifecyclePage._getSettingsController(this, { api, chinaTime, createSettingsController, getConsole: () => console })
+},
 
   /**
    * 以后端返回的统计日（/pomodoro/stats.today_date 或今日 daily-summary.date）为唯一权威，
@@ -221,25 +192,8 @@ var pageConfig = {
    * 设备时钟偏差导致的"今日"不一致。
    */
   _reconcileFromServer(stats, summary) {
-    const result = reconcileFromServer({
-      stats,
-      summary,
-      dayStartMinute: this.data.dayStartMinute,
-      todayDate: this.data._todayDate,
-      selectedDate: this.data.selectedDate,
-      customRangeStartDate: this.data.customRangeStartDate,
-      minuteToTimeText: minute => chinaTime.minuteToTimeText(minute),
-      getStudyDayRangeText: minute => this._studyDayRangeText(minute),
-      shiftDate: (date, delta) => this._shiftDate(date, delta),
-    })
-    if (stats && stats.day_start_minute != null) this._settingsLoaded = true
-    if (Object.keys(result.patch).length) this.setData(result.patch)
-    return {
-      changedToday: result.changedToday,
-      today: result.today,
-      selectedDate: result.selectedDate,
-    }
-  },
+return loadViewFlow._reconcileFromServer(this, stats, summary, { chinaTime, reconcileFromServer })
+},
 
   _studyDayRangeText(dsm) {
     return formatStudyDayRangeText(dsm, minute => chinaTime.minuteToTimeText(minute))
@@ -262,31 +216,8 @@ var pageConfig = {
   },
 
   _getLifecycleController() {
-    if (!this._lifecycleController) {
-      this._lifecycleController = createLifecycleController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        isViewReady: () => this._viewReady,
-        setVisible: value => { this._isVisible = value },
-        setViewReady: () => { this._viewReady = true },
-        setAlive: value => { this._alive = value },
-        incrementRequestId: () => { this._requestId++ },
-        syncTheme: () => this._syncThemeFromStorage(),
-        loadData: () => this.loadData(),
-        scheduleDynamicRefresh: () => this._scheduleDynamicRefresh(),
-        clearDynamicRefresh: () => this._clearDynamicRefresh(),
-        cancelDurationAnimation: resetState => this._cancelDurationAnimation(resetState),
-        cancelDeferredHistory: clearPending => this._cancelDeferredHistory(clearPending),
-        cancelPendingWork: () => this._cancelPendingWork(),
-        initCanvases: callback => this._initCanvases(callback),
-        nextTick: callback => {
-          if (wx.nextTick) wx.nextTick(callback)
-          else setTimeout(callback, 0)
-        },
-      })
-    }
-    return this._lifecycleController
-  },
+return lifecyclePage._getLifecycleController(this, { createLifecycleController, getPlatform: () => wx, getSetTimeout: () => setTimeout })
+},
 
 
   _clearDynamicRefresh() {
@@ -298,59 +229,16 @@ var pageConfig = {
   },
 
   _getDynamicRefreshController() {
-    if (!this._dynamicRefreshController) {
-      this._dynamicRefreshController = createDynamicRefreshController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        isViewReady: () => this._viewReady,
-        getTimer: () => this._dynamicRefreshTimer,
-        setTimer: timer => { this._dynamicRefreshTimer = timer },
-        clearTimeout,
-        setTimeout,
-        getDefaultDelayMs: () => STATS_DYNAMIC_REFRESH_MS,
-        getStatsLoadInFlight: () => this._statsLoadInFlight || 0,
-        isCumulativeLoading: () => !!this.data.cumulativeLoading,
-        incrementRequestId: () => { this._requestId++ },
-        loadBackground: () => this.loadData({ background: true }),
-        schedule: delay => this._scheduleDynamicRefresh(delay),
-      })
-    }
-    return this._dynamicRefreshController
-  },
+return lifecyclePage._getDynamicRefreshController(this, { STATS_DYNAMIC_REFRESH_MS, createDynamicRefreshController, getClearTimeout: () => clearTimeout, getSetTimeout: () => setTimeout })
+},
 
   _syncThemeFromStorage() {
     return this._getThemeSyncController().sync()
   },
 
   _getThemeSyncController() {
-    if (!this._themeSyncController) {
-      this._themeSyncController = createThemeSyncController({
-        getStoredTheme: () => pomodoroTheme.getTheme(),
-        applyNativeTheme: themeMode => pomodoroTheme.applyNativeTheme(themeMode),
-        getCurrentTheme: () => this.data.themeMode,
-        getSubjects: () => this.data.subjects,
-        getHistory: () => this.data.history,
-        getPieSubjectColor: (key, themeMode) => getPieSubjectColor(key, themeMode),
-        getSubjectColor: (key, themeMode) => getSubjectColor(key, themeMode),
-        setData: (patch, callback) => this.setData(patch, callback),
-        resetPieCache: () => this._resetPieCache(),
-        isAlive: () => this._alive,
-        isViewReady: () => this._viewReady,
-        hasData: () => this._hasData,
-        isVisible: () => this._isVisible,
-        getChartMode: () => this.data.chartMode,
-        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
-        isBarMounted: () => !!this.data.barCanvasMounted,
-        hasTrendContext: () => !!this._trendCtx,
-        renderTrendBars: progress => this._renderTrendBars(progress),
-        nextTick: callback => {
-          if (wx.nextTick) wx.nextTick(callback)
-          else setTimeout(callback, 0)
-        },
-      })
-    }
-    return this._themeSyncController
-  },
+return lifecyclePage._getThemeSyncController(this, { createThemeSyncController, getPieSubjectColor, getPlatform: () => wx, getSetTimeout: () => setTimeout, getSubjectColor, pomodoroTheme })
+},
 
   _getCanvasPalette() {
     return canvasPalette.getCanvasPalette(this.data.themeMode)
@@ -412,21 +300,8 @@ var pageConfig = {
   },
 
   _getSubjectMetaController() {
-    if (!this._subjectMetaController) {
-      this._subjectMetaController = createSubjectMetaController({
-        isLoaded: () => this._subjectMetaLoaded,
-        getMeta: () => this._subjectMeta,
-        setMeta: value => { this._subjectMeta = value },
-        getPromise: () => this._subjectMetaPromise,
-        setPromise: value => { this._subjectMetaPromise = value },
-        markLoaded: () => { this._subjectMetaLoaded = true },
-        getSubjectTree: () => api.get('/practice/subjects'),
-        buildSubjectMeta: tree => this._buildSubjectMeta(tree),
-        logError: (message, error) => console.error(message, error),
-      })
-    }
-    return this._subjectMetaController
-  },
+return distributionPage._getSubjectMetaController(this, { api, createSubjectMetaController, getConsole: () => console })
+},
 
   _buildSubjectMeta(tree) {
     return subjectDistribution.buildSubjectMeta(tree)
@@ -446,99 +321,40 @@ var pageConfig = {
 
 
   _cumulativeSummaryPatch(summary, requestedStart) {
-    return buildCumulativeSummaryPatch(summary, requestedStart, this.data._todayDate, sec => this._fmtMin(sec))
-  },
+return loadViewFlow._cumulativeSummaryPatch(this, summary, requestedStart, { buildCumulativeSummaryPatch })
+},
 
   async _refreshCumulativeSummary(startDate, silent) {
     await this._getCumulativeRefreshController().refresh(startDate, silent)
   },
 
   _getCumulativeRefreshController() {
-    if (!this._cumulativeRefreshController) {
-      this._cumulativeRefreshController = createCumulativeRefreshController({
-        isAlive: () => this._alive,
-        getTodayDate: () => this.data._todayDate,
-        getCumulativeStartDate: () => this.data.cumulativeStartDate,
-        getRequestSeq: () => this._cumulativeRequestSeq,
-        setRequestSeq: value => { this._cumulativeRequestSeq = value },
-        getRangeSummary: (start, end) => api.get('/pomodoro/range-summary', { start_date: start, end_date: end }),
-        buildSummaryPatch: (summary, start) => this._cumulativeSummaryPatch(summary, start),
-        setData: patch => this.setData(patch),
-        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
-        logError: (message, e) => console.error(message, e),
-      })
-    }
-    return this._cumulativeRefreshController
-  },
+return distributionPage._getCumulativeRefreshController(this, { api, createCumulativeRefreshController, getConsole: () => console, getPlatform: () => wx })
+},
 
   onCumulativeStartChange(e) {
     this._getCumulativeStartController().change(e)
   },
 
   _getCumulativeStartController() {
-    if (!this._cumulativeStartController) {
-      this._cumulativeStartController = createCumulativeStartController({
-        getTodayDate: () => this.data._todayDate,
-        getPickerStartDate: () => this.data.cumulativePickerStartDate,
-        getCumulativeStartDate: () => this.data.cumulativeStartDate,
-        shiftDate: (date, delta) => this._shiftDate(date, delta),
-        markCustomized: () => { this._cumulativeCustomized = true },
-        setData: (patch, callback) => this.setData(patch, callback),
-        refreshCumulativeSummary: (date, silent) => this._refreshCumulativeSummary(date, silent),
-      })
-    }
-    return this._cumulativeStartController
-  },
+return distributionPage._getCumulativeStartController(this, { createCumulativeStartController })
+},
 
   _commitDistributionSubjects(rawSubjects, animate) {
     this._getDistributionCommitController().commit(rawSubjects, animate)
   },
 
   _getDistributionCommitController() {
-    if (!this._distributionCommitController) {
-      this._distributionCommitController = createDistributionCommitController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getChartMode: () => this.data.chartMode,
-        setRawSubjects: subjects => { this._distributionRawSubjects = subjects },
-        resetPieCache: () => this._resetPieCache(),
-        buildSubjectItems: subjects => this._buildSubjectItems(subjects),
-        hasDistributionData: subjects => this._hasDistributionData(subjects),
-        setData: (patch, callback) => this.setData(patch, callback),
-        initCanvases: callback => this._initCanvases(callback),
-        animatePieOnly: () => this._animatePieOnly(),
-        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
-      })
-    }
-    return this._distributionCommitController
-  },
+return distributionPage._getDistributionCommitController(this, { createDistributionCommitController })
+},
 
   async _loadDistributionForPeriod(period, animate = true) {
     await this._getDistributionLoadController().load(period, animate)
   },
 
   _getDistributionLoadController() {
-    if (!this._distributionLoadController) {
-      this._distributionLoadController = createDistributionLoadController({
-        isAlive: () => this._alive,
-        getSelectedDate: () => this.data.selectedDate,
-        getDaySubjectsRaw: () => this._daySubjectsRaw || [],
-        getDistributionPeriod: () => this.data.distributionPeriod,
-        getDistributionRangeStart: () => this.data.distributionRangeStart,
-        getDistributionRangeEnd: () => this.data.distributionRangeEnd,
-        getRequestSeq: () => this._distributionRequestSeq,
-        setRequestSeq: value => { this._distributionRequestSeq = value },
-        resolveDistributionRange: (period, anchor) => this._resolveDistributionRange(period, anchor),
-        ensureSubjectMeta: () => this._ensureSubjectMeta(),
-        getRangeSummary: (start, end) => api.get('/pomodoro/range-summary', { start_date: start, end_date: end }),
-        commitDistributionSubjects: (subjects, animate) => this._commitDistributionSubjects(subjects, animate),
-        setData: patch => this.setData(patch),
-        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
-        logError: (message, e) => console.error(message, e),
-      })
-    }
-    return this._distributionLoadController
-  },
+return distributionPage._getDistributionLoadController(this, { api, createDistributionLoadController, getConsole: () => console, getPlatform: () => wx })
+},
 
   onDistributionPeriodTap(e) {
     this._getDistributionEntryController().tapPeriod(e)
@@ -549,19 +365,8 @@ var pageConfig = {
   },
 
   _getDistributionEntryController() {
-    if (!this._distributionEntryController) {
-      this._distributionEntryController = createDistributionEntryController({
-        getSelectedDate: () => this.data.selectedDate,
-        getTodayDate: () => this.data._todayDate,
-        getDistributionPeriod: () => this.data.distributionPeriod,
-        getCustomRangePickerStartDate: () => this.data.customRangePickerStartDate,
-        shiftDate: (date, delta) => this._shiftDate(date, delta),
-        setData: (patch, callback) => this.setData(patch, callback),
-        loadDistributionForPeriod: (period, animate) => this._loadDistributionForPeriod(period, animate),
-      })
-    }
-    return this._distributionEntryController
-  },
+return distributionPage._getDistributionEntryController(this, { createDistributionEntryController })
+},
 
   toggleChartMode() {
     this._getChartModeController().toggle()
@@ -572,57 +377,16 @@ var pageConfig = {
   },
 
   _getTrendAnimationController() {
-    if (!this._trendAnimationController) {
-      this._trendAnimationController = createTrendAnimationController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getChartMode: () => this.data.chartMode,
-        getTrendCtx: () => this._trendCtx,
-        getTrendBarsRect: () => this._trendBarsRect,
-        getTrendCanvasNode: () => this._trendCanvasNode,
-        getBarAnimationToken: () => this._barAnimationToken,
-        incrementBarAnimationToken: () => { this._barAnimationToken = (this._barAnimationToken || 0) + 1; return this._barAnimationToken },
-        setBarRafId: id => { this._barRafId = id },
-        markBarRenderedOnce: () => { this._barRenderedOnce = true },
-        now: () => Date.now(),
-        setTimeout,
-        setData: patch => this.setData(patch),
-        renderTrendBars: progress => this._renderTrendBars(progress),
-      })
-    }
-    return this._trendAnimationController
-  },
+return animationPage._getTrendAnimationController(this, { createTrendAnimationController, getDate: () => Date, getSetTimeout: () => setTimeout })
+},
 
   _getChartModeController() {
-    if (!this._chartModeController) {
-      this._chartModeController = createChartModeController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getChartMode: () => this.data.chartMode,
-        isBarMounted: () => !!this.data.barCanvasMounted,
-        isBarRenderedOnce: () => !!this._barRenderedOnce,
-        incrementBarAnimationToken: () => {
-          this._barAnimationToken = (this._barAnimationToken || 0) + 1
-        },
-        setData: (patch, callback) => this.setData(patch, callback),
-        hasNextTick: () => !!wx.nextTick,
-        nextTick: callback => wx.nextTick(callback),
-        setTimeout,
-        initCanvases: callback => this._initCanvases(callback),
-        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
-        initTrendCanvas: callback => this._initTrendCanvas(callback),
-        animateTrendOnly: () => this._animateTrendOnly(),
-        renderTrendBars: progress => this._renderTrendBars(progress),
-        isFirstMount: () => !this.data.barCanvasMounted,
-      })
-    }
-    return this._chartModeController
-  },
+return animationPage._getChartModeController(this, { createChartModeController, getPlatform: () => wx, getSetTimeout: () => setTimeout })
+},
 
   _resetPieCache() {
-    this._pieRenderCache = { sectors: null, wallSteps: null, labelLayout: null }
-    if (this._shadeColorCache) this._shadeColorCache.reset()
-  },
+return canvasPage._resetPieCache(this)
+},
 
   _cancelDeferredHistory(clearPending) {
     this._getDeferredHistoryController().cancel(clearPending)
@@ -633,25 +397,8 @@ var pageConfig = {
   },
 
   _getDeferredHistoryController() {
-    if (!this._deferredHistoryController) {
-      this._deferredHistoryController = createDeferredHistoryController({
-        getTimer: () => this._deferredHistoryTimer,
-        setTimer: timer => { this._deferredHistoryTimer = timer },
-        getPending: () => this._pendingHistoryCommit,
-        setPending: value => { this._pendingHistoryCommit = value },
-        clearTimeout,
-        setTimeout,
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getRequestId: () => this._requestId,
-        getDateRequestSeq: () => this._dateRequestSeq,
-        getSelectedDate: () => this.data.selectedDate,
-        formatSession: item => this._formatSession(item),
-        setData: patch => this.setData(patch),
-      })
-    }
-    return this._deferredHistoryController
-  },
+return animationPage._getDeferredHistoryController(this, { createDeferredHistoryController, getClearTimeout: () => clearTimeout, getSetTimeout: () => setTimeout })
+},
 
   _cancelDurationAnimation(resetState) {
     this._getDurationAnimationController().cancel(resetState)
@@ -662,24 +409,8 @@ var pageConfig = {
   },
 
   _getDurationAnimationController() {
-    if (!this._durationAnimationController) {
-      this._durationAnimationController = createDurationAnimationController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getToken: () => this._durationAnimationToken,
-        incrementToken: () => { this._durationAnimationToken = (this._durationAnimationToken || 0) + 1 },
-        getTimer: () => this._durationAnimationTimer,
-        setTimer: timer => { this._durationAnimationTimer = timer },
-        clearTimeout,
-        setTimeout,
-        getDisplaySessions: () => this.data._dispTodaySessions,
-        setDisplayDurationSec: value => { this._displayTodayDurationSec = value },
-        getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
-        setData: patch => this.setData(patch),
-      })
-    }
-    return this._durationAnimationController
-  },
+return animationPage._getDurationAnimationController(this, { createDurationAnimationController, getClearTimeout: () => clearTimeout, getSetTimeout: () => setTimeout })
+},
 
   /* ==================== Data Loading ==================== */
 
@@ -688,112 +419,52 @@ var pageConfig = {
   },
 
   _formatSession(s) {
-    return sessionViewModel.formatSession(s, {
-      getTaskTypeLabel: session => storage.pomodoroTaskTypes.labelForSession(session),
-      getSubjectColor: key => getSubjectColor(key, this.data.themeMode),
-    })
-  },
+return loadViewFlow._formatSession(this, s, { getSubjectColor, sessionViewModel, storage })
+},
 
   _getLoadCommitController() {
-    if (!this._loadCommitController) {
-      this._loadCommitController = createLoadCommitController(
-        buildLoadCommitPageCapabilities(this)
-      )
-    }
-    return this._loadCommitController
-  },
+return loadViewFlow._getLoadCommitController(this, { buildLoadCommitPageCapabilities, createLoadCommitController })
+},
 
   _getLoadFailureController() {
-    if (!this._loadFailureController) {
-      this._loadFailureController = createLoadFailureController(
-        buildLoadFailurePageCapabilities(this)
-      )
-    }
-    return this._loadFailureController
-  },
+return loadViewFlow._getLoadFailureController(this, { buildLoadFailurePageCapabilities, createLoadFailureController })
+},
 
   _createLoadRequestController() {
-    return createLoadRequestControllerFactory(
-      this._loadRequestControllerConfig()
-    ).create()
-  },
+return loadViewFlow._createLoadRequestController(this, { createLoadRequestControllerFactory })
+},
 
   _loadRequestControllerConfig() {
-    return {
-      createLoadRequestController,
-      ...buildLoadRequestControllerCapabilities(
-        this._loadRequestControllerCapabilities()
-      ),
-    }
-  },
+return loadViewFlow._loadRequestControllerConfig(this, { buildLoadRequestControllerCapabilities, createLoadRequestController })
+},
 
   _loadRequestControllerCapabilities() {
-    return buildLoadRequestPageCapabilities(this, {
-      api,
-      normalizeOverview: overviewMapping.normalizeOverview,
-    })
-  },
+return loadViewFlow._loadRequestControllerCapabilities(this, { api, buildLoadRequestPageCapabilities, overviewMapping })
+},
 
   _buildLoadViewState(overrides) {
-    return buildLoadViewState({
-      ...overrides,
-      currentLifetimeStartDate: this.data.lifetimeStartDate,
-      currentSubjects: this.data.subjects,
-      currentDistributionHasData: this.data.distributionHasData,
-      currentRangeStart: this.data.distributionRangeStart,
-      currentRangeEnd: this.data.distributionRangeEnd,
-      hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
-      formatSession: item => this._formatSession(item),
-      formatMin: sec => this._fmtMin(sec),
-      formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
-      hasDistributionData: items => this._hasDistributionData(items),
-      buildSubjectItems: subjects => this._buildSubjectItems(subjects),
-      formatPieDateLabel: date => this._formatPieDateLabel(date),
-      getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
-      buildCumulativePatch: (lifetimeSummary, lifetimeStart) => this._buildCumulativePatch(lifetimeSummary, lifetimeStart),
-    })
-  },
+return loadViewFlow._buildLoadViewState(this, overrides, { buildLoadViewState, overviewMapping })
+},
 
   _buildCumulativePatch(lifetimeSummary, lifetimeStart) {
-    if (this._cumulativeCustomized) return { lifetimeStartDate: lifetimeStart }
-    return {
-      lifetimeStartDate: lifetimeStart,
-      ...this._cumulativeSummaryPatch({ ...lifetimeSummary, start_date: lifetimeStart }, lifetimeStart),
-    }
-  },
+return loadViewFlow._buildCumulativePatch(this, lifetimeSummary, lifetimeStart)
+},
 
   _getLoadRequestController() {
-    if (!this._loadRequestController) {
-      this._loadRequestController = this._createLoadRequestController()
-    }
-    return this._loadRequestController
-  },
+return loadViewFlow._getLoadRequestController(this)
+},
 
   _selectDate(date) {
     this._getSelectDateController().select(date)
   },
 
   _getSelectDateController() {
-    if (!this._selectDateController) {
-      this._selectDateController = createSelectDateController({
-        getTodayDate: () => this.data._todayDate,
-        getSelectedDate: () => this.data.selectedDate,
-        getCustomRangeStartDate: () => this.data.customRangeStartDate,
-        cancelDeferredHistory: () => this._cancelDeferredHistory(true),
-        formatPieDateLabel: date => this._formatPieDateLabel(date),
-        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
-        shiftDate: (date, delta) => this._shiftDate(date, delta),
-        setData: (patch, callback) => this.setData(patch, callback),
-        loadDateData: date => this.loadDateData(date),
-      })
-    }
-    return this._selectDateController
-  },
+return datePage._getSelectDateController(this, { createSelectDateController })
+},
 
   onDateChange(e) {
-    const date = e && e.detail ? e.detail.value : ''
-    this._selectDate(date)
-  },
+return datePage.onDateChange(this, e)
+},
 
   goPrevDay() {
     this._getDateNavigationController().previous()
@@ -810,61 +481,24 @@ var pageConfig = {
   },
 
   _getDayStartEntryController() {
-    if (!this._dayStartEntryController) {
-      this._dayStartEntryController = createDayStartEntryController({
-        timeTextToMinute: timeText => chinaTime.timeTextToMinute(timeText),
-        getDayStartMinute: () => this.data.dayStartMinute,
-        saveDayStart: minute => this._saveDayStart(minute),
-      })
-    }
-    return this._dayStartEntryController
-  },
+return datePage._getDayStartEntryController(this, { chinaTime, createDayStartEntryController })
+},
 
   async _saveDayStart(minute) {
     await this._getSaveDayStartController().save(minute)
   },
 
   _getSaveDayStartController() {
-    if (!this._saveDayStartController) {
-      this._saveDayStartController = createSaveDayStartController({
-        isAlive: () => this._alive,
-        isViewReady: () => this._viewReady,
-        getSelectedDate: () => this.data.selectedDate,
-        getCustomRangeStartDate: () => this.data.customRangeStartDate,
-        markSettingsLoaded: () => { this._settingsLoaded = true },
-        showLoading: () => { if (wx.showLoading) wx.showLoading({ title: '保存中', mask: true }) },
-        hideLoading: () => { if (wx.hideLoading) wx.hideLoading() },
-        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
-        logError: (message, e) => console.error(message, e),
-        saveSettings: minute => api.put('/pomodoro/settings', { day_start_minute: minute }),
-        getChinaStudyDate: minute => chinaTime.getChinaStudyDate(minute),
-        minuteToTimeText: minute => chinaTime.minuteToTimeText(minute),
-        getStudyDayRangeText: minute => this._studyDayRangeText(minute),
-        formatPieDateLabel: date => this._formatPieDateLabel(date),
-        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
-        setData: (patch, callback) => this.setData(patch, callback),
-        loadData: () => this.loadData(),
-      })
-    }
-    return this._saveDayStartController
-  },
+return datePage._getSaveDayStartController(this, { api, chinaTime, createSaveDayStartController, getConsole: () => console, getPlatform: () => wx })
+},
 
   goToToday() {
     this._getDateNavigationController().today()
   },
 
   _getDateNavigationController() {
-    if (!this._dateNavigationController) {
-      this._dateNavigationController = createDateNavigationController({
-        getTodayDate: () => this.data._todayDate,
-        getSelectedDate: () => this.data.selectedDate,
-        canGoNextDate: () => this.data.canGoNextDate,
-        shiftDate: (date, delta) => this._shiftDate(date, delta),
-        selectDate: date => this._selectDate(date),
-      })
-    }
-    return this._dateNavigationController
-  },
+return datePage._getDateNavigationController(this, { createDateNavigationController })
+},
 
   async loadDateData(date) {
     return this._getDateRequestController().load(date)
@@ -875,76 +509,28 @@ var pageConfig = {
   },
 
   _getDateCommitController() {
-    if (!this._dateCommitController) {
-      this._dateCommitController = createDateCommitController(
-        buildDateCommitPageCapabilities(this)
-      )
-    }
-    return this._dateCommitController
-  },
+return datePage._getDateCommitController(this, { buildDateCommitPageCapabilities, createDateCommitController })
+},
 
   _getDateFailureController() {
-    if (!this._dateFailureController) {
-      this._dateFailureController = createDateFailureController(
-        buildDateFailurePageCapabilities(this, { wx })
-      )
-    }
-    return this._dateFailureController
-  },
+return datePage._getDateFailureController(this, { buildDateFailurePageCapabilities, createDateFailureController, getPlatform: () => wx })
+},
 
   _getDateRequestController() {
-    if (!this._dateRequestController) {
-      this._dateRequestController = createDateRequestController(
-        buildDateRequestPageCapabilities(this, { api })
-      )
-    }
-    return this._dateRequestController
-  },
+return datePage._getDateRequestController(this, { api, buildDateRequestPageCapabilities, createDateRequestController })
+},
 
   _getPieAnimationController() {
-    if (!this._pieAnimationController) {
-      this._pieAnimationController = createPieAnimationController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getPieCtx: () => this._pieCtx,
-        getPieRect: () => this._pieRect,
-        getPieCanvasNode: () => this._pieCanvasNode,
-        getPieAnimationToken: () => this._pieAnimationToken,
-        incrementPieAnimationToken: () => { this._pieAnimationToken = (this._pieAnimationToken || 0) + 1; return this._pieAnimationToken },
-        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1 },
-        setPieDateRafId: id => { this._pieDateRafId = id },
-        now: () => Date.now(),
-        setTimeout,
-        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
-        revealPieLabelsIncrementally: () => this._revealPieLabelsIncrementally(),
-      })
-    }
-    return this._pieAnimationController
-  },
+return animationPage._getPieAnimationController(this, { createPieAnimationController, getDate: () => Date, getSetTimeout: () => setTimeout })
+},
 
   _revealPieLabelsIncrementally() {
     this._getPieLabelRevealController().reveal()
   },
 
   _getPieLabelRevealController() {
-    if (!this._pieLabelRevealController) {
-      this._pieLabelRevealController = createPieLabelRevealController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getPieCtx: () => this._pieCtx,
-        getPieRect: () => this._pieRect,
-        getPieCanvasNode: () => this._pieCanvasNode,
-        getLabelLayout: () => this._pieRenderCache.labelLayout,
-        getPieLabelToken: () => this._pieLabelToken,
-        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1; return this._pieLabelToken },
-        setPieLabelRafId: id => { this._pieLabelRafId = id },
-        getGeometry: rect => this._getPieGeometry(rect),
-        setTimeout,
-        drawPieLabels: (ctx, geometry, layout, reveal, start, end) => this._drawPieLabels(ctx, geometry, layout, reveal, start, end),
-      })
-    }
-    return this._pieLabelRevealController
-  },
+return animationPage._getPieLabelRevealController(this, { createPieLabelRevealController, getSetTimeout: () => setTimeout })
+},
 
   /* ==================== Animation Control ==================== */
 
@@ -953,40 +539,8 @@ var pageConfig = {
   },
 
   _getCancelWorkController() {
-    if (!this._cancelWorkController) {
-      this._cancelWorkController = createCancelWorkController({
-        clearDynamicRefresh: () => this._clearDynamicRefresh(),
-        cancelDurationAnimation: resetState => this._cancelDurationAnimation(resetState),
-        cancelDeferredHistory: clearPending => this._cancelDeferredHistory(clearPending),
-        setAnimActive: value => { this._animActive = value },
-        setFinalDrawn: value => { this._finalDrawn = value },
-        incrementRequestId: () => { this._requestId++ },
-        getMainRafId: () => this._rafId,
-        getPieDateRafId: () => this._pieDateRafId,
-        getPieLabelRafId: () => this._pieLabelRafId,
-        getBarRafId: () => this._barRafId,
-        getPieCanvasNode: () => this._pieCanvasNode,
-        getTrendCanvasNode: () => this._trendCanvasNode,
-        cancelFrame: (id, node) => {
-          if (id && node && node.cancelAnimationFrame) node.cancelAnimationFrame(id)
-        },
-        setMainRafId: id => { this._rafId = id },
-        setPieDateRafId: id => { this._pieDateRafId = id },
-        setPieLabelRafId: id => { this._pieLabelRafId = id },
-        setBarRafId: id => { this._barRafId = id },
-        incrementPieAnimationToken: () => { this._pieAnimationToken = (this._pieAnimationToken || 0) + 1 },
-        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1 },
-        incrementBarAnimationToken: () => { this._barAnimationToken = (this._barAnimationToken || 0) + 1 },
-        clearAnimTimer: () => {
-          if (this._animTimer) {
-            clearTimeout(this._animTimer)
-            this._animTimer = null
-          }
-        },
-      })
-    }
-    return this._cancelWorkController
-  },
+return canvasPage._getCancelWorkController(this, { createCancelWorkController, getClearTimeout: () => clearTimeout })
+},
 
   _initCanvases(callback) {
     this._getStatsCanvasInitController().initPie(callback)
@@ -997,13 +551,8 @@ var pageConfig = {
   },
 
   _getStatsCanvasInitController() {
-    if (!this._statsCanvasInitController) {
-      this._statsCanvasInitController = createStatsCanvasInitController(
-        buildStatsCanvasInitPageCapabilities(this, { wx })
-      )
-    }
-    return this._statsCanvasInitController
-  },
+return canvasPage._getStatsCanvasInitController(this, { buildStatsCanvasInitPageCapabilities, createStatsCanvasInitController, getPlatform: () => wx })
+},
 
   _shadeColorCached(hex, amount) {
     return this._shadeColorCache.shade(hex, amount)
@@ -1014,46 +563,14 @@ var pageConfig = {
   },
 
   _getStartAnimationsController() {
-    if (!this._startAnimationsController) {
-      this._startAnimationsController = createStartAnimationsController({
-        isAlive: () => this._alive,
-        isVisible: () => this._isVisible,
-        getRequestId: () => this._requestId,
-        getChartMode: () => this.data.chartMode,
-        getTodaySessions: () => this.data.todaySessions,
-        getRawTodayDurationSec: () => this._rawTodayDur,
-        getAnimActive: () => this._animActive,
-        getFinalDrawn: () => this._finalDrawn,
-        getPieCanvasNode: () => this._pieCanvasNode,
-        setAnimActive: value => { this._animActive = value },
-        setFinalDrawn: value => { this._finalDrawn = value },
-        setDisplayDurationSec: value => { this._displayTodayDurationSec = value },
-        setAnimTimer: timer => { this._animTimer = timer },
-        setRafId: id => { this._rafId = id },
-        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1 },
-        now: () => Date.now(),
-        setTimeout,
-        setData: patch => this.setData(patch),
-        getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
-        formatMin: sec => this._fmtMin(sec),
-        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
-        revealPieLabelsIncrementally: () => this._revealPieLabelsIncrementally(),
-      })
-    }
-    return this._startAnimationsController
-  },
+return animationPage._getStartAnimationsController(this, { createStartAnimationsController, getDate: () => Date, getSetTimeout: () => setTimeout })
+},
 
   /* ==================== Trend Bars ==================== */
 
   _renderTrendBars(progress) {
-    trendChart.renderTrendBars(this._trendCtx, {
-      trends: this.data.trends,
-      rect: this._trendBarsRect,
-      progress,
-      themeMode: this.data.themeMode,
-      palette: this._getCanvasPalette(),
-    })
-  },
+return canvasPage._renderTrendBars(this, progress, { trendChart })
+},
 
   /* ==================== Pie Chart ==================== */
 
@@ -1082,22 +599,8 @@ var pageConfig = {
   },
 
   _renderPieChart(progress, includeLabels = true) {
-    pieRenderer.renderPieChart({
-      ...buildPieRenderCapabilities({
-        getCtx: () => this._pieCtx,
-        getRect: () => this._pieRect,
-        getSubjects: () => this.data.subjects,
-        getThemeMode: () => this.data.themeMode,
-        getDpr: () => this._pieDpr,
-        getSelectedSubject: () => this.data._selectedSubject,
-        getCache: () => this._pieRenderCache,
-        getPalette: () => this._getCanvasPalette(),
-        getShade: () => (hex, amount) => this._shadeColorCached(hex, amount),
-      }),
-      progress,
-      includeLabels,
-    })
-  },
+return canvasPage._renderPieChart(this, progress, includeLabels, { buildPieRenderCapabilities, pieRenderer })
+},
 
   /* ==================== Touch Interactions ==================== */
 
@@ -1106,45 +609,22 @@ var pageConfig = {
   },
 
   _getPieTapController() {
-    if (!this._pieTapController) {
-      this._pieTapController = createPieTapController({
-        isAlive: () => this._alive,
-        hasDistributionData: () => this.data.distributionHasData,
-        getSubjects: () => this.data.subjects,
-        getSelectedSubjectDetail: () => this.data.selectedSubjectDetail,
-        getGeometry: rect => this._getPieGeometry(rect),
-        createSelectorQuery: () => wx.createSelectorQuery().in(this),
-        setData: (patch, callback) => this.setData(patch, callback),
-        renderPie: progress => this._renderPieChart(progress),
-        setTimeout,
-      })
-    }
-    return this._pieTapController
-  },
+return canvasPage._getPieTapController(this, { createPieTapController, getPlatform: () => wx, getSetTimeout: () => setTimeout })
+},
 
   closeDetail() {
     this._getCloseDetailController().close()
   },
 
   _getCloseDetailController() {
-    if (!this._closeDetailController) {
-      this._closeDetailController = createCloseDetailController({
-        isAlive: () => this._alive,
-        setData: (patch, callback) => this.setData(patch, callback),
-        renderPie: progress => this._renderPieChart(progress),
-      })
-    }
-    return this._closeDetailController
-  },
+return canvasPage._getCloseDetailController(this, { createCloseDetailController })
+},
 
   noop() {},
 
   _getTodayDurationDisplayPatch(text) {
-    return {
-      _dispTodayDurationText: text,
-      _dispTodayDurationSegments: this._buildDurationSegments(text),
-    }
-  },
+return loadViewFlow._getTodayDurationDisplayPatch(this, text)
+},
 
   _buildDurationSegments(text) {
     return durationFormatter.buildDurationSegments(text)
