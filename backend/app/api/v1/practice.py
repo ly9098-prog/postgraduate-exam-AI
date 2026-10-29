@@ -1,3 +1,4 @@
+import builtins as _practice_request_builtins
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
@@ -5,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
-from app.core.log_context import get_log_context, normalize_trace_id
+from app.core.log_context import get_log_context, normalize_trace_id  # noqa: F401
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.common import paginated_response
 from app.schemas.practice import (
-    AnswerResult,
+    AnswerResult,  # noqa: F401 -- live submission response dependency
     BatchSubmitRequest,
     BatchSubmitResponse,
     PracticeKnowledgeSummaryResponse,
@@ -24,6 +25,7 @@ from app.schemas.practice import (
 )
 from app.services import practice_service as svc
 from app.services.knowledge_point_service import load_question_kps  # noqa: F401
+from app.services.practice import request_submission as _request_submission
 from app.services.practice.candidate_selection import PracticeCandidateError
 from app.services.practice.final_candidates import PracticeCandidateConflictError
 from app.services.practice.issued_response import IncompletePracticeRevisionError
@@ -34,9 +36,16 @@ from app.services.practice.question_issuance import (
 from app.services.practice.request_assembly import PracticeQuestionsRequest
 from app.services.practice.request_filters import PracticeRequestFilterError
 from app.services.practice.request_scope import PracticeScopeNotFoundError
-from app.utils.trace.debug import debug_log, save_debug_snapshot
+from app.utils.trace.debug import debug_log, save_debug_snapshot  # noqa: F401
 
 logger = logging.getLogger(__name__)
+
+
+def _practice_request_port(name):
+    """Resolve the original route dependency when the request uses it."""
+    if name in globals():
+        return globals()[name]
+    return getattr(_practice_request_builtins, name)
 
 
 router = APIRouter(prefix="/api/v1/practice")
@@ -165,93 +174,8 @@ async def batch_submit(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    trace_id = str(get_log_context().get("trace_id") or normalize_trace_id(x_trace_id))
-    debug_log(
-        trace_id,
-        "SUBMIT",
-        {"endpoint": "practice/batch-submit", "answer_count": len(data.answers)},
-    )
-    save_debug_snapshot(
-        trace_id,
-        "submit_before",
-        {"question_ids": [answer.question_id for answer in data.answers]},
-    )
-    try:
-        result = await svc.batch_submit_answers(
-            db=db,
-            user_id=current_user.id,
-            answers=[a.model_dump() for a in data.answers],
-            session_meta=data.session.model_dump()
-            if data.session is not None
-            else None,
-            skipped_question_ids=data.skipped_question_ids,
-            batch_token=data.batch_token,
-        )
-    except svc.PracticeBatchTokenError as e:
-        logger.warning(
-            "practice submit batch token rejected uid=%s trace_id=%s: %s",
-            current_user.id,
-            trace_id,
-            e,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error_code": "PRACTICE_BATCH_INVALID",
-                "retryable": False,
-            },
-        )
-    except svc.PracticeSubmissionConflictError as e:
-        logger.warning(
-            "practice submit idempotency conflict uid=%s trace_id=%s: %s",
-            current_user.id,
-            trace_id,
-            e,
-        )
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error_code": "PRACTICE_SUBMISSION_CONFLICT",
-                "retryable": False,
-            },
-        )
-    except ValueError as e:
-        logger.warning(
-            "practice submit payload rejected uid=%s trace_id=%s: %s",
-            current_user.id,
-            trace_id,
-            e,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error_code": "PRACTICE_PAYLOAD_INVALID",
-                "retryable": False,
-            },
-        )
-
-    # 失效用户相关缓存
-    await cache.delete(f"practice:stats:{current_user.id}:*")
-    await cache.delete(f"stats:*:{current_user.id}*")
-    await cache.delete(f"review:*:{current_user.id}*")
-
-    save_debug_snapshot(
-        trace_id,
-        "submit_after",
-        {
-            "total_correct": result["total_correct"],
-            "total_wrong": result["total_wrong"],
-            "total_skipped": result.get("total_skipped", 0),
-            "result_count": len(result["results"]),
-        },
-    )
-    return BatchSubmitResponse(
-        results=[AnswerResult(**r) for r in result["results"]],
-        total_correct=result["total_correct"],
-        total_wrong=result["total_wrong"],
-        total_skipped=result.get("total_skipped", 0),
-        trace_id=trace_id,
-        knowledge_session=result.get("knowledge_session"),
+    return await _request_submission.batch_submit(
+        data, x_trace_id, db, current_user, ports=_practice_request_port
     )
 
 

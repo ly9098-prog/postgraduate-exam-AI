@@ -1,0 +1,135 @@
+{
+  "batch": "miniprogram-practice-request-2026-10-30",
+  "baseline": "29bb26bb8652287d9a25bfd83613f5a1acc231b7",
+  "priority": "mini-program interfaces > admin interfaces > OCR interfaces",
+  "scope": "Practice submission request diagnostics/service error mapping/cache invalidation/response lifecycle; original thin reset/session and issuance/transaction flows retained",
+  "consumers": [
+    "miniprogram/subpackages/study/practice/utils/practice-submit-page-adapter.js:77",
+    "miniprogram/subpackages/study/practice-result/index.js:421",
+    "miniprogram/subpackages/study/practice/utils/practice-question-page-adapter.js:129"
+  ],
+  "route_lines": {
+    "before": 519,
+    "after": 443
+  },
+  "new_modules": {
+    "backend/app/services/practice/request_submission.py": {
+      "lines": 93,
+      "functions": {
+        "batch_submit": 40,
+        "_submit_answers": 46
+      }
+    }
+  },
+  "verification": {
+    "baseline": {
+      "passed": 73,
+      "log": "baseline.log",
+      "command_log": "/tmp/miniprogram-practice-request-batch/baseline.log"
+    },
+    "targeted": {
+      "passed": 73,
+      "log": "targeted.log",
+      "command_log": "/tmp/miniprogram-practice-request-batch/targeted.log"
+    },
+    "architecture": {
+      "passed": 62,
+      "log": "gates.log",
+      "command_log": "/tmp/miniprogram-practice-request-batch/gates.log"
+    },
+    "differential": {
+      "cases": 900,
+      "seed": 20261030,
+      "inverse_expansion": "equal",
+      "retained_function_bodies": 10,
+      "original_declarations": 11,
+      "actual_openapi": "equal",
+      "compared": [
+        "response",
+        "errors",
+        "context",
+        "diagnostics",
+        "service_arguments",
+        "cache_order",
+        "cancellation",
+        "user_state"
+      ]
+    },
+    "ci_static": {
+      "status": "passed",
+      "files": 458,
+      "log": "ci-static.log",
+      "test_source_sha256_before_review_fix": {
+        "backend/tests/test_api/test_practice_request_contract.py": "dbf98ef00f6e124ff24a8230a7fb496899c6829b0a31afa9fea68962d8dab87c",
+        "backend/tests/architecture/test_practice_request_boundaries.py": "a58d764cbe8aba1d37096018a82548608458dc91bfe051b98580a822122ee4a1"
+      },
+      "passed": 7914,
+      "warnings": 64,
+      "pytest_seconds": 714.8,
+      "process_seconds": 720.52,
+      "exit_code": 0,
+      "final_gate_note": "CI collected the original 9 request architecture tests before review-only test changes. Final 16 gates plus 37 contracts passed separately; no business source changed after CI started."
+    },
+    "review": {
+      "status": "completed",
+      "reviewer": "/root/knowledge_map_review",
+      "found_p3": 1,
+      "closed_p3": 1,
+      "unresolved_p0_p3": 0,
+      "initial_independent_tests_passed": 82,
+      "final_independent_gates_passed": 16,
+      "independent_differential_cases": 900,
+      "fix": "Reject function-local imports and noncanonical attribute call receivers; seven mutation negatives; freeze original return annotations"
+    },
+    "strict_ruff": "passed",
+    "compileall": "passed",
+    "diff_check": "passed",
+    "final_incremental": {
+      "passed": 53,
+      "scope": "37 request contracts plus 16 final architecture gates",
+      "log": "review-fix-incremental.log",
+      "command_log": "/tmp/miniprogram-practice-request-batch/review-fix-incremental.log"
+    },
+    "ci_readiness": {
+      "passed": 69,
+      "log": "readiness.log",
+      "scope": "mocked readiness boundary only; --run-integration permits this known directory",
+      "command_log": "/tmp/miniprogram-practice-request-batch/readiness.log"
+    },
+    "ci_cloud_isolation": {
+      "passed": 30,
+      "log": "cloud.log",
+      "command_log": "/tmp/miniprogram-practice-request-batch/cloud.log"
+    }
+  },
+  "retrieval": {
+    "tier": "Verify",
+    "project": "home-lmh-projects-postgraduate-ai",
+    "index_generation": "2026-10-29T17:08:49Z",
+    "coverage": "10 paths metadata_match/no_recorded_issue; best effort; no completeness claim",
+    "pagination": "practice searches 103/103 and tests 61/61 consumed; session literal negative results are not absence proof",
+    "graphify": "Unavailable per verified handoff; exact known documents read directly"
+  },
+  "evidence_directory": "/tmp/miniprogram-practice-request-batch",
+  "preserved_limits": [
+    "No mini-program implementation changes; backend-local verification only",
+    "No real WeChat compiler/device/login validation",
+    "No production PostgreSQL/Redis/multiworker or external AI/OCR acceptance",
+    "Record/knowledge state query consumers still unconfirmed",
+    "Full-stack refactor remains active"
+  ],
+  "source_sha256": {
+    "backend/app/api/v1/practice.py": "690efda0a252dc5d1501240d64914476f1d6781f1e699bbe3a5699c6f3ba47e1",
+    "backend/app/services/practice/request_submission.py": "d7cb742377e03b698108c7f68d77d449263989517a6844fa115f5804cd514562",
+    "backend/tests/test_api/test_practice_request_contract.py": "dbf98ef00f6e124ff24a8230a7fb496899c6829b0a31afa9fea68962d8dab87c",
+    "backend/tests/architecture/test_practice_request_boundaries.py": "69bfc1c38012a4e9c5a80cec300b1923f0974976d4748cf56d8e76b73a2ead5e",
+    ".github/workflows/ci.yml": "74d4b1ff071a17c3242e9af3a4db6bb78426b927cc18d851cff19076820f9767"
+  },
+  "git_delivery": {
+    "paths": 8,
+    "protected_paths": 21,
+    "policy": "Explicit paths only; validate frozen/protected/staged hashes and commit in one fail-fast process; verify HEAD blobs after commit",
+    "push": false,
+    "production_operations": false
+  }
+}

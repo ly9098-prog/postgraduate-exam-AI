@@ -327,3 +327,48 @@
 - `practice-boundaries.js` 按实际 Page 直接属性逐项验证注册顺序、数量和 token 模板，拒绝未知/重复/spread/别名或委托漂移，字符串内部空白不会被忽略。模块/函数继续受现有预算门禁约束；六个页面 require 绑定按 const/路径/次数核对，职责模块拒绝新增导入、裸平台引用和动态执行。独立审查发现的两处门禁缺口已补检查及负例，业务实现未改变；CI 注册新门禁与契约，原 UI 测试夹具更新模块加载路径。
 
 本轮剩余职责提取与入口登记完成。验收命令、数字、模块行数和证据限制统一见 `refactor-results/practice-page-2026-10-29.json`；临时原页及对照脚本位于该清单的 evidence_directory，不重跑 extract.js。对照包含原页契约、逆变换 AST token、全部原声明顺序及 controller 端口状态/轨迹；引擎 TypeError 的 this/page 名称归一化，未宣称错误诊断文本逐字一致。未执行真实微信开发者工具、模拟器或真机，也未验收真实网络/外部AI及完整学习闭环。
+
+## 24. 小程序刷题提交请求生命周期（2026-10-30）
+
+按“小程序接口 > 后台管理系统接口 > OCR 接口”继续处理真实消费链路。
+刷题页 `practice-submit-page-adapter` 与结果页 `recoverSubmittedResult` 调用
+`POST /api/v1/practice/batch-submit`，顺序重启适配器调用
+`POST /api/v1/practice/sequential/reset`。本批只迁移仍在提交路由中的请求职责，
+原小程序、已分离的发题与提交事务编排均保留；重置、会话 scope/knowledge-summary、
+统计和其他查询路由的函数体保持原实现。记录和知识状态查询尚未确认小程序消费者，
+不据负检索宣称不存在调用，也不因行数把它们纳入本批。
+
+提交路由保留原鉴权、Header/Depends、请求 schema、路径、response_model 及签名，
+单次委托 `services/practice/request_submission.py`。该模块承接诊断记录、
+三类 service 错误映射、提交后缓存失效和响应投影；不导入路由、FastAPI、ORM、
+配置或数据库模块。依赖仍在原使用位置从路由读取，包含 await 之后的当前
+service 异常类、logger、cache、schema 和用户 ID，不将它们提前固化为请求快照。
+
+- trace 仍先取日志上下文 truthy 值，否则 normalize header，再做 str 转换。
+  debug 与 submit_before snapshot 在 service 调用及其 try 边界之前执行；
+  answers 逐项 model_dump、session 转换、skipped IDs 原引用和 batch token 保持。
+- 原 service 继续持有签发 token 校验、版本判题、幂等重放、事务、
+  会话/outbox 持久化和顺序进度。路由及新模块均不增加 commit、rollback、
+  flush、队列交接或重试。service 原抛出的 token/conflict/ValueError 分别映射为
+  400 PRACTICE_BATCH_INVALID、409 PRACTICE_SUBMISSION_CONFLICT、
+  400 PRACTICE_PAYLOAD_INVALID，retryable=False；日志及原异常上下文保留。
+- service 成功之后依次失效 practice:stats、stats、review 三个原 pattern，
+  再记录 submit_after，最后构造 AnswerResult 和 BatchSubmitResponse。
+  cache/诊断/响应校验失败不进入 service 错误映射；保留前面已发生的提交和
+  部分缓存失效，不添加回滚或吞错。其他异常和取消仍原样传播。
+- total_skipped 缺失时仍为 0，knowledge_session 缺失时仍为 None。
+  schema 继续按原规则投影；不改变外部响应 envelope，也不修复本批以外的业务行为。
+  直接调用中已有的 session=None 分支保留，HTTP schema 仍要求合法 session。
+- 重置路由继续先校验科目存在，再拒绝父科目或非单科范围，最后调用原重置 service。
+  会话 scope 继续区分缺失会话与存在但无知识 scope；knowledge-summary 继续区分
+  缺失、processing、ready、unavailable，不提前把异步投影标记为完成。
+
+契约先在原路由上运行，再在当前入口验证。逆展开恢复原提交函数体，
+其余原函数声明、函数体及顺序受结构检查约束；差分比较实际响应、异常、诊断、
+service 参数、缓存顺序、取消和用户状态，并核对实际 FastAPI OpenAPI 对象。
+新请求契约与架构门禁加入固定 CI 清单。命令、数量、结果与源码 hash 统一见
+`refactor-results/miniprogram-practice-request-2026-10-30.json`；
+临时证据在 `/tmp/miniprogram-practice-request-batch/`，不要重跑 extract.py。
+
+本批是后端请求边界的兼容重构，未修改小程序源码；本地替身与差分不代表真实微信
+编译/真机、生产鉴权、PostgreSQL/Redis、多 worker、外部模型或完整学习闭环验收。
