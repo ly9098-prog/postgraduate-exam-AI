@@ -28,6 +28,8 @@ const requestFlow = require('./utils/wrong-book-request-flow')
 const selectionFlow = require('./utils/wrong-book-selection-flow')
 const batchFlow = require('./utils/wrong-book-batch-flow')
 const batchUndo = require('./utils/wrong-book-batch-undo')
+const lifecycle = require('./utils/wrong-book-lifecycle')
+const navigationFlow = require('./utils/wrong-book-navigation-flow')
 Page({
 data: {
 list: [],
@@ -140,103 +142,22 @@ _subjectsRequestSeq: 0,
 _taskFlowRequestSeq: 0,
 _destroyed: false,
 onLoad(options) {
-this._destroyed = false
-this._statsRequestSeq = 0
-this._subjectsRequestSeq = 0
-this._taskFlowRequestSeq = 0
-this._batchMasterUndoInFlight = false
-this.setData({ enableMathImage: config.enableMathImage || false })
-this._syncDateFilter()
-const subjectId = options && options.subject_id != null ? Number(options.subject_id) : null
-const topic = safeDecodeURIComponent(options && options.topic, '')
-if (subjectId && Number.isFinite(subjectId)) {
-this.setData({ selectedSubjectId: subjectId })
-}
-if (topic) {
-this.setData({ selectedTopic: topic })
-}
-this._updateFilterCount()
-this._checkExportCapability()
-this._restoreAiAutoSetting()
-this._restoreAiDiagnosisFromCache()
+return lifecycle.onLoad(this, options, { settings: config, safeDecodeURIComponent })
 },
 onReady() {
-this._ready = true
-this.loadSubjects()
-this._loadPage()
+return lifecycle.onReady(this)
 },
 onShow() {
-this._alive = true
-this._syncDateFilter()
-if (this.data.batchMode) this._showBatchCapsuleAndRefreshTimer()
-if (!this._ready) return
-Promise.all([
-this.loadStats(),
-this.loadList(true),
-]).then(() => this._checkAiDiagnosis())
+return lifecycle.onShow(this)
 },
 onHide() {
-this._alive = false
-this._clearBatchCapsuleIdleTimer()
+return lifecycle.onHide(this)
 },
 onUnload() {
-this._alive = false
-this._destroyed = true
-this._exportCapabilityRequestId++
-this._statsRequestSeq++
-this._subjectsRequestSeq++
-this._taskFlowRequestSeq++
-this._listRequestSeq++
-this._aiDiagnosisRequestId++
-this._clearBatchCapsuleIdleTimer()
-if (this._selectionPulseTimer) {
-clearTimeout(this._selectionPulseTimer)
-this._selectionPulseTimer = null
-}
-if (this._aiAutoSwitchTimer) {
-clearTimeout(this._aiAutoSwitchTimer)
-this._aiAutoSwitchTimer = null
-}
-this._batchMasterUndoInFlight = false
-this._clearBatchMasterUndo(true)
+return lifecycle.onUnload(this)
 },
 async _checkExportCapability() {
-const requestId = ++this._exportCapabilityRequestId
-this.setData({
-exportAvailable: false,
-exportCapabilityChecked: false,
-exportUnavailableText: '当前导出功能不可用',
-})
-if (config.WRONG_BOOK_EXPORT_ENABLED !== true) {
-this.setData({
-exportCapabilityChecked: true,
-exportUnavailableText: '当前导出功能不可用',
-})
-return
-}
-try {
-const capability = await exportApi.getCapabilities()
-if (requestId !== this._exportCapabilityRequestId) return
-const available = !!(
-capability &&
-capability.export_enabled === true &&
-capability.pdf_enabled === true
-)
-this.setData({
-exportAvailable: available,
-exportCapabilityChecked: true,
-exportUnavailableText: available
-? ''
-: exportApi.getExportCapabilityErrorMessage(null, capability),
-})
-} catch (error) {
-if (requestId !== this._exportCapabilityRequestId) return
-this.setData({
-exportAvailable: false,
-exportCapabilityChecked: true,
-exportUnavailableText: exportApi.getExportCapabilityErrorMessage(error),
-})
-}
+return navigationFlow._checkExportCapability(this, { settings: config, exportClient: exportApi })
 },
 async _loadPage() {
 return requestFlow._loadPage(this)
@@ -331,7 +252,7 @@ _flattenSubjectOptions(raw) {
 return flattenSubjectOptions(raw)
 },
 goBack() {
-wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
+return navigationFlow.goBack({ getPlatform: () => wx })
 },
 toggleFilter() {
 this._syncDateFilter()
@@ -406,17 +327,7 @@ onQuestionLongPress(e) {
 return selectionFlow.onQuestionLongPress(this, e, { getPlatform: () => wx })
 },
 _navigateToDetail(id) {
-const ids = this.data.activeView === 'task'
-? this._getVisibleIds()
-: (this.data.list || []).map(item => item.id)
-if (!ids.some(itemId => String(itemId) === String(id))) ids.unshift(id)
-const idx = ids.findIndex(itemId => String(itemId) === String(id))
-try {
-wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
-} catch (e) {
-console.warn('保存错题详情导航上下文失败', e)
-}
-wx.navigateTo({ url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(id)}&idx=${Math.max(0, idx)}&source=wrong-book` })
+return navigationFlow._navigateToDetail(this, id, { getPlatform: () => wx })
 },
 _toggleQuestionSelection(id) {
 return selectionFlow._toggleQuestionSelection(this, id)
@@ -480,32 +391,10 @@ _reloadAfterBatch() {
 return batchFlow._reloadAfterBatch(this)
 },
 onExportSelected() {
-if (!this.data.exportAvailable) {
-wx.showToast({
-title: this.data.exportUnavailableText || '当前导出功能不可用',
-icon: 'none',
-})
-return
-}
-const ids = (this.data.selectedIds || []).map(id => {
-const n = Number(id)
-return Number.isFinite(n) ? n : null
-}).filter(Boolean)
-if (!ids.length) {
-wx.showToast({ title: '请先选择错题', icon: 'none' })
-return
-}
-if (ids.length > 100) {
-wx.showToast({ title: '单次最多选择 100 道，请调整筛选条件后重试。', icon: 'none' })
-return
-}
-const app = getApp()
-const gd = app.getGlobalData()
-gd.exportSelectedIds = ids
-wx.navigateTo({ url: '/subpackages/export/export-config/export-config' })
+return navigationFlow.onExportSelected(this, { getPlatform: () => wx, getApplication: () => getApp() })
 },
 onViewExportRecords() {
-wx.navigateTo({ url: '/subpackages/export/export-records/export-records' })
+return navigationFlow.onViewExportRecords({ getPlatform: () => wx })
 },
 undoBatchMaster() {
 return batchUndo.undoBatchMaster(this, { requestClient: api, getPlatform: () => wx })
@@ -517,7 +406,7 @@ _confirmBatchAction(title, content) {
 return batchFlow._confirmBatchAction(this, title, content)
 },
 goDetail(e) {
-this._navigateToDetail(e.currentTarget.dataset.id)
+return navigationFlow.goDetail(this, e)
 },
 _getUser() {
 try { return storage.get(storage.KEYS.USER) } catch (_) { return null }

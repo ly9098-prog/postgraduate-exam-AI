@@ -6,10 +6,11 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-book/wrong-book.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-book/utils'
-const PAGE_CEILING = 894
+const PAGE_CEILING = 783
 const MODULES = ['wrong-book-value-view.js', 'wrong-book-item-view.js',
   'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js',
-  'wrong-book-selection-flow.js', 'wrong-book-batch-flow.js', 'wrong-book-batch-undo.js']
+  'wrong-book-selection-flow.js', 'wrong-book-batch-flow.js', 'wrong-book-batch-undo.js',
+  'wrong-book-lifecycle.js', 'wrong-book-navigation-flow.js']
 const REQUEST_DELEGATES = {
   "_beginFilterReload": "_beginFilterReload(patch) {\nreturn requestFlow._beginFilterReload(this, patch)\n}",
   "_loadPage": "async _loadPage() {\nreturn requestFlow._loadPage(this)\n}",
@@ -53,7 +54,21 @@ const BATCH_DELEGATES = {
   "_clearBatchMasterUndo": "_clearBatchMasterUndo(skipSetData) {\nreturn batchUndo._clearBatchMasterUndo(this, skipSetData)\n}",
   "_confirmBatchAction": "_confirmBatchAction(title, content) {\nreturn batchFlow._confirmBatchAction(this, title, content)\n}"
 }
+const LIFECYCLE_DELEGATES = {
+  "onLoad": "onLoad(options) {\nreturn lifecycle.onLoad(this, options, { settings: config, safeDecodeURIComponent })\n}",
+  "onReady": "onReady() {\nreturn lifecycle.onReady(this)\n}",
+  "onShow": "onShow() {\nreturn lifecycle.onShow(this)\n}",
+  "onHide": "onHide() {\nreturn lifecycle.onHide(this)\n}",
+  "onUnload": "onUnload() {\nreturn lifecycle.onUnload(this)\n}",
+  "_checkExportCapability": "async _checkExportCapability() {\nreturn navigationFlow._checkExportCapability(this, { settings: config, exportClient: exportApi })\n}",
+  "goBack": "goBack() {\nreturn navigationFlow.goBack({ getPlatform: () => wx })\n}",
+  "_navigateToDetail": "_navigateToDetail(id) {\nreturn navigationFlow._navigateToDetail(this, id, { getPlatform: () => wx })\n}",
+  "onExportSelected": "onExportSelected() {\nreturn navigationFlow.onExportSelected(this, { getPlatform: () => wx, getApplication: () => getApp() })\n}",
+  "onViewExportRecords": "onViewExportRecords() {\nreturn navigationFlow.onViewExportRecords({ getPlatform: () => wx })\n}",
+  "goDetail": "goDetail(e) {\nreturn navigationFlow.goDetail(this, e)\n}"
+}
 const DELEGATES = {
+  ...LIFECYCLE_DELEGATES,
   ...BATCH_DELEGATES,
   ...REQUEST_DELEGATES,
   ...SELECTION_DELEGATES,
