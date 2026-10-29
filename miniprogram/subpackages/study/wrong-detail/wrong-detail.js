@@ -33,6 +33,7 @@ const loadFlow = require('./utils/wrong-detail-load-flow')
 const lifecycle = require('./utils/wrong-detail-lifecycle')
 const masterFlow = require('./utils/wrong-detail-master-flow')
 const masterUndo = require('./utils/wrong-detail-master-undo')
+const removeFlow = require('./utils/wrong-detail-remove-flow')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -399,61 +400,19 @@ _clearMasterUndo() {
 return masterUndo._clearMasterUndo(this)
 },
 openMoreMenu() {
-this.setData({ moreMenuVisible: true })
+return removeFlow.openMoreMenu(this)
 },
 closeMoreMenu() {
-this.setData({ moreMenuVisible: false })
+return removeFlow.closeMoreMenu(this)
 },
 openRemoveConfirm() {
-this.setData({ moreMenuVisible: false, removeConfirmVisible: true })
+return removeFlow.openRemoveConfirm(this)
 },
 closeRemoveConfirm() {
-if (this.data.removeSubmitting) return
-this.setData({ removeConfirmVisible: false })
+return removeFlow.closeRemoveConfirm(this)
 },
 async removeFromWrongBook() {
-const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
-if (!wqId || this.data.removeSubmitting) return
-this._clearMasterUndo()
-this.setData({ removeSubmitting: true })
-try {
-await api.post('/wrong-questions/batch', {
-action: 'remove_from_book',
-ids: [wqId],
-})
-if (!this._alive) return
-const oldIds = this.data.questionIds || []
-const currentIdx = this.data.currentIdx
-const nextIds = oldIds.filter(id => String(id) !== String(wqId))
-if (this._wqCache) delete this._wqCache[wqId]
-try {
-wx.setStorageSync('wrong_detail_nav', { ids: nextIds, ts: Date.now() })
-} catch (_) {}
-this.setData({
-questionIds: nextIds,
-totalQuestions: nextIds.length,
-removeConfirmVisible: false,
-removeSubmitting: false,
-})
-if (!nextIds.length) {
-wx.showToast({ title: '已移出错题本', icon: 'none' })
-if (this._removeBackTimer) clearTimeout(this._removeBackTimer)
-this._removeBackTimer = setTimeout(() => {
-this._removeBackTimer = null
-if (this._alive) this.goBack()
-}, 220)
-return
-}
-const nextIdx = Math.min(currentIdx, nextIds.length - 1)
-this.setData({ currentIdx: nextIdx })
-await this.loadData(nextIds[nextIdx])
-wx.showToast({ title: '已移出错题本', icon: 'none' })
-} catch (e) {
-if (!this._alive) return
-console.error('移出错题本失败', e)
-this.setData({ removeSubmitting: false })
-wx.showToast({ title: '移出失败，请重试', icon: 'none' })
-}
+return removeFlow.removeFromWrongBook(this, { requestClient: api, get platform() { return wx } })
 },
 _checkRenderInvariant(renderModel) {
 if (!renderModel) return

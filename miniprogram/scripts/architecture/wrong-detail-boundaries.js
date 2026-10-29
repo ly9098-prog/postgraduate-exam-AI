@@ -6,7 +6,7 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 620
+const PAGE_CEILING = 579
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
@@ -14,7 +14,7 @@ const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
   'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js',
   'wrong-detail-diagnosis-flow.js', 'wrong-detail-load-flow.js',
-  'wrong-detail-lifecycle.js', 'wrong-detail-master-flow.js', 'wrong-detail-master-undo.js']
+  'wrong-detail-lifecycle.js', 'wrong-detail-master-flow.js', 'wrong-detail-master-undo.js', 'wrong-detail-remove-flow.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -120,7 +120,15 @@ const MASTER_DELEGATES = {
   "_armMasterUndoExpiry": "_armMasterUndoExpiry(ms) {\nreturn masterUndo._armMasterUndoExpiry(this, ms)\n}",
   "_clearMasterUndo": "_clearMasterUndo() {\nreturn masterUndo._clearMasterUndo(this)\n}"
 }
+const REMOVE_DELEGATES = {
+  "openMoreMenu": "openMoreMenu() {\nreturn removeFlow.openMoreMenu(this)\n}",
+  "closeMoreMenu": "closeMoreMenu() {\nreturn removeFlow.closeMoreMenu(this)\n}",
+  "openRemoveConfirm": "openRemoveConfirm() {\nreturn removeFlow.openRemoveConfirm(this)\n}",
+  "closeRemoveConfirm": "closeRemoveConfirm() {\nreturn removeFlow.closeRemoveConfirm(this)\n}",
+  "removeFromWrongBook": "async removeFromWrongBook() {\nreturn removeFlow.removeFromWrongBook(this, { requestClient: api, get platform() { return wx } })\n}"
+}
 const DELEGATES = {
+  ...REMOVE_DELEGATES,
   ...MASTER_DELEGATES,
   ...LIFECYCLE_DELEGATES,
   ...LOAD_DELEGATES,

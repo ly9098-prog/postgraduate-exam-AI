@@ -119,3 +119,12 @@
 - 撤销保留原 pending 对象、inflight 拦截、timer 清理先于 try/finally、await 后当前 hook、按当前列表/视图选择 navigate/setData/load、失败仅对相同 pending 重开 5000ms 窗口以及 finally 解锁。timer 句柄 truthy 判断、默认窗口和卸载后不写视图保持。
 - 新刻画并保留两处原限制：撤销 API 的 404/410 虽被处理为清 undo/移除导航/提示无法撤销，后续仍执行本地 commit 并显示成功 toast；timer 清理在 try/finally 外若抛错，inflight 会保持 true。15 项契约在原页重放证实，本批不夹带业务修复。
 - 15 项契约原页与当前通过；十二组定向 150 项、全量 Node 2291 项、渲染 5 fixtures/31 项、八门禁和视觉/KaTeX通过。1360 组十七入口返回值/状态/调用轨迹/字段顺序对照一致；独立实现只读审查无 P0–P3 可操作发现。CI 增加掌握契约；详情门禁为十六模块、88 条委托，页面 ceiling 为 620。证据 `/tmp/wrong-detail-master-batch/`；删除、渲染安全及其他剩余职责继续核查，既有真实环境限制保持。
+
+
+## 14. 移出错题本与返回计时（2026-10-29 后续批次）
+
+- 本批页面由 620→579 行。更多菜单/移除确认的开关和移出错题本五方法迁入 `utils/wrong-detail-remove-flow.js`（63 行，函数均 ≤50 行）；页面签名/async/单次委托保持。五方法体仅改变接收者与 API/platform 访问，其余 114 个 Page 属性原文不变。
+- 保留私有 ID 优先与 busy 守卫、try 外清 undo 与初始 patch；API 返回后先存活守卫，再读取当前列表与索引，按 String 过滤全部同 ID 项、仅移除对应 cache entry，并写原 ids/ts 存储形状和字段顺序。存储异常继续吞掉，响应 skipped/count 字段仍不参与本地移除判定。
+- 空列表继续先 toast、清原返回 timer、注册 220ms 回退；callback 先清句柄，再判断存活并调用当前 goBack。非空分支保留索引 clamp、await 当前 loadData 后直接 toast，不补第二次存活判断；load/同步副作用失败仍进入原 catch，已完成的列表/cache/存储写入不回滚。
+- 9 项契约原页重放与当前通过；十三组定向 159 项、全量 Node 2300 项、渲染 5 fixtures/31 项、八门禁及视觉/KaTeX通过。1000 组五入口返回值/状态/调用轨迹/字段顺序对照一致；独立实现只读审查无 P0–P3 可操作发现。
+- CI 增加移除契约；详情门禁为十七模块、93 条委托，页面 ceiling 为 579。证据 `/tmp/wrong-detail-remove-batch/`；渲染安全、专项老师反馈等剩余页面职责继续核查，前述既有行为和真实环境验收限制保持。
