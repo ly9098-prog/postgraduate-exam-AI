@@ -21,6 +21,7 @@ const aiState = require('./utils/wrong-detail-ai-state')
 const { _aiPollDelayMs, _isTimeoutError, _generationMarker, _fallbackMessage, _isWqMastered } = aiState
 const { processWqData } = require('./utils/wrong-detail-question-view')
 const { buildTeacherActionPageCapabilities } = require('./utils/wrong-detail-teacher-page-adapter')
+const contentTransition = require('./utils/wrong-detail-content-transition')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -1096,114 +1097,34 @@ console.warn('[SELF_HEAL] wrong-detail re-rendered in SAFE_MODE, mode=' + raw._r
 }
 },
 onAiSwipeStart(e) {
-if (this._switching) return
-const touch = e && e.touches && e.touches[0]
-if (!touch) return
-this._aiSwipeStart = {
-x: Number(touch.clientX),
-y: Number(touch.clientY),
-ts: Date.now(),
-}
+return contentTransition.onAiSwipeStart(this, e)
 },
 onAiSwipeEnd(e) {
-const start = this._aiSwipeStart
-this._aiSwipeStart = null
-if (!start || this._switching) return
-const touch = e && e.changedTouches && e.changedTouches[0]
-if (!touch) return
-const dx = Number(touch.clientX) - start.x
-const dy = Number(touch.clientY) - start.y
-const absX = Math.abs(dx)
-const absY = Math.abs(dy)
-if (absX < 56 || absX <= absY * 1.2) return
-const targetIdx = dx < 0 ? this.data.currentIdx + 1 : this.data.currentIdx - 1
-if (targetIdx < 0 || targetIdx >= this.data.questionIds.length) return
-this._navigateTo(targetIdx, 150, dx < 0 ? 'left' : 'right')
+return contentTransition.onAiSwipeEnd(this, e)
 },
 onAiSwipeCancel() {
-this._aiSwipeStart = null
+return contentTransition.onAiSwipeCancel(this)
 },
 _beginContentSwitchTransition(direction) {
-if (!this._alive) return
-const dir = direction === 'right' ? 'right' : 'left'
-if (this._contentTransitionTimer) {
-clearTimeout(this._contentTransitionTimer)
-this._contentTransitionTimer = null
-}
-this._contentTransitionStartedAt = Date.now()
-this._contentTransitionDirection = dir
-this.setData({
-contentTransitionClass: dir === 'left' ? 'content-slide-out-left' : 'content-slide-out-right',
-})
+return contentTransition._beginContentSwitchTransition(this, direction)
 },
 async _waitForContentSwitchOut(direction, animMs) {
-const dir = direction === 'right' ? 'right' : 'left'
-if (!this._contentTransitionStartedAt || this._contentTransitionDirection !== dir) {
-this._beginContentSwitchTransition(dir)
-}
-const requested = Number(animMs)
-const waitTarget = Number.isFinite(requested) && requested > 0
-? Math.min(QUESTION_SWITCH_OUT_MS, requested)
-: QUESTION_SWITCH_OUT_MS
-const elapsed = Date.now() - this._contentTransitionStartedAt
-if (elapsed < waitTarget) await _sleep(waitTarget - elapsed)
+return contentTransition._waitForContentSwitchOut(this, direction, animMs, { QUESTION_SWITCH_OUT_MS, _sleep })
 },
 _finishContentSwitchTransition(direction) {
-const dir = direction === 'right' ? 'right' : 'left'
-const inClass = dir === 'left' ? 'content-slide-in-right' : 'content-slide-in-left'
-if (this._contentTransitionTimer) clearTimeout(this._contentTransitionTimer)
-this._contentTransitionStartedAt = 0
-this._contentTransitionDirection = ''
-this.setData({ contentTransitionClass: inClass })
-this._contentTransitionTimer = setTimeout(() => {
-this._contentTransitionTimer = null
-this._switching = false
-this._clearSwitchWatchdog()
-if (this._alive) this.setData({ contentTransitionClass: '' })
-}, QUESTION_SWITCH_IN_MS)
+return contentTransition._finishContentSwitchTransition(this, direction, { QUESTION_SWITCH_IN_MS })
 },
 _cancelContentSwitchTransition() {
-if (this._contentTransitionTimer) {
-clearTimeout(this._contentTransitionTimer)
-this._contentTransitionTimer = null
-}
-this._contentTransitionStartedAt = 0
-this._contentTransitionDirection = ''
-if (this._alive) this.setData({ contentTransitionClass: '' })
+return contentTransition._cancelContentSwitchTransition(this)
 },
 _armSwitchWatchdog(ms) {
-this._clearSwitchWatchdog()
-var duration = Number(ms) > 0 ? Number(ms) : QUESTION_SWITCH_WATCHDOG_MS
-var self = this
-this._switchWatchdogTimer = setTimeout(function() {
-self._switchWatchdogTimer = null
-console.warn('[wrong-detail] 切题锁看门狗触发，强制复位')
-self._forceResetSwitchLock()
-}, duration)
+return contentTransition._armSwitchWatchdog(this, ms, { QUESTION_SWITCH_WATCHDOG_MS })
 },
 _clearSwitchWatchdog() {
-if (this._switchWatchdogTimer) {
-clearTimeout(this._switchWatchdogTimer)
-this._switchWatchdogTimer = null
-}
+return contentTransition._clearSwitchWatchdog(this)
 },
 _forceResetSwitchLock() {
-this._navigationSeq = Number(this._navigationSeq || 0) + 1
-this._switching = false
-if (this._contentTransitionTimer) {
-clearTimeout(this._contentTransitionTimer)
-this._contentTransitionTimer = null
-}
-if (this._switchMaskTimer) {
-clearTimeout(this._switchMaskTimer)
-this._switchMaskTimer = null
-}
-this._contentTransitionStartedAt = 0
-this._contentTransitionDirection = ''
-this._clearSwitchWatchdog()
-if (this._alive) {
-this.setData({ contentTransitionClass: '', showSwitchMask: false, aiRegenerating: false })
-}
+return contentTransition._forceResetSwitchLock(this)
 },
 goPrevWrong(e) {
 this._navigateTo(e.detail.index, 150, 'right')

@@ -6,12 +6,26 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 1533
+const PAGE_CEILING = 1454
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
-  'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js']
+  'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
+  'wrong-detail-content-transition.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
+const TRANSITION_DELEGATES = {
+  "onAiSwipeStart": "onAiSwipeStart(e) {\nreturn contentTransition.onAiSwipeStart(this, e)\n}",
+  "onAiSwipeEnd": "onAiSwipeEnd(e) {\nreturn contentTransition.onAiSwipeEnd(this, e)\n}",
+  "onAiSwipeCancel": "onAiSwipeCancel() {\nreturn contentTransition.onAiSwipeCancel(this)\n}",
+  "_beginContentSwitchTransition": "_beginContentSwitchTransition(direction) {\nreturn contentTransition._beginContentSwitchTransition(this, direction)\n}",
+  "_waitForContentSwitchOut": "async _waitForContentSwitchOut(direction, animMs) {\nreturn contentTransition._waitForContentSwitchOut(this, direction, animMs, { QUESTION_SWITCH_OUT_MS, _sleep })\n}",
+  "_finishContentSwitchTransition": "_finishContentSwitchTransition(direction) {\nreturn contentTransition._finishContentSwitchTransition(this, direction, { QUESTION_SWITCH_IN_MS })\n}",
+  "_cancelContentSwitchTransition": "_cancelContentSwitchTransition() {\nreturn contentTransition._cancelContentSwitchTransition(this)\n}",
+  "_armSwitchWatchdog": "_armSwitchWatchdog(ms) {\nreturn contentTransition._armSwitchWatchdog(this, ms, { QUESTION_SWITCH_WATCHDOG_MS })\n}",
+  "_clearSwitchWatchdog": "_clearSwitchWatchdog() {\nreturn contentTransition._clearSwitchWatchdog(this)\n}",
+  "_forceResetSwitchLock": "_forceResetSwitchLock() {\nreturn contentTransition._forceResetSwitchLock(this)\n}"
+}
 const DELEGATES = {
+  ...TRANSITION_DELEGATES,
   "_processWqData": "function _processWqData(wq, safeMode) {\nreturn processWqData(wq, safeMode, { isTrueFalseType, config, buildRenderModel, adapter, _subjectLabel, _errorTypeLabel })\n}",
   "_normalizeAiResult": "function _normalizeAiResult(content) {\nreturn aiState._normalizeAiResult(content, _buildAiRichText)\n}",
   "_hasStoredAnalysisValue": "function _hasStoredAnalysisValue(raw) {\nreturn aiState._hasStoredAnalysisValue(raw, normalizeAiAnalysisPayload, hasAiAnalysisContent)\n}",
@@ -128,7 +142,7 @@ function scanWrongDetail(options = {}) {
 }
 
 module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DIRECT_HELPERS,
-  DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
+  DELEGATES, TRANSITION_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
 
 if (require.main === module) {
   const result = scanWrongDetail()
