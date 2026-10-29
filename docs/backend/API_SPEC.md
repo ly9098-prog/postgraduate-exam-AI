@@ -174,9 +174,11 @@ Authorization: Bearer <jwt_token>
 | knowledge_point | string? | - | 知识点筛选（normalized_name 精确匹配，逗号分隔 = AND），传 `knowledge_point` |
 | exclude_answered | bool | false | 是否排除已做题 |
 | no_repeat_days | int? | - | 最近 N 天不重复，1-365 |
-| use_leitner | bool | true | 是否启用 Leitner 过滤 |
+| use_leitner | bool | true | 是否启用 Leitner 到期过滤；关闭后仍保留 `exclude_answered` / `no_repeat_days` 约束 |
 | source_question_id | int? | - | similar 模式的相似源题 ID |
 | smart_strategy | string | weakness_vector | smart 模式策略 |
+
+`use_leitner` 对 `smart` / `similar` 模式同样生效：候选召回完成后，由发题签发层按 `next_review_at` 做到期过滤，并在数量不足时用随机到期候选补齐。
 
 ```json
 // Response

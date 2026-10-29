@@ -7,12 +7,48 @@
 MemoGrad / 22408AI 是面向考研场景的智能刷题与题库治理系统，当前由三个主要运行部分组成：
 
 - `backend/`：Python 3.11+、FastAPI、SQLAlchemy 2.0 异步 ORM、Alembic；开发可用 SQLite，生产使用 PostgreSQL 15，并依赖 Redis 7 承载缓存和任务队列。
-- `admin-frontend/`：Next.js 16.2.12、React 19.2.4、TypeScript 的管理后台，使用 App Router、TanStack Query/Table、Zustand、Tailwind CSS 等依赖。
+- `admin-frontend/`：Next.js 16.2.12、React 19.2.4（项目锁定版本）、TypeScript 的管理后台，使用 App Router、TanStack Query/Table、Zustand、Tailwind CSS 等依赖。
 - `miniprogram/`：原生微信小程序，包含刷题、复习、错题、公式、导出和番茄钟等页面与分包；npm 依赖目前主要是 `lottie-miniprogram`。
 
 后端还包含 OCR/PDF 导题流水线、AI 辅助修复与结构化、知识图谱/推荐、复习调度、导出和审计/RBAC。OCR、向量检索、AI 模型等能力受环境变量和部署画像控制，并非每个本地环境都可用。
 
 根目录没有统一的 `package.json` 或 `pyproject.toml`。依赖、测试和 lint 配置分别位于 `backend/` 与 `admin-frontend/`；小程序没有统一 npm scripts、TypeScript 配置或仓库级 lint 配置，这一点不能假定为已提供。
+
+## 核心约束
+
+- 微信 openid 唯一用户身份，不存密码；Admin 使用独立用户名与 JWT 域。
+- 无纯 AI 自动入库：所有导入必须经过 `question_imports` + 人工确认。
+- AI 是辅助：不可用时不影响核心刷题。
+- OCR 纠错链路固定为 `PaddleOCR-VL → LLM 纠错（Qwen/GLM）→ rule fallback`，不可绕过质量门禁。
+- **IMPORTANT**：跨环境数据同步必须用 `sync_uuid` 匹配记录，严禁按 numeric id 直接修改生产库（本地与生产 id 已发散）。
+- `knowledge_points` 是科目归属的权威来源；`admin_ai_model_configs` 为软删除，模型 ID 必须保持稳定。
+- 先实现功能，再优化架构；能跑就比什么都强。不提前抽象，不主动加新依赖。
+
+## 检索路由规则
+
+**代码检索 → codebase memory MCP**
+
+- 先通过 `index_status` 检查索引是否就绪；未就绪时执行 `index_repository` 重建索引，再进行 `search_code`、`query_graph`、`get_architecture`、`get_code_snippet`。
+- 禁止回退到递归 `grep` 或逐文件 `view_file`；仅在准备编辑某个已定位文件时才允许 `view_file`。
+- 优先使用 codebase-memory 知识图谱工具而非 grep/glob 进行代码搜索，减少文件读取次数。
+
+**文档/知识检索 → graphify skill**
+
+- 安装：`pip install graphifyy`（或 `uv tool install graphifyy`）。包名双 y（`graphifyy`），CLI 命令为 `graphify`，不要混淆。
+- 给 Codex 注册 skill：`graphify install --project --platform codex`。
+- 检索命令：`graphify query` / `path` / `explain`；若使用 Graphify MCP，工具名以 server 暴露为准。
+- 在 grep 原始文档之前，先走 graphify 图查询；仅当图查询无结果时，才退回普通搜索。
+
+**通用原则**
+
+- 代码归代码工具，文档归文档工具，不交叉使用。
+- 每次任务先判断检索对象类型，再选择对应路径。
+
+## 部署与 CI 陷阱
+
+- `deploy.sh migrate` 在旧 app 容器内执行：新增迁移须先 build 新镜像，再 `docker compose run --rm app alembic upgrade head` 应用。
+- `nginx.conf` 为文件级 bind mount：rsync 换 inode 后不生效，须 `--force-recreate`。
+- CI 架构测试使用 `.github/workflows/ci.yml` 中的固定文件清单：移动、重命名或新增测试文件后必须同步该清单。
 
 ## 目录说明
 
@@ -67,6 +103,7 @@ MemoGrad / 22408AI 是面向考研场景的智能刷题与题库治理系统，�
 - 小程序使用原生微信开发者工具工作流；保持主包/分包边界、现有渲染不变性和环境配置逻辑。由于仓库没有统一小程序 lint/test 配置，不得声称存在未确认的检查命令。
 - 配置通过 `.env.example` 了解变量名；真实 `.env`、Token、密码、AppSecret、AI/OCR 凭据和私钥不得写入文档、日志或提交。AI 模型凭据（API Key / Base URL / model name）不使用环境变量，统一存于数据库 `admin_ai_model_configs`，经 Admin API 管理，由 `AI_CONFIG_ENCRYPT_KEY` 加密；生产已不通过 `DEEPSEEK_API_KEY` 等环境变量提供 AI 凭据。
 - 文档只记录已实现或已验证事实；无法从代码、配置、CI 或现有文档确认的内容必须标注“待确认/未验证”。
+- 项目知识库通过 MCP 工具 `knowledge_wiki` 访问。当用户在对话中提到“项目知识库”“Wiki”或“知识库”时，默认调用该 MCP，并按用户具体需求使用其 `read_file`、`list_directory` 或 `search_files`（已验证为 `@modelcontextprotocol/server-filesystem` 的真实工具名）读取项目知识库根目录下的内容；该库位于本仓库之外，具体路径由 MCP server 配置的 args 指定，其内容优先作为项目规范依据，但不能替代对源码与运行时配置的核对。
 
 ## 常用命令
 
@@ -168,4 +205,5 @@ alembic heads
 - 禁止绕过人工审核将 AI/OCR 结果直接入库，禁止绕过质量门禁、鉴权、RBAC、审计和部署画像约束。
 - 禁止为解决单个问题擅自引入 LangChain/LlamaIndex、微服务、Kubernetes、账号密码登录、多方式登录、社区/排行榜或其他 `docs/project/PROJECT_RULES.md` 明确不做的范围。
 - 禁止凭空补写不存在的命令、服务、目录、API 或技术栈；不确定内容必须标注，并回到代码、配置、CI 或运行时 OpenAPI 核实。
+- 与这些规则配套的仓库内文档见 `docs/development/`：`coding-style.md`、`development-workflow.md`、`git-workflow.md`、`agents-and-commands.md`；这些文档来自外部参考，冲突时以本文件、`docs/project/PROJECT_RULES.md`、`docs/COMMIT_RULES.md` 和代码为准。
 - 禁止修改与任务无关的业务代码、删除用户已有文件，或把历史文档中的伪代码当作可执行实现。

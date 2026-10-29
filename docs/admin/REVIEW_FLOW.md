@@ -4,7 +4,7 @@
 > 修订自审计报告 C6：完善 editing/re_pending 状态机；引入 question_versions 快照；权限分级
 > 2026-05-30 变更原因：同步题库 Level 1 完全重复检测；导入阶段标记疑似重复，审核发布阶段按 `subject + question_hash` 拦截。
 > 2026-08-10 变更原因：题目知识点改由 `question_knowledge_points` 关联表保存（`questions.knowledge_points` 列移除）；编辑审计动作统一为 `question.update`。
-> 2026-10-23 变更原因：§6 审核工作台按 `review-query-state.ts` / `page.tsx` 复核改写（过滤条件清单、答案状态筛选、re_pending 孤儿页面登记）。
+> 2026-10-23 变更原因：§6 审核工作台按 `review-query-state.ts` / `page.tsx` 复核改写（过滤条件清单、答案状态筛选、re_pending 页面现状登记；该页面后续已在 v2.4 接入 `/review`）。
 > 2026-10-24 变更原因：实现已入库题目 `re_pending` 写入、单题/批量重审与版本回滚；首次导入审核仍保持在 `/imports`。
 
 ---

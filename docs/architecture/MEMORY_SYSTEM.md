@@ -1,18 +1,18 @@
 # Memory System
 
-> 基于当前代码整理。系统的“记忆”不是单一模块，而是由错题分析缓存、复习调度、行为记录、知识状态、向量检索和推荐数据共同组成。最后更新：2026-09-02。
+> 基于当前代码整理。系统的“记忆”不是单一模块，而是由错题分析缓存、复习调度、行为记录、知识状态、向量检索和推荐数据共同组成。最后更新：2026-10-29（本次复核模型、缓存判定与模块归属；不代表已完成全域语义审查或真实环境验收）。
 
 ## 当前实现
 
 | 记忆域 | 主要存储 | 当前用途 | 代码入口 |
 |---|---|---|---|
-| 错题与 AI 分析 | `wrong_questions.ai_analysis`、AI 生成/反馈日志 | 缓存错因分析、记录模型结果与失败状态 | `wrong_question_service.py`、`ai_service.py` |
-| 复习调度 | `review_schedules` | SM-2 interval/ease/repetitions/next_review_at/mastered 的唯一数据源 | `review_scheduler.py` |
-| 复习历史 | `review_records` | 保存每次 rating 与算法前后快照 | `review_scheduler.py` |
+| 错题与 AI 分析 | `wrong_questions.ai_analysis`、AI 生成/反馈日志 | 缓存错因分析；详情缓存按输入签名、模型签名和视觉输入判定 `ready`/`stale`/`empty`，另有题目版本漂移守卫、进程内生成中集合和缓存租约，生成/反馈链路保留模型结果与失败状态 | `wrong_question_service.py`、`ai_service.py`、`ai/revision_guard.py`、`ai/analysis_execution.py` |
+| 复习调度 | `review_schedules` | SM-2 `interval`/`ease_factor`/`repetitions`/`next_review_at`/`mastered` 的唯一数据源，绑定不可变 `question_version_id` 和单调 `occurrence_seq`；题目修订会在发题时重绑定最新版本 | `review_scheduler.py` |
+| 复习历史 | `review_records` | 按 `schedule_id + occurrence_seq` 与 `user_id + request_id` 幂等保存每次 rating 与算法前后快照 | `review_scheduler.py` |
 | 答题行为 | `answer_behaviors`、`practice_records`、`practice_sessions` | 记录耗时、正确性、会话时长和学习统计 | `behavior_service.py`、`practice_service.py` |
-| 知识状态 | `user_knowledge_states`、`user_knowledge_adaptive_states`、`user_adaptive_profiles` | 按知识点维护掌握度、置信度和自适应学习状态 | `adaptive_learning_service.py`、`knowledge_mastery` API |
-| 知识图谱 | `knowledge_points`、`knowledge_edges`、`question_knowledge_points` | 知识点、题目关联和图关系查询 | `knowledge_*` API、`admin_knowledge.py` |
-| 向量记忆 | 题目/知识点 embedding 与向量配置 | 相似题、语义检索和后台回填；部署未启用时可降级 | `rag/`、vector API、`admin_vector_config.py` |
+| 知识状态 | `user_knowledge_states`、`user_knowledge_adaptive_states`、`user_adaptive_profiles` | 按知识点维护掌握度、置信度和自适应学习状态 | `adaptive_learning_service.py`、`mastery_service.py`、`api/v1/knowledge_mastery.py` |
+| 知识图谱 | `knowledge_points`、`knowledge_edges`、`question_knowledge_points` | 知识点、题目关联和图关系查询 | `knowledge_points.py`、`knowledge_map.py`、`knowledge_path.py`、`admin_knowledge.py` |
+| 向量记忆 | 题目/知识点 embedding 与向量配置 | 相似题、语义检索和后台回填；配置 off、allowlist 未命中或服务不可用时按现有规则降级 | `embedding_endpoints.py`、`vector_retrieval_service.py`、`vector_config_service.py`、`admin_vector_config.py` |
 | 推荐记忆 | 策略、实验、分配、曝光日志、日指标 | 推荐策略实验与效果评估 | recommendation services/API |
 | AI 对话 | `ai_chats` | 保存对话上下文和响应，用于追溯与成本审计 | `ai_service.py` |
 
@@ -20,8 +20,8 @@
 
 ### 复习调度
 
-- `ReviewSchedule` 是 SM-2 的唯一数据源；`WrongQuestion` 不再保存旧版 efactor、interval、repetitions、next_review_date、quality 字段。
-- `ReviewRecord` 只追加，不作为当前调度状态使用。
+- `ReviewSchedule` 是 SM-2 的唯一数据源；`WrongQuestion` 不保存旧版 efactor、interval、repetitions、next_review_date、quality 字段，并与调度共用不可变题目版本绑定。
+- `ReviewRecord` 只追加，不作为当前调度状态使用；schedule/occurrence 与 user/request 的唯一约束保证重试不重复记账。
 - 评分范围为 0-5；未提供自评时，自动批改使用正确=4、错误=1 的映射。
 - 复习时间使用 UTC 计算，面向学习日的 API 在服务层统一处理日期边界。
 
@@ -33,13 +33,13 @@
 
 ### AI 分析缓存
 
-- AI 分析结果必须关联输入签名和模型签名；缓存状态可能为 ready、stale 或生成中。
+- AI 分析结果必须关联输入签名和模型签名；详情缓存判定为 ready、stale 或 empty，生成执行通过进程内集合及缓存启用时的跨进程租约限制重复请求（`ai/analysis_execution.py`），另有题目版本漂移守卫。缓存未启用时不提供跨进程互斥保证。
 - 只有 ready 结果直接展示给小程序；stale 结果触发重新生成或预热，不作为新鲜结果返回。
 - 题目声明需要视觉证据但缺少题图时，服务快速失败并返回结构化错误，不伪造视觉结论。
 
 ### 向量与图谱
 
-- RAG 和 embedding 能力已存在，但是否可用取决于向量配置、模型和部署环境；业务必须保留关键词/非向量降级路径。
+- Embedding/向量检索能力已存在，但是否可用取决于向量配置、模型和部署环境；业务必须保留关键词/非向量降级路径。
 - 知识图谱用于知识点关系和后台质量治理，不替代复习调度或用户知识状态表。
 
 ## 典型链路
@@ -51,7 +51,7 @@
      └─ 知识状态更新 → user_knowledge_states / adaptive states
 
 检索/推荐 → 题目知识点关联 + 用户知识状态
-          ├─ 向量可用：embedding / RAG
+          ├─ 向量可用：embedding / 向量检索
           └─ 向量不可用：关键词和规则降级
 ```
 

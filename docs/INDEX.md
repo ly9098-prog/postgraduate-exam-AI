@@ -37,6 +37,7 @@
 | `docs/audit/` | OCR/导入/安全审计报告 | 审计完成或修复后沉淀结论 |
 | `docs/planning/` | 功能规划、任务计划、设计分析 | 新功能设计阶段 |
 | `docs/achieve/` | 已完成阶段归档 | 阶段完成后归档 |
+| `docs/development/` | 外部开发规范参考：编码、工作流、Git、Agent 体系 | 新增或调整通用开发/Agent 规则参考 |
 | 根目录兼容入口 | 历史兼容入口，仅保留短入口，不重复维护正文 | 仅在仍被引用或用户要求时同步 |
 
 > 2026-09-23 更新原因：补齐 9 月 13 日之后的 408 考试、题目 CSV、多空题型与公式图卷事实。历史阶段文档和审计报告不改写成当前承诺。
@@ -118,6 +119,15 @@
 | `docs/admin/RBAC_RULES.md` | JWT 隔离签名域与 `system:*` 权限 |
 | `docs/project/ROLE_DEPLOYMENT.md` | `local_import` / `cloud_api` 角色拆分与生产约束 |
 | `docs/frontend/render-invariant.md` | 小程序 CODE / LaTeX / 图片渲染路径 |
+
+### 开发规范参考
+
+| 文档 | 作用 |
+|------|------|
+| `docs/development/coding-style.md` | 通用编码规范：不可变性、文件组织、错误处理、输入验证 |
+| `docs/development/development-workflow.md` | 特性实现流程与子 agent 分工参考 |
+| `docs/development/git-workflow.md` | Git 提交消息与 PR 工作流参考 |
+| `docs/development/agents-and-commands.md` | Codex Agent 体系与常用指令参考 |
 
 ### 调试 / 审计 / 规划
 

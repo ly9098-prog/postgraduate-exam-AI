@@ -1,11 +1,12 @@
 # 分阶段开发计划
 
-> 版本：v2.6（已完成能力与后续计划分离） | 状态：Phase 0-7+ 核心能力已实施 | 更新：2026-09-02
+> 版本：v2.7（重审工作台与版本回滚状态同步） | 状态：Phase 0-7+ 核心能力已实施 | 更新：2026-10-25
 > 修订自审计报告 I1（subjects）、I2（明确不实现 question_banks）、C6（question_versions）、C5（audit_log 分级）；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
 >
 > - **变更原因**：同步 Phase 7 后台 AI 解析设置、全局月度额度、权限拦截、前端入口与验证结果。
 > - **技术结论**：Admin Backend 位于现有 FastAPI 后端 `/api/admin/v1`；ORM 使用 SQLAlchemy；迁移使用 Alembic；Redis 可选降级；不创建 NestJS/Prisma/BullMQ 独立后端；Phase 1 审计日志同步写入，队列延后；Phase 6 前端位于 `admin-frontend`；Phase 7 AI 设置由后端与 Admin UI 共同实现。
 > - **2026-09-02 状态校正**：系统健康、任务/队列/trace、PostgreSQL 备份已落地，使用 `system:read` / `system:write` / `system:backup`；用户/Admin JWT 签名域隔离，部署档案冲突会在启动时拒绝。下文早期“待实现”条目仅保留为历史计划，不代表当前缺失。
+> - **2026-10-25 状态校正**：已入库题目 `re_pending` 重审工作台、单题/批量重审及版本回滚已实现；下文相关早期预留描述不代表当前缺失。
 
 > **阅读口径**：本文件保留了各 Phase 的原始验收清单，`DeepSeek 应完成`、`禁止修改` 和部分验收命令属于当时的实施计划。当前实现以 `backend/app/api/v1/admin_*.py`、`backend/app/api/admin/router.py`、`backend/app/services/admin_*.py`、`backend/app/schemas/admin_*.py`、`backend/app/models/` 及 `backend/alembic/versions/` 为准。
 
@@ -390,7 +391,7 @@ Next.js 完整后台 UI，仅消费现有 FastAPI Admin API `/api/admin/v1`，�
    - `/app-users`：小程序用户列表与封禁/解封操作。
    - `/admin-users`：后台管理员列表、创建/编辑/删除、强制登出、重置密码。
    - `/questions`：题库过滤、批量审核、详情/版本信息入口。
-   - `/review`：审核工作台，含待审核与 `re_pending` 入口。
+   - `/review`：已入库题目重审工作台，含 `re_pending` / `rejected` 队列、版本对比与回滚；首次导入审核仍在 `/imports/review`。
    - `/roles`：角色与权限矩阵管理。
    - `/audit-logs`：多维过滤、severity 标识、JSON 详情抽屉。
 
@@ -539,7 +540,8 @@ DeepSeek **不得**自行实现以下功能（即使认为有价值）：
 - ❌ AI 自动审核题目
 - ❌ 用户消息推送 / 邮件通知
 - ❌ API 网关 / 微服务拆分
-- ❌ 题目回滚 rollback 功能（API 路径已预留，实现留待 Phase 3.5+）
 - ❌ 操作员二次密码确认（X-Confirm-Password Header 预留，实现留待未来）
 
 如需实现以上任一项，DeepSeek **必须先停下来提问确认**。
+
+> 2026-10-25 校正：题目版本回滚已于 2026-10-24 实现并完成本地回归，不再属于“明确不实现/延后”范围；真实角色组合、生产 Admin 浏览器交互和上线后审计仍需单独验收。
