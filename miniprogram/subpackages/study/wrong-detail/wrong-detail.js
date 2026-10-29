@@ -31,6 +31,8 @@ const aiRequest = require('./utils/wrong-detail-ai-request')
 const diagnosisFlow = require('./utils/wrong-detail-diagnosis-flow')
 const loadFlow = require('./utils/wrong-detail-load-flow')
 const lifecycle = require('./utils/wrong-detail-lifecycle')
+const masterFlow = require('./utils/wrong-detail-master-flow')
+const masterUndo = require('./utils/wrong-detail-master-undo')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -339,215 +341,62 @@ return aiRegeneration._handleRegenerateRecovery(this, e, wqId, requestId, baseli
 return aiRegeneration._handleRegenerateTimeout(this, e, oldCards, oldResult, { _isTimeoutError, showToast: options => wx.showToast(options) })
 },
 openMasterConfirm() {
-if (this.data.masterSubmitting || this.data.isCurrentMastered) return
-this.setData({ masterConfirmVisible: true })
+return masterFlow.openMasterConfirm(this)
 },
 closeMasterConfirm() {
-if (this.data.masterSubmitting) return
-this.setData({ masterConfirmVisible: false })
+return masterFlow.closeMasterConfirm(this)
 },
 openUnmasterConfirm() {
-if (this.data.masterSubmitting || !this.data.isCurrentMastered) return
-this.setData({ unmasterConfirmVisible: true })
+return masterFlow.openUnmasterConfirm(this)
 },
 closeUnmasterConfirm() {
-if (this.data.masterSubmitting) return
-this.setData({ unmasterConfirmVisible: false })
+return masterFlow.closeUnmasterConfirm(this)
 },
 onMasterAction() {
-if (this.data.isCurrentMastered) {
-this.openUnmasterConfirm()
-} else {
-this.openMasterConfirm()
-}
+return masterFlow.onMasterAction(this)
 },
   async confirmMastered() {
-    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
-    if (!wqId || this.data.masterSubmitting) return
-    this.setData({ masterSubmitting: true, masterConfirmVisible: false })
-    try {
-      const masterResult = await api.post('/wrong-questions/batch', {
-        action: 'mark_mastered', ids: [wqId],
-      })
-      if (!this._alive) return
-      await this._handleMasterResult(masterResult, wqId)
-    } catch (e) {
-      if (!this._alive) return
-      console.error('标记已掌握失败', e)
-      this.setData({ masterSubmitting: false })
-    }
-  },
+return masterFlow.confirmMastered(this, { requestClient: api })
+},
 
   async _handleMasterResult(masterResult, wqId) {
-    const masterSkipped = !!(
-      masterResult && Array.isArray(masterResult.skipped_ids) &&
-      masterResult.skipped_ids.some(id => String(id) === String(wqId))
-    )
-    const masterChanged = !masterSkipped && !(
-      masterResult && masterResult.updated_count != null && Number(masterResult.updated_count) <= 0
-    )
-    if (!masterChanged) {
-      this._clearMasterUndo()
-      this.setData({ masterSubmitting: false })
-      await this.loadData(wqId)
-      if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
-      return
-    }
-    this._applyMasterChanged(wqId)
-  },
+return masterFlow._handleMasterResult(this, masterResult, wqId, { get platform() { return wx } })
+},
 
   _applyMasterChanged(wqId) {
-    this._clearMasterUndo()
-    this._pendingMasterUndo = { wqId, originalIdx: this.data.currentIdx }
-    if (this._wqCache && this._wqCache[wqId]) {
-      this._wqCache[wqId].data = Object.assign({}, this._wqCache[wqId].data, { is_mastered: true })
-    }
-    if (this.data.wq && String(this.data.wq.id) === String(wqId)) {
-      this.setData({
-        wq: Object.assign({}, this.data.wq, { is_mastered: true }),
-        isCurrentMastered: true, masterSubmitting: false, masterUndoVisible: true,
-      })
-    } else {
-      this.setData({ masterSubmitting: false, masterUndoVisible: true })
-    }
-    this._armMasterUndoExpiry(5000)
-    if (this.data.currentIdx < this.data.questionIds.length - 1) {
-      this._masterAdvanceTimer = setTimeout(() => {
-        this._masterAdvanceTimer = null
-        this._navigateTo(this.data.currentIdx + 1, 150)
-      }, 120)
-    }
-  },
+return masterFlow._applyMasterChanged(this, wqId)
+},
 async confirmUnmastered() {
-const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
-if (!wqId || this.data.masterSubmitting) return
-this.setData({ masterSubmitting: true, unmasterConfirmVisible: false })
-try {
-const unmasterResult = await api.post('/wrong-questions/batch', {
-action: 'unmark_mastered',
-ids: [wqId],
-})
-if (!this._alive) return
-const unmasterSkipped = !!(
-unmasterResult && Array.isArray(unmasterResult.skipped_ids) &&
-unmasterResult.skipped_ids.some(id => String(id) === String(wqId))
-)
-if (unmasterSkipped || (unmasterResult && unmasterResult.updated_count != null && Number(unmasterResult.updated_count) <= 0)) {
-this._clearMasterUndo()
-this.setData({ masterSubmitting: false })
-await this.loadData(wqId)
-if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
-return
-}
-this._clearMasterUndo()
-if (this._wqCache && this._wqCache[wqId]) {
-this._wqCache[wqId].data = Object.assign({}, this._wqCache[wqId].data, { is_mastered: false })
-}
-if (this.data.wq && String(this.data.wq.id) === String(wqId)) {
-this.setData({
-wq: Object.assign({}, this.data.wq, { is_mastered: false }),
-isCurrentMastered: false,
-masterSubmitting: false,
-})
-} else {
-this.setData({ masterSubmitting: false })
-}
-wx.showToast({ title: '已重新加入复习', icon: 'none' })
-} catch (e) {
-if (!this._alive) return
-console.error('重新加入复习失败', e)
-this.setData({ masterSubmitting: false })
-wx.showToast({ title: '操作失败，请重试', icon: 'none' })
-}
+return masterFlow.confirmUnmastered(this, { requestClient: api, get platform() { return wx } })
 },
   async undoMastered() {
-    const pending = this._pendingMasterUndo
-    if (!pending || this._masterUndoInFlight) return
-    this._masterUndoInFlight = true
-    this._clearMasterUndoTimers()
-    try {
-      await this._performUndoMastered(pending)
-      wx.showToast({ title: '已撤销掌握', icon: 'none' })
-    } catch (e) {
-      this._handleUndoMasterError(e, pending)
-    } finally {
-      this._masterUndoInFlight = false
-    }
-  },
+return masterUndo.undoMastered(this, { get platform() { return wx } })
+},
 
   _clearMasterUndoTimers() {
-    if (this._masterUndoTimer) { clearTimeout(this._masterUndoTimer); this._masterUndoTimer = null }
-    if (this._masterAdvanceTimer) { clearTimeout(this._masterAdvanceTimer); this._masterAdvanceTimer = null }
-  },
+return masterUndo._clearMasterUndoTimers(this)
+},
 
   async _performUndoMastered(pending) {
-    try {
-      await api.post('/wrong-questions/batch', {
-        action: 'unmark_mastered', ids: [pending.wqId],
-      })
-    } catch (freshError) {
-      await this._handleUndoRequestError(freshError, pending)
-    }
-    this._commitUndoMastered(pending)
-  },
+return masterUndo._performUndoMastered(this, pending, { requestClient: api })
+},
 
   async _handleUndoRequestError(freshError, pending) {
-    const freshStatus = Number(freshError && (freshError.statusCode || freshError.status)) || 0
-    if (freshStatus === 404 || freshStatus === 410) {
-      this._clearMasterUndo()
-      this._dropQuestionFromNavigation(pending.wqId)
-      if (this._alive) wx.showToast({ title: '该错题已被移除，无法撤销', icon: 'none' })
-      return
-    }
-    throw freshError
-  },
+return masterUndo._handleUndoRequestError(this, freshError, pending, { get platform() { return wx } })
+},
 
   _commitUndoMastered(pending) {
-    if (this._wqCache && this._wqCache[pending.wqId]) {
-      this._wqCache[pending.wqId].data = Object.assign({}, this._wqCache[pending.wqId].data, { is_mastered: false })
-    }
-    const targetIdx = this.data.questionIds.findIndex(id => String(id) === String(pending.wqId))
-    this._clearMasterUndo()
-    if (targetIdx >= 0 && targetIdx !== this.data.currentIdx) {
-      this._navigateTo(targetIdx, 150)
-    } else if (this.data.wq && String(this.data.wq.id) === String(pending.wqId)) {
-      this.setData({ wq: Object.assign({}, this.data.wq, { is_mastered: false }), isCurrentMastered: false })
-    } else if (targetIdx >= 0) {
-      this.loadData(pending.wqId)
-    }
-  },
+return masterUndo._commitUndoMastered(this, pending)
+},
 
   _handleUndoMasterError(e, pending) {
-    if (!this._alive) return
-    console.error('撤销已掌握失败', e)
-    if (this._pendingMasterUndo === pending) {
-      this.setData({ masterUndoVisible: true })
-      this._armMasterUndoExpiry(5000)
-    }
-    wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
-  },
+return masterUndo._handleUndoMasterError(this, e, pending, { get platform() { return wx } })
+},
 _armMasterUndoExpiry(ms) {
-if (this._masterUndoTimer) clearTimeout(this._masterUndoTimer)
-var duration = Number(ms) > 0 ? Number(ms) : 5000
-this._masterUndoTimer = setTimeout(() => {
-this._pendingMasterUndo = null
-this._masterUndoTimer = null
-if (this._alive) this.setData({ masterUndoVisible: false })
-}, duration)
+return masterUndo._armMasterUndoExpiry(this, ms)
 },
 _clearMasterUndo() {
-if (this._masterUndoTimer) {
-clearTimeout(this._masterUndoTimer)
-this._masterUndoTimer = null
-}
-if (this._masterAdvanceTimer) {
-clearTimeout(this._masterAdvanceTimer)
-this._masterAdvanceTimer = null
-}
-this._pendingMasterUndo = null
-if (this._alive && this.data && this.data.masterUndoVisible) {
-this.setData({ masterUndoVisible: false })
-}
+return masterUndo._clearMasterUndo(this)
 },
 openMoreMenu() {
 this.setData({ moreMenuVisible: true })

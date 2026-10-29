@@ -654,6 +654,7 @@ jobs:
           node --test miniprogram/tests/test-wrong-detail-diagnosis-contracts.js
           node --test miniprogram/tests/test-wrong-detail-load-contracts.js
           node --test miniprogram/tests/test-wrong-detail-lifecycle-contracts.js
+          node --test miniprogram/tests/test-wrong-detail-master-contracts.js
           node --test miniprogram/tests/test-practice-result-recovered-payload.js
           node --test miniprogram/tests/test-practice-result-route-helpers.js
           node --test miniprogram/tests/test-practice-result-review-preview-format.js

@@ -109,3 +109,13 @@
 - 操作栏继续使用单一定时器与 3000ms 空闲阈值，交互更新时间、到期后重新计算剩余等待、当前时钟/timer 与页面存活守卫保持。卸载按序失效 AI/teacher/diagnosis 序号、清理切题和返回 timer、调用当前 bottom/undo hook、清缓存与 marker、reset render guard；hook 异常仍保留部分清理并传播。
 - 14 项契约原页重放与当前均通过；十一组定向 135 项、全量 Node 2276 项、渲染 5 fixtures/31 项、八条架构门禁与视觉/KaTeX检查通过。1000 组生命周期/导航/timer/卸载状态及调用轨迹对照一致；独立实现只读审查无 P0–P3 可操作发现。
 - CI 增加生命周期契约；详情门禁为十四模块、71 条委托，页面 ceiling 为 771。证据 `/tmp/wrong-detail-lifecycle-batch/`；掌握/撤销、删除、渲染安全等剩余页面职责继续核查，既有 data envelope/legacy 源断言和真实环境限制保持。
+
+
+## 13. 掌握、重新加入复习与撤销（2026-10-29 后续批次）
+
+- 本批页面由 771→620 行。掌握确认/取消弹层、动作分派、掌握请求/结果/写回及重新加入复习九方法迁入 `utils/wrong-detail-master-flow.js`（130 行）；撤销入口/计时器/请求/错误/提交/到期清理八方法迁入 `utils/wrong-detail-master-undo.js`（93 行）。新模块函数均 ≤50 行，页面签名/async/单次委托保持；十七方法体仅改变接收者和 API/platform 访问，其余 102 个 Page 属性原文不变。
+- 请求保留私有 ID 优先与 busy 守卫、patch 在请求前写入、await 后存活守卫与当前 handler；skipped_ids 按 String 比较、updated_count 非 null 时数值≤0的同步分支，以及缺失/NaN等既有判定均保持。API/wx receiver 与平台调用时读取保持。
+- 掌握写回保留 entry 元数据与原对象、分离的 cache/view 副本、undo snapshot 和当前题判断，先清旧 undo、写回、开启 5000ms 撤销，再注册 120ms 自动前进。前进 callback 继续读取执行时 currentIdx，仍不新增存活守卫；重新加入复习的成功/同步/错误 toast 与掌握错误不 toast 的差异保持。
+- 撤销保留原 pending 对象、inflight 拦截、timer 清理先于 try/finally、await 后当前 hook、按当前列表/视图选择 navigate/setData/load、失败仅对相同 pending 重开 5000ms 窗口以及 finally 解锁。timer 句柄 truthy 判断、默认窗口和卸载后不写视图保持。
+- 新刻画并保留两处原限制：撤销 API 的 404/410 虽被处理为清 undo/移除导航/提示无法撤销，后续仍执行本地 commit 并显示成功 toast；timer 清理在 try/finally 外若抛错，inflight 会保持 true。15 项契约在原页重放证实，本批不夹带业务修复。
+- 15 项契约原页与当前通过；十二组定向 150 项、全量 Node 2291 项、渲染 5 fixtures/31 项、八门禁和视觉/KaTeX通过。1360 组十七入口返回值/状态/调用轨迹/字段顺序对照一致；独立实现只读审查无 P0–P3 可操作发现。CI 增加掌握契约；详情门禁为十六模块、88 条委托，页面 ceiling 为 620。证据 `/tmp/wrong-detail-master-batch/`；删除、渲染安全及其他剩余职责继续核查，既有真实环境限制保持。

@@ -6,7 +6,7 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 771
+const PAGE_CEILING = 620
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
@@ -14,7 +14,7 @@ const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
   'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js',
   'wrong-detail-diagnosis-flow.js', 'wrong-detail-load-flow.js',
-  'wrong-detail-lifecycle.js']
+  'wrong-detail-lifecycle.js', 'wrong-detail-master-flow.js', 'wrong-detail-master-undo.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -101,7 +101,27 @@ const LIFECYCLE_DELEGATES = {
   "_showBottomActions": "_showBottomActions() {\nreturn lifecycle._showBottomActions(this)\n}",
   "onUnload": "onUnload() {\nreturn lifecycle.onUnload(this, { resetRenderGuard })\n}"
 }
+const MASTER_DELEGATES = {
+  "openMasterConfirm": "openMasterConfirm() {\nreturn masterFlow.openMasterConfirm(this)\n}",
+  "closeMasterConfirm": "closeMasterConfirm() {\nreturn masterFlow.closeMasterConfirm(this)\n}",
+  "openUnmasterConfirm": "openUnmasterConfirm() {\nreturn masterFlow.openUnmasterConfirm(this)\n}",
+  "closeUnmasterConfirm": "closeUnmasterConfirm() {\nreturn masterFlow.closeUnmasterConfirm(this)\n}",
+  "onMasterAction": "onMasterAction() {\nreturn masterFlow.onMasterAction(this)\n}",
+  "confirmMastered": "async confirmMastered() {\nreturn masterFlow.confirmMastered(this, { requestClient: api })\n}",
+  "_handleMasterResult": "async _handleMasterResult(masterResult, wqId) {\nreturn masterFlow._handleMasterResult(this, masterResult, wqId, { get platform() { return wx } })\n}",
+  "_applyMasterChanged": "_applyMasterChanged(wqId) {\nreturn masterFlow._applyMasterChanged(this, wqId)\n}",
+  "confirmUnmastered": "async confirmUnmastered() {\nreturn masterFlow.confirmUnmastered(this, { requestClient: api, get platform() { return wx } })\n}",
+  "undoMastered": "async undoMastered() {\nreturn masterUndo.undoMastered(this, { get platform() { return wx } })\n}",
+  "_clearMasterUndoTimers": "_clearMasterUndoTimers() {\nreturn masterUndo._clearMasterUndoTimers(this)\n}",
+  "_performUndoMastered": "async _performUndoMastered(pending) {\nreturn masterUndo._performUndoMastered(this, pending, { requestClient: api })\n}",
+  "_handleUndoRequestError": "async _handleUndoRequestError(freshError, pending) {\nreturn masterUndo._handleUndoRequestError(this, freshError, pending, { get platform() { return wx } })\n}",
+  "_commitUndoMastered": "_commitUndoMastered(pending) {\nreturn masterUndo._commitUndoMastered(this, pending)\n}",
+  "_handleUndoMasterError": "_handleUndoMasterError(e, pending) {\nreturn masterUndo._handleUndoMasterError(this, e, pending, { get platform() { return wx } })\n}",
+  "_armMasterUndoExpiry": "_armMasterUndoExpiry(ms) {\nreturn masterUndo._armMasterUndoExpiry(this, ms)\n}",
+  "_clearMasterUndo": "_clearMasterUndo() {\nreturn masterUndo._clearMasterUndo(this)\n}"
+}
 const DELEGATES = {
+  ...MASTER_DELEGATES,
   ...LIFECYCLE_DELEGATES,
   ...LOAD_DELEGATES,
   ...DIAGNOSIS_DELEGATES,
