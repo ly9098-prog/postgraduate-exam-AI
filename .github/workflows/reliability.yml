@@ -649,6 +649,7 @@ jobs:
           node --test miniprogram/tests/test-wrong-detail-navigation-contracts.js
           node --test miniprogram/tests/test-wrong-detail-ai-recovery-contracts.js
           node --test miniprogram/tests/test-wrong-detail-ai-generation-contracts.js
+          node --test miniprogram/tests/test-wrong-detail-ai-regeneration-contracts.js
           node --test miniprogram/tests/test-practice-result-recovered-payload.js
           node --test miniprogram/tests/test-practice-result-route-helpers.js
           node --test miniprogram/tests/test-practice-result-review-preview-format.js

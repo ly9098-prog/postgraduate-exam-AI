@@ -62,3 +62,12 @@
 - 错误处理继续先记录日志，再为当前请求写 notice、不等待地 enqueue、await 轮询；恢复应用优先于最终身份检查与错误展示。请求或结果应用异常仍 await 当前错误处理方法；错误处理自身的失败继续传播。页面方法及全局 console 保留运行时读取。
 - 12 项新契约在原页面与当前页面全部通过；状态/动画/导航/恢复/生成/模块门禁合计 63 项通过。800 组四入口的生成、分流、成功与错误状态/调用轨迹/字段顺序对照一致；独立只读审查无 P0–P3 可操作发现。
 - 全量 Node 2204 passed、渲染 5 fixtures/31 passed、八条架构门禁及视觉/KaTeX检查通过。CI 增加生成契约；详情门禁登记九个模块、28 条委托模板，页面 ceiling 为 1245。证据 `/tmp/wrong-detail-ai-generation-batch/`；前述既有失败及真实环境验收限制继续有效。
+
+## 8. AI 重新生成编排（2026-10-29 后续批次）
+
+- 本批页面由 1245→1143 行。重新生成入口、结果分流、生成中恢复、缓存保留、fallback、空内容、成功、错误分派、错误恢复和超时处理十个方法迁入 `utils/wrong-detail-ai-regeneration.js`（144 行，函数均 ≤50 行）。页面保留原方法名、参数和 async 标记，以单次委托传入页面与既有 helper/toast 端口。
+- 十个方法体只替换接收者 `this`→`page` 及 toast 端口调用；其余 109 个 Page 属性原文不变。旧题目 ID、oldCards/oldResult/baseline 捕获、序号递增与 loading patch 顺序保持，await 后仍读取当前页面方法。
+- 结果继续按 generating → 有内容的 cache-preserved → fallback → 空内容 → success 分流。历史卡片/结果的保留条件、falsey marker 回退、regeneration 来源标志、缓存写回及 reset/视图/toast 顺序保持；toast 在实际执行时读取当前全局 `wx` 并保留 receiver。
+- 请求或结果应用异常继续调用但不 await 错误分派；错误分派也不返回恢复 Promise。后台 enqueue 仍不等待，随后 await 轮询、应用恢复结果，最后再判断当前请求是否可写入超时状态；不把这些现有等待差异改成普通生成的行为。
+- 15 项契约在原页面与当前页面全部通过；状态/动画/导航/恢复/生成/重新生成/模块门禁合计 78 项通过。1200 组十入口状态、调用轨迹及字段顺序对照一致；独立只读审查无 P0–P3 可操作发现。
+- 全量 Node 2219 passed、渲染 5 fixtures/31 passed、八条架构门禁及视觉/KaTeX检查通过。CI 增加重新生成契约；详情门禁登记十个模块、38 条委托模板，页面 ceiling 为 1143。证据 `/tmp/wrong-detail-ai-regeneration-batch/`；AI 请求协议/后台恢复任务入队、缓存写回及错因剩余编排仍待治理，既有失败及真实环境限制继续有效。

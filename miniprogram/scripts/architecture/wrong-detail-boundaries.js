@@ -6,12 +6,13 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 1245
+const PAGE_CEILING = 1143
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
   'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js',
-  'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js']
+  'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
+  'wrong-detail-ai-regeneration.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -45,7 +46,20 @@ const AI_GENERATION_DELEGATES = {
   "_commitAiAnalysisSuccess": "_commitAiAnalysisSuccess(result, normalized, wqId) {\nreturn aiGeneration._commitAiAnalysisSuccess(this, result, normalized, wqId, { _normalizeAiResult: value => _normalizeAiResult(value) })\n}",
   "_handleAiAnalysisError": "async _handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt) {\nreturn aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError })\n}"
 }
+const AI_REGENERATION_DELEGATES = {
+  "regenerateAiAnalysis": "async regenerateAiAnalysis() {\nreturn aiRegeneration.regenerateAiAnalysis(this, { _generationMarker })\n}",
+  "_applyRegenerateResult": "async _applyRegenerateResult(result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {\nreturn aiRegeneration._applyRegenerateResult(this, result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { _normalizeAiPayload: value => _normalizeAiPayload(value), _hasAiContent: value => _hasAiContent(value) })\n}",
+  "_handleRegeneratingModel": "async _handleRegeneratingModel(wqId, requestId, baselineGeneratedAt) {\nreturn aiRegeneration._handleRegeneratingModel(this, wqId, requestId, baselineGeneratedAt, { showToast: options => wx.showToast(options) })\n}",
+  "_commitRegenerateCachePreserved": "_commitRegenerateCachePreserved(result, normalized, wqId, baselineGeneratedAt) {\nreturn aiRegeneration._commitRegenerateCachePreserved(this, result, normalized, wqId, baselineGeneratedAt, { _normalizeAiResult: value => _normalizeAiResult(value), showToast: options => wx.showToast(options) })\n}",
+  "_handleRegenerateFallback": "_handleRegenerateFallback(model, result, oldCards) {\nreturn aiRegeneration._handleRegenerateFallback(this, model, result, oldCards, { showToast: options => wx.showToast(options) })\n}",
+  "_handleRegenerateEmpty": "_handleRegenerateEmpty(oldCards) {\nreturn aiRegeneration._handleRegenerateEmpty(this, oldCards, { showToast: options => wx.showToast(options) })\n}",
+  "_commitRegenerateSuccess": "_commitRegenerateSuccess(result, normalized, wqId) {\nreturn aiRegeneration._commitRegenerateSuccess(this, result, normalized, wqId, { _normalizeAiResult: value => _normalizeAiResult(value), showToast: options => wx.showToast(options) })\n}",
+  "_handleRegenerateError": "_handleRegenerateError(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {\nreturn aiRegeneration._handleRegenerateError(this, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)\n}",
+  "_handleRegenerateRecovery": "async _handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {\nreturn aiRegeneration._handleRegenerateRecovery(this, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { showToast: options => wx.showToast(options) })\n}",
+  "_handleRegenerateTimeout": "_handleRegenerateTimeout(e, oldCards, oldResult) {\nreturn aiRegeneration._handleRegenerateTimeout(this, e, oldCards, oldResult, { _isTimeoutError, showToast: options => wx.showToast(options) })\n}"
+}
 const DELEGATES = {
+  ...AI_REGENERATION_DELEGATES,
   ...AI_GENERATION_DELEGATES,
   ...AI_RECOVERY_DELEGATES,
   ...NAVIGATION_DELEGATES,
@@ -166,7 +180,7 @@ function scanWrongDetail(options = {}) {
 }
 
 module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DIRECT_HELPERS,
-  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, AI_GENERATION_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
+  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, AI_GENERATION_DELEGATES, AI_REGENERATION_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
 
 if (require.main === module) {
   const result = scanWrongDetail()
