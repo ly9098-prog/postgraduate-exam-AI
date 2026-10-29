@@ -8,6 +8,9 @@ const root = path.resolve(__dirname, '..')
 const pagePath = path.join(root, 'subpackages/study/review-today/review-today.js')
 
 let definition
+// The page builds controller ports inside its Node-required page adapters, so the
+// harness exposes one wx stub to both the vm sandbox and the host realm.
+global.wx = {}
 vm.runInNewContext(fs.readFileSync(pagePath, 'utf8'), {
   Page(value) { definition = value },
   require(request) {

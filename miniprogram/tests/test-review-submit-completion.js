@@ -8,6 +8,10 @@ const pagePath = path.join(root, 'subpackages/study/review-today/review-today.js
 const adapter = require('../subpackages/study/utils/question-runner-adapter')
 let definition
 const apiCalls = []
+const wxStub = { showToast() {} }
+// Page-level controller ports are built inside the Node-required page adapters,
+// so the harness has to expose the same wx stub outside the vm sandbox too.
+global.wx = wxStub
 vm.runInNewContext(fs.readFileSync(pagePath, 'utf8'), {
   Page(value) { definition = value },
   require(request) {
@@ -18,7 +22,7 @@ vm.runInNewContext(fs.readFileSync(pagePath, 'utf8'), {
     if (request === '../../../config' || request === '../../../utils/storage') return {}
     return require(path.resolve(path.dirname(pagePath), request))
   },
-  wx: { showToast() {} }, console, setTimeout, clearTimeout, setInterval, clearInterval,
+  wx: wxStub, console, setTimeout, clearTimeout, setInterval, clearInterval,
 })
 const questions = [
   { schedule_id: 1, question_id: 11, question_version_id: 21, occurrence_seq: 1 },

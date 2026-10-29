@@ -11,7 +11,7 @@ const PAGES = {
   'subpackages/study/practice-result/index.js': 897,
   'subpackages/study/wrong-book/wrong-book.js': 1547,
   'subpackages/study/wrong-detail/wrong-detail.js': 1653,
-  'subpackages/study/review-today/review-today.js': 901,
+  'subpackages/study/review-today/review-today.js': 645,
   'subpackages/exam/exam-runner/index.js': 550,
   'subpackages/exam/result/index.js': 302,
   'subpackages/exam/paper-list/index.js': 283,

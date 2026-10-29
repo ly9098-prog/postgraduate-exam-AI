@@ -13,6 +13,49 @@ const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../utils/subject-meta')
 const { getChinaWallParts, getChinaDate } = require('../../../utils/china-time')
 const {
+REVIEW_BATCH_SIZE_OPTIONS,
+REVIEW_DRAFT_PREFIX,
+normalizeReviewBatchSize,
+formatReviewElapsed,
+normalizeReviewQuestion,
+} = require('./utils/review-runner-support')
+const {
+buildReviewDraftPageCapabilities,
+} = require('./utils/review-draft-page-adapter')
+const {
+buildAnswerInteractionPageCapabilities,
+buildQuestionDisplayPageCapabilities,
+buildQuestionEnrichmentPageCapabilities,
+buildRenderSafetyPageCapabilities,
+} = require('./utils/review-answer-page-adapter')
+const {
+buildOverviewVMPageCapabilities,
+buildBatchSizeSheetPageCapabilities,
+buildOverviewLoadPageCapabilities,
+buildReviewDaySyncPageCapabilities,
+buildOverviewSyncPageCapabilities,
+} = require('./utils/review-overview-page-adapter')
+const {
+buildReviewSessionPageCapabilities,
+buildStartBatchPageCapabilities,
+buildNavBackPageCapabilities,
+buildReviewSelfHealPageCapabilities,
+} = require('./utils/review-session-page-adapter')
+const {
+buildGroupSubmitFlowPageCapabilities,
+buildGroupSubmitEntryPageCapabilities,
+buildGroupSubmitRequestPageCapabilities,
+buildGroupSubmitResultPageCapabilities,
+buildResultDockPageCapabilities,
+} = require('./utils/review-submit-page-adapter')
+const {
+buildReviewMasterPageCapabilities,
+buildNextGroupPageCapabilities,
+buildNextRetryGroupPageCapabilities,
+buildNextRemoteBatchPageCapabilities,
+buildReviewTimerPageCapabilities,
+} = require('./utils/review-progress-page-adapter')
+const {
   createGroupSubmitConfirmController,
 } = require('./utils/submit-confirm-controller')
 const {
@@ -88,9 +131,6 @@ const {
 const {
   createGroupSubmitFlowController,
 } = require('./utils/group-submit-flow-controller')
-var KF = 'schedule_id'
-var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
-var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
 var _reviewPerformanceClock = null
 function _reviewMonotonicNow() {
 try {
@@ -106,58 +146,6 @@ return Date.now()
 // 服务端校准后的绝对时间，用于上报复习时长窗口
 function _reviewServerNow() {
 return typeof api.now === 'function' ? api.now() : Date.now()
-}
-function normalizeReviewBatchSize(value) {
-var num = Number(value)
-if (isNaN(num) || num <= 0) return 10
-for (var i = 0; i < REVIEW_BATCH_SIZE_OPTIONS.length; i++) {
-if (num === REVIEW_BATCH_SIZE_OPTIONS[i]) return num
-}
-return 10
-}
-function formatReviewElapsed(sec) {
-var s = Math.max(0, sec || 0)
-var m = Math.floor(s / 60)
-var ss = s % 60
-return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss
-}
-function _reviewFailureNeedsRefresh(result) {
-if (!result || result.success !== false) return false
-if (result.refresh_required === true) return true
-if (result.retryable === false && result.retryable !== undefined && result.retryable !== null) return true
-var text = String(result.error || '')
-return /刷新|已失效|已经提交|已标记掌握|复习记录不存在|版本.*(?:更新|不存在)|不匹配|request_id.*不同提交/.test(text)
-}
-function normalizeReviewQuestion(raw) {
-if (!raw || typeof raw !== 'object') return null
-var content = raw.content
-if (typeof content === 'string') {
-content = { text: content }
-} else if (!content || typeof content !== 'object') {
-content = { text: raw.stem || '' }
-}
-var opts = raw.options
-if (!opts || typeof opts !== 'object' || Array.isArray(opts)) {
-opts = {}
-}
-return {
-schedule_id: raw.schedule_id,
-question_id: raw.question_id,
-question_version_id: raw.question_version_id,
-occurrence_seq: raw.occurrence_seq,
-id: raw.id || raw.question_id,
-subject_id: raw.subject_id != null ? raw.subject_id : null,
-subject_code: raw.subject_code || '',
-subject_name: raw.subject_name || '',
-question_type: raw.question_type || '',
-stem: raw.stem || '',
-options: opts,
-content: content,
-image_url: raw.image_url || null,
-interval: raw.interval || 0,
-repetitions: raw.repetitions || 0,
-ease_factor: raw.ease_factor || 2.5,
-}
 }
 Page({
 data: {
@@ -229,148 +217,79 @@ this._reviewDraftController().clearSubmitted(groupQuestions, groupResults)
 },
 _reviewDraftController() {
 return this._reviewDraft || (
-this._reviewDraft = createReviewDraftController({
-getDraftKey: () => {
-const session = this._reviewSession || (this._reviewSession = this._createReviewSession())
-const user = storage.get(storage.KEYS.USER) || {}
-const userId = user.id != null ? user.id : (user.user_id != null ? user.user_id : 'current')
-const taskDate = String(session.taskDate || getChinaDate(0))
-return REVIEW_DRAFT_PREFIX + ':' + String(userId) + ':' + taskDate
-},
-readStorage: key => storage.get(key),
-writeStorage: (key, value) => storage.set(key, value),
-removeStorage: key => storage.remove(key),
-getSession: () => this._reviewSession,
-getCurrentDate: () => getChinaDate(0),
-getPhase: () => this.data.phase,
-getGroupQuestions: () => this.data.groupQuestions,
-getCurrentQuestion: () => this.data.currentQuestion,
-now: () => Date.now(),
-})
+this._reviewDraft = createReviewDraftController(
+buildReviewDraftPageCapabilities(this, { storage })
+)
 )
 },
 _answerInteractionController() {
 return this._answerInteraction || (
-this._answerInteraction = createAnswerInteractionController({
-isSubmitting: () => this.data.submittingGroup,
-getCurrentQuestion: () => this.data.currentQuestion,
-getAnswers: () => this._reviewSession.answers,
-setAnswers: answers => { this._reviewSession.answers = answers },
-getGroupQuestions: () => this.data.groupQuestions,
-getKeyField: () => KF,
-setData: patch => this.setData(patch),
-persistDraft: () => this._persistReviewDraft(),
-syncAnsweredFlags: () => this._syncAnsweredFlags(),
-updateRunnerFields: () => this._updateRunnerFields(),
-buildRunnerSubtitle: () => '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
-})
+this._answerInteraction = createAnswerInteractionController(
+buildAnswerInteractionPageCapabilities(this, {})
+)
 )
 },
 _questionDisplayController() {
 return this._questionDisplay || (
-this._questionDisplay = createQuestionDisplayController({
-getGroupQuestions: () => this.data.groupQuestions,
-getAnswers: () => this._reviewSession.answers,
-setOptionKeys: keys => { this._reviewSession.optionKeys = keys },
-getKeyField: () => KF,
-getAnsweredCount: () => this.data._answeredCount,
-getCurrentQuestion: () => this.data.currentQuestion,
-enrichQuestion: q => this._enrichQuestion(q),
-setData: patch => this.setData(patch),
-checkSetDataSize: data => this._checkSetDataSize(data),
-checkRenderInvariant: model => this._checkRenderInvariant(model),
-recordRenderTrace: trace => this._recordRenderTrace(trace),
-buildRunnerSubtitle: () => '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
-})
+this._questionDisplay = createQuestionDisplayController(
+buildQuestionDisplayPageCapabilities(this, {})
+)
 )
 },
 _overviewVMController() {
 return this._overviewVM || (
-this._overviewVM = createOverviewVMController({
-getBatchSizeOptions: () => REVIEW_BATCH_SIZE_OPTIONS,
-getDefaultBatchSize: () => 10,
-isUserBatchSizeSelected: () => this._userSelectedReviewBatchSize,
-getCurrentUserBatchSize: () => this.data.reviewBatchSize,
-})
+this._overviewVM = createOverviewVMController(
+buildOverviewVMPageCapabilities(this, {})
+)
 )
 },
 _renderSafetyController() {
 return this._renderSafety || (
-this._renderSafety = createRenderSafetyController({
-isSafeModeActive: () => this._reviewSession.safeModeActive,
-enterSafeMode: () => this._enterSafeMode(),
-getRenderTraces: () => this._reviewSession.renderTraces,
-setRenderTraces: traces => { this._reviewSession.renderTraces = traces },
-isDev: () => config.DEV,
-})
+this._renderSafety = createRenderSafetyController(
+buildRenderSafetyPageCapabilities(this, { config })
+)
 )
 },
 _batchSizeSheetController() {
 return this._batchSizeSheet || (
-this._batchSizeSheet = createBatchSizeSheetController({
-getPhase: () => this.data.phase,
-isStarting: () => this.data.isStarting,
-isContinuing: () => this.data.isContinuing,
-getReviewBatchSize: () => this.data.reviewBatchSize,
-getPendingBatchSize: () => this.data.pendingBatchSize,
-getBatchSizeOptions: () => REVIEW_BATCH_SIZE_OPTIONS,
-normalizeBatchSize: v => normalizeReviewBatchSize(v),
-markUserSelected: () => { this._userSelectedReviewBatchSize = true },
-setData: patch => this.setData(patch),
-})
+this._batchSizeSheet = createBatchSizeSheetController(
+buildBatchSizeSheetPageCapabilities(this, {})
+)
 )
 },
 _questionEnrichmentController() {
 return this._questionEnrichment || (
-this._questionEnrichment = createQuestionEnrichmentController({
-isDev: () => config.DEV,
-isSafeModeActive: () => this._reviewSession.safeModeActive,
-isTrueFalse: t => isTrueFalseType(t),
-subjectLabel: (name, code) => this.subjectLabel(name, code),
-})
+this._questionEnrichment = createQuestionEnrichmentController(
+buildQuestionEnrichmentPageCapabilities(this, { config })
+)
 )
 },
 _reviewSessionController() {
 return this._reviewSessionCtl || (
-this._reviewSessionCtl = createReviewSessionController({
-getSession: () => this._reviewSession,
-setData: patch => this.setData(patch),
-})
+this._reviewSessionCtl = createReviewSessionController(
+buildReviewSessionPageCapabilities(this, {})
+)
 )
 },
 _navBackController() {
 return this._navBack || (
-this._navBack = createNavBackController({
-getPhase: () => this.data.phase,
-setData: patch => this.setData(patch),
-clearMasterUndo: () => this._clearMasterUndo(),
-clearReviewTimer: () => this._clearReviewTimer(),
-getCurrentPages: () => getCurrentPages(),
-navigateBack: () => wx.navigateBack(),
-reLaunch: options => wx.reLaunch(options),
-})
+this._navBack = createNavBackController(
+buildNavBackPageCapabilities(this, {})
+)
 )
 },
 _reviewSelfHealController() {
 return this._reviewSelfHeal || (
-this._reviewSelfHeal = createReviewSelfHealController({
-setSafeModeActive: v => { this._reviewSession.safeModeActive = v },
-getCurrentQuestion: () => this.data.currentQuestion,
-getCurrentIndex: () => this.data.currentIndex,
-getGroupQuestions: () => this.data.groupQuestions,
-enrichQuestion: q => this._enrichQuestion(q),
-setData: patch => this.setData(patch),
-showQuestion: idx => this._showQuestion(idx),
-})
+this._reviewSelfHeal = createReviewSelfHealController(
+buildReviewSelfHealPageCapabilities(this, {})
+)
 )
 },
 _overviewSyncController() {
 return this._overviewSync || (
-this._overviewSync = createOverviewSyncController({
-getSession: () => this._reviewSession,
-getPhase: () => this.data.phase,
-getTodayDueCount: () => this.data.todayDueCount,
-})
+this._overviewSync = createOverviewSyncController(
+buildOverviewSyncPageCapabilities(this, {})
+)
 )
 },
 onLoad(options) {
@@ -449,44 +368,23 @@ async refreshOverviewStatsSilently() {
 },
 
   _overviewLoadController() {
-    return this._overviewLoad || (
-      this._overviewLoad = createOverviewLoadController({
-        nextRequestSeq: () => ++this._overviewRequestSeq,
-        isRequestCurrent: seq => seq === this._overviewRequestSeq,
-        isPageAlive: () => this._alive,
-        isAutoStartPending: () => this._autoStartPending,
-        setAutoStartPending: value => { this._autoStartPending = value },
-        setOverviewLoading: value => { this._reviewSession.overviewLoading = value },
-        getOverview: () => api.get('/review/today/overview'),
-        buildOverviewVM: overview => this.buildReviewOverviewVM(overview),
-        applyOverviewToSession: (overview, vm) => this._overviewSyncController().applyOverviewToSession(overview, vm),
-        adjustVmForActiveSession: vm => this._overviewSyncController().adjustVmForActiveSession(vm),
-        setData: (patch, callback) => this.setData(patch, callback),
-        startReview: () => this.startTodayReview(),
-        logError: (...args) => console.error(...args),
-      })
-    )
-  },
+return this._overviewLoad || (
+this._overviewLoad = createOverviewLoadController(
+buildOverviewLoadPageCapabilities(this, { api })
+)
+)
+},
 async _syncReviewSessionDayIfNeeded() {
   return this._reviewDaySyncController().syncIfNeeded()
 },
 
   _reviewDaySyncController() {
-    return this._reviewDaySync || (
-      this._reviewDaySync = createReviewDaySyncController({
-        isSameDay: () => this._overviewSyncController().isSameDay(),
-        isPageAlive: () => this._alive,
-        getOverview: () => api.get('/review/today/overview'),
-        buildOverviewVM: overview => this.buildReviewOverviewVM(overview),
-        applyOverviewWithDayReset: (overview, vm) => this._overviewSyncController().applyOverviewWithDayReset(overview, vm),
-        setDateStr: () => this._setDateStr(),
-        setData: patch => this.setData(patch),
-        showSuccessToast: () => wx.showToast({ title: '日期已切换，已同步今日复习进度', icon: 'none' }),
-        showFailureToast: () => wx.showToast({ title: '日期已切换，请联网同步后继续', icon: 'none' }),
-        logError: (...args) => console.error(...args),
-      })
-    )
-  },
+return this._reviewDaySync || (
+this._reviewDaySync = createReviewDaySyncController(
+buildReviewDaySyncPageCapabilities(this, { api })
+)
+)
+},
 buildReviewOverviewVM(overview) {
 return this._overviewVMController().buildVM(overview)
 },
@@ -495,37 +393,9 @@ await this._startBatchController().start()
 },
 _startBatchController() {
 return this._startBatchControllerInstance || (
-this._startBatchControllerInstance = createStartBatchController({
-getTodayRemainingCount: () => this.data.todayRemainingCount,
-isStarting: () => this.data.isStarting,
-isContinuing: () => this.data.isContinuing,
-nextFlowSeq: () => ++this._flowRequestSeq,
-getCurrentFlowSeq: () => this._flowRequestSeq,
-isFlowCurrent: seq => seq === this._flowRequestSeq,
-isPageAlive: () => this._alive,
-setData: patch => this.setData(patch),
-getBatchSize: () => this.data.reviewBatchSize,
-postNextBatch: payload => api.post('/review/today/next-batch', payload),
-loadOverview: () => this.loadTodayReviewOverview(),
-normalizeQuestion: question => normalizeReviewQuestion(question),
-restoreDraft: questions => this._restoreReviewDraft(questions),
-getSession: () => this._reviewSession,
-getData: () => this.data,
-enrichQuestion: question => this._enrichQuestion(question),
-buildOptionList: (question, answers) => adapter.buildOptionList(question, answers, KF),
-getBlankOptionGroups: question => adapter.getBlankOptionGroups(question),
-enrichBlankOptionGroups: (groups, answer) => adapter.enrichBlankOptionGroups(groups, answer),
-computeAnsweredCount: (questions, answers) => adapter.computeAnsweredCount(questions, answers, KF),
-getTotalBatchCount: () => this.data.totalBatchCount,
-checkSetDataSize: data => this._checkSetDataSize(data),
-syncAnsweredFlags: () => this._syncAnsweredFlags(),
-updateRunnerFields: () => this._updateRunnerFields(),
-checkRenderInvariant: renderModel => this._checkRenderInvariant(renderModel),
-recordRenderTrace: trace => this._recordRenderTrace(trace),
-startReviewTimer: () => this._startReviewTimer(),
-showToast: options => wx.showToast(options),
-logError: (...args) => console.error(...args),
-})
+this._startBatchControllerInstance = createStartBatchController(
+buildStartBatchPageCapabilities(this, { api })
+)
 )
 },
 _splitGroups(questions, size) {
@@ -592,37 +462,9 @@ await this._reviewMasterController().undo()
 },
 _reviewMasterController() {
 return this._reviewMaster || (
-this._reviewMaster = createReviewMasterController({
-getData: () => this.data,
-getSession: () => this._reviewSession,
-setData: patch => this.setData(patch),
-isPageAlive: () => this._alive,
-isMasterSubmitting: () => this.data.masterSubmitting,
-isSubmittingGroup: () => this.data.submittingGroup,
-isMasterUndoInFlight: () => this._masterUndoInFlight,
-getPendingMasterUndo: () => this._pendingMasterUndo,
-setPendingMasterUndo: value => { this._pendingMasterUndo = value },
-setMasterUndoInFlight: value => { this._masterUndoInFlight = value },
-getMasterUndoTimer: () => this._masterUndoTimer,
-setMasterUndoTimer: timer => { this._masterUndoTimer = timer },
-incrementMasteredCount: () => { this._masteredCount = (this._masteredCount || 0) + 1 },
-decrementMasteredCount: () => { this._masteredCount = Math.max(0, (this._masteredCount || 1) - 1) },
-syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
-postMaster: scheduleId => api.post(`/review/${scheduleId}/master`),
-postUnmaster: scheduleId => api.post(`/review/${scheduleId}/unmaster`),
-refreshOverviewStatsSilently: () => this.refreshOverviewStatsSilently(),
-clearUndo: () => this._clearMasterUndo(),
-armUndoExpiry: ms => this._armMasterUndoExpiry(ms),
-clearReviewTimer: () => this._clearReviewTimer(),
-getTodayRemainingCount: () => this.data.todayRemainingCount,
-syncAnsweredFlags: () => this._syncAnsweredFlags(),
-showQuestion: index => this._showQuestion(index),
-startReviewTimer: () => this._startReviewTimer(),
-showToast: options => wx.showToast(options),
-logError: (message, error) => console.error(message, error),
-setTimeout,
-clearTimeout,
-})
+this._reviewMaster = createReviewMasterController(
+buildReviewMasterPageCapabilities(this, { api })
+)
 )
 },
 _armMasterUndoExpiry(ms) {
@@ -639,135 +481,55 @@ await this._groupSubmitFlowController().submit()
 },
 
   _groupSubmitFlowController() {
-    return this._groupSubmitFlow || (
-      this._groupSubmitFlow = createGroupSubmitFlowController({
-        getGroupQuestions: () => this.data.groupQuestions,
-        confirm: groupQuestions => this._groupSubmitEntryController().confirm(groupQuestions),
-        begin: groupQuestions => this._groupSubmitEntryController().begin(groupQuestions),
-        request: input => this._groupSubmitRequestController().submit(input),
-        isQuestionAnswered: (q, a) => adapter.isQuestionAnswered(q, a, KF),
-        getRequestId: q => this._getReviewRequestId(q),
-        buildTimingSession: () => this._buildReviewTimingSession(),
-        enrichForResult: q => this._enrichForResult(q),
-        failureNeedsRefresh: _reviewFailureNeedsRefresh,
-        applyResult: input => this._groupSubmitResultController().apply(input),
-        isPageAlive: () => this._alive,
-        logError: (...args) => console.error(...args),
-        showResultFailureToast: () => wx.showToast({ title: '提交失败，请重试', icon: 'none' }),
-        setSubmitting: value => this.setData({ submittingGroup: value }),
-      })
-    )
-  },
+return this._groupSubmitFlow || (
+this._groupSubmitFlow = createGroupSubmitFlowController(
+buildGroupSubmitFlowPageCapabilities(this, {})
+)
+)
+},
   _groupSubmitEntryController() {
-    return this._groupSubmitEntry || (
-      this._groupSubmitEntry = createGroupSubmitEntryController({
-getData: () => this.data,
-getSession: () => this._reviewSession,
-isConfirmPending: () => this._submitConfirmPending,
-isMasterUndoInFlight: () => this._masterUndoInFlight,
-isPageAlive: () => this._alive,
-computeAnsweredCount: (questions, answers) => adapter.computeAnsweredCount(questions, answers, KF),
-confirmController: this._groupSubmitConfirmController || (
-this._groupSubmitConfirmController = createGroupSubmitConfirmController({
-getConfirm: () => this.selectComponent('#submitConfirm'),
-setPending: value => { this._submitConfirmPending = value },
-isPageAlive: () => this._alive,
-getPhase: () => this.data.phase,
-findUnansweredIndex: () => this.data.groupQuestions.findIndex(q => !adapter.isQuestionAnswered(q, this._reviewSession.answers, KF)),
-showQuestion: index => this._showQuestion(index),
-})
-),
-        showToast: options => wx.showToast(options),
-        clearMasterUndo: () => this._clearMasterUndo(),
-        setSubmitting: value => this.setData({ submittingGroup: value }),
-        syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
-      })
-    )
-  },
+return this._groupSubmitEntry || (
+this._groupSubmitEntry = createGroupSubmitEntryController(
+buildGroupSubmitEntryPageCapabilities(this, {})
+)
+)
+},
   _groupSubmitRequestController() {
-    return this._groupSubmitRequest || (
-      this._groupSubmitRequest = createGroupSubmitRequestController({
-postGrade: payload => api.post('/review/grade-batch', payload),
-showToast: options => wx.showToast(options),
-setSubmitting: value => this.setData({ submittingGroup: value }),
-isPageAlive: () => this._alive,
-      })
-    )
-  },
+return this._groupSubmitRequest || (
+this._groupSubmitRequest = createGroupSubmitRequestController(
+buildGroupSubmitRequestPageCapabilities(this, { api })
+)
+)
+},
   _groupSubmitResultController() {
-    return this._groupSubmitResult || (
-      this._groupSubmitResult = createGroupSubmitResultController({
-getGroups: () => this.data.groups,
-getSession: () => this._reviewSession,
-getTodayDueCount: () => this.data.todayDueCount,
-getTodayCompletedCount: () => this.data.todayCompletedCount,
-getCurrentGroupIdx: () => this.data.currentGroupIdx,
-clearSubmittedDraft: (questions, results) => this._clearSubmittedReviewDraft(questions, results),
-showToast: options => wx.showToast(options),
-pauseTimer: () => this._pauseReviewTimer(),
-setData: patch => this.setData(patch),
-showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
-      })
-    )
-  },
+return this._groupSubmitResult || (
+this._groupSubmitResult = createGroupSubmitResultController(
+buildGroupSubmitResultPageCapabilities(this, {})
+)
+)
+},
 async nextGroup() {
 return this._nextGroupController().next()
 },
 _nextGroupController() {
 return this._nextGroup || (
-this._nextGroup = createNextGroupController({
-getData: () => this.data,
-setData: (patch, callback) => this.setData(patch, callback),
-clearMasterUndo: () => this._clearMasterUndo(),
-clearResultDockFadeTimer: () => this._clearResultDockFadeTimer(),
-nextFlowSeq: () => ++this._flowRequestSeq,
-isPageAlive: () => this._alive,
-isFlowCurrent: seq => seq === this._flowRequestSeq,
-syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
-getCurrentGroupIdx: () => this.data.currentGroupIdx,
-getTodayRemainingCount: () => this.data.todayRemainingCount,
-retryGroupController: this._nextRetryGroupController(),
-remoteBatchController: this._nextRemoteBatchController(),
-logError: (message, error) => console.error(message, error),
-showToast: options => wx.showToast(options),
-showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
-})
+this._nextGroup = createNextGroupController(
+buildNextGroupPageCapabilities(this, {})
+)
 )
 },
 _nextRetryGroupController() {
 return this._nextRetryGroup || (
-this._nextRetryGroup = createNextRetryGroupController({
-getGroups: () => this.data.groups,
-getSession: () => this._reviewSession,
-setData: patch => this.setData(patch),
-syncAnsweredFlags: () => this._syncAnsweredFlags(),
-showQuestion: index => this._showQuestion(index),
-startReviewTimer: () => this._startReviewTimer(),
-})
+this._nextRetryGroup = createNextRetryGroupController(
+buildNextRetryGroupPageCapabilities(this, {})
+)
 )
 },
 _nextRemoteBatchController() {
 return this._nextRemoteBatch || (
-this._nextRemoteBatch = createNextRemoteBatchController({
-getBatchSize: () => this.data.reviewBatchSize,
-postNextBatch: payload => api.post('/review/today/next-batch', payload),
-isPageAlive: () => this._alive,
-isFlowCurrent: seq => seq === this._flowRequestSeq,
-normalizeQuestion: question => normalizeReviewQuestion(question),
-restoreDraft: questions => this._restoreReviewDraft(questions),
-getSession: () => this._reviewSession,
-setData: patch => this.setData(patch),
-getCurrentBatchNo: () => this.data.currentBatchNo,
-getTotalBatchCount: () => this.data.totalBatchCount,
-getTodayDueCount: () => this.data.todayDueCount,
-getTodayCompletedCount: () => this.data.todayCompletedCount,
-getTodayRemainingCount: () => this.data.todayRemainingCount,
-syncAnsweredFlags: () => this._syncAnsweredFlags(),
-showQuestion: index => this._showQuestion(index),
-startReviewTimer: () => this._startReviewTimer(),
-showToast: options => wx.showToast(options),
-refreshOverviewStatsSilently: () => this.refreshOverviewStatsSilently(),
-})
+this._nextRemoteBatch = createNextRemoteBatchController(
+buildNextRemoteBatchPageCapabilities(this, { api })
+)
 )
 },
 _clearResultDockFadeTimer() {
@@ -777,21 +539,14 @@ this._resultDockFadeTimer = null
 }
 },
 _showResultDockAndRefreshTimer() {
-const resultDockController = this._resultDockController || (
-this._resultDockController = createResultDockController({
-getPhase: () => this.data.phase,
-getTodayRemainingCount: () => this.data.todayRemainingCount,
-getResultDockVisible: () => this.data.resultDockVisible,
-setData: patch => this.setData(patch),
-clearFadeTimer: () => this._clearResultDockFadeTimer(),
-setFadeTimer: timer => { this._resultDockFadeTimer = timer },
-setTimeout,
-clearTimeout,
-isPageAlive: () => this._alive,
-getFadeDelay: () => 5000,
-})
+this._resultDockController().show()
+},
+_resultDockController() {
+return this._resultDockControllerInstance || (
+this._resultDockControllerInstance = createResultDockController(
+buildResultDockPageCapabilities(this, {})
 )
-resultDockController.show()
+)
 },
 onResultPageInteraction() {
 this._showResultDockAndRefreshTimer()
@@ -830,19 +585,9 @@ return safeReviewTickDelta(rawMs)
 },
 _reviewTimerController() {
 return this._reviewTimer || (
-this._reviewTimer = createReviewTimerController({
-getSession: () => this._reviewSession,
-isPageAlive: () => this._alive,
-monotonicNow: () => _reviewMonotonicNow(),
-serverNow: () => _reviewServerNow(),
-getTimerId: () => this._timerInterval,
-setTimerId: id => { this._timerInterval = id },
-setInterval,
-clearInterval,
-setData: patch => this.setData(patch),
-formatElapsed: seconds => formatReviewElapsed(seconds),
-createRequestId: () => (typeof api.createRequestId === 'function' ? api.createRequestId() : undefined),
-})
+this._reviewTimer = createReviewTimerController(
+buildReviewTimerPageCapabilities(this, { api, _reviewMonotonicNow, _reviewServerNow })
+)
 )
 },
 _startReviewTimer() {

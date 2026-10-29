@@ -49,6 +49,7 @@ var debugPath = path.resolve(__dirname, '../utils/debug.js')
 var apiMock = {
   get: function () { return Promise.resolve({}) },
   post: function () { return Promise.resolve({}) },
+  now: function () { return Date.now() },
   createRequestId: function () {
     return 'req_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
   },
@@ -525,7 +526,7 @@ if (!capturedPageConfig) {
 
   t('nextGroup wires batch size through remote batch controller', function () {
     var src = capturedPageConfig.nextGroup.toString()
-    assert.ok(src.indexOf('nextGroupController.next()') >= 0)
+    assert.ok(src.indexOf('_nextGroupController().next()') >= 0)
     var remoteSrc = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/utils/next-remote-batch-controller.js'), 'utf8')
     assert.ok(remoteSrc.indexOf('batch_size: options.getBatchSize()') >= 0)
   })
