@@ -6,10 +6,11 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 1454
+const PAGE_CEILING = 1355
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
-  'wrong-detail-content-transition.js']
+  'wrong-detail-content-transition.js',
+  'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -24,7 +25,16 @@ const TRANSITION_DELEGATES = {
   "_clearSwitchWatchdog": "_clearSwitchWatchdog() {\nreturn contentTransition._clearSwitchWatchdog(this)\n}",
   "_forceResetSwitchLock": "_forceResetSwitchLock() {\nreturn contentTransition._forceResetSwitchLock(this)\n}"
 }
+const NAVIGATION_DELEGATES = {
+  "_prepareNavigationData": "async _prepareNavigationData(idx, navigationSeq) {\nreturn navigationData._prepareNavigationData(this, idx, navigationSeq, { fetchWrongQuestion: wqId => api.get(`/wrong-questions/${wqId}`), _processWqData: (wq, safeMode) => _processWqData(wq, safeMode), _resolvePreferredAnalysis: wq => _resolvePreferredAnalysis(wq), _normalizeAiResult: result => _normalizeAiResult(result) })\n}",
+  "_buildNavigateDataPatch": "_buildNavigateDataPatch(wq, raw, idx) {\nreturn navigationData._buildNavigateDataPatch(this, wq, raw, idx, { _isWqMastered, errorDiagnosis })\n}",
+  "_dropQuestionFromNavigation": "_dropQuestionFromNavigation(wqId) {\nreturn navigationFlow._dropQuestionFromNavigation(this, wqId, { writeNavigation: value => wx.setStorageSync('wrong_detail_nav', value) })\n}",
+  "_navigateTo": "async _navigateTo(idx, animMs, direction) {\nreturn navigationFlow._navigateTo(this, idx, animMs, direction)\n}",
+  "_commitNavigation": "async _commitNavigation(ctx, switchDirection, animMs, navigationSeq) {\nreturn navigationFlow._commitNavigation(this, ctx, switchDirection, animMs, navigationSeq, { QUESTION_SWITCH_ANIM_WATCHDOG_MS })\n}",
+  "_handleNavigateError": "_handleNavigateError(e, navigationSeq) {\nreturn navigationFlow._handleNavigateError(this, e, navigationSeq, { showToast: options => wx.showToast(options) })\n}"
+}
 const DELEGATES = {
+  ...NAVIGATION_DELEGATES,
   ...TRANSITION_DELEGATES,
   "_processWqData": "function _processWqData(wq, safeMode) {\nreturn processWqData(wq, safeMode, { isTrueFalseType, config, buildRenderModel, adapter, _subjectLabel, _errorTypeLabel })\n}",
   "_normalizeAiResult": "function _normalizeAiResult(content) {\nreturn aiState._normalizeAiResult(content, _buildAiRichText)\n}",
@@ -142,7 +152,7 @@ function scanWrongDetail(options = {}) {
 }
 
 module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DIRECT_HELPERS,
-  DELEGATES, TRANSITION_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
+  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
 
 if (require.main === module) {
   const result = scanWrongDetail()

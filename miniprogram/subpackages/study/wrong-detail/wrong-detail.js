@@ -22,6 +22,8 @@ const { _aiPollDelayMs, _isTimeoutError, _generationMarker, _fallbackMessage, _i
 const { processWqData } = require('./utils/wrong-detail-question-view')
 const { buildTeacherActionPageCapabilities } = require('./utils/wrong-detail-teacher-page-adapter')
 const contentTransition = require('./utils/wrong-detail-content-transition')
+const navigationData = require('./utils/wrong-detail-navigation-data')
+const navigationFlow = require('./utils/wrong-detail-navigation-flow')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -1150,128 +1152,27 @@ if (pages.length > 1) wx.navigateBack()
 else wx.redirectTo({ url: '/subpackages/study/wrong-book/wrong-book' })
 },
 _dropQuestionFromNavigation(wqId) {
-const currentId = this._currentWqId || (this.data.wq && this.data.wq.id)
-const oldIds = this.data.questionIds || []
-const nextIds = oldIds.filter(id => String(id) !== String(wqId))
-if (nextIds.length === oldIds.length) return false
-if (this._wqCache) delete this._wqCache[wqId]
-try {
-wx.setStorageSync('wrong_detail_nav', { ids: nextIds, ts: Date.now() })
-} catch (_) {}
-let nextCurrentIdx = nextIds.findIndex(id => String(id) === String(currentId))
-if (nextCurrentIdx < 0) nextCurrentIdx = 0
-const wrongQuestions = nextIds.map(() => ({ _answered: true }))
-this.setData({
-questionIds: nextIds,
-totalQuestions: nextIds.length,
-currentIdx: nextCurrentIdx,
-wrongQuestions,
-runnerProgressPercent: nextIds.length > 0
-? Math.round((nextCurrentIdx + 1) / nextIds.length * 100)
-: 0,
-})
-return true
+return navigationFlow._dropQuestionFromNavigation(this, wqId, { writeNavigation: value => wx.setStorageSync('wrong_detail_nav', value) })
 },
   async _navigateTo(idx, animMs, direction) {
-    var navigationSeq = ++this._navigationSeq
-    var switchDirection = direction || (idx > this.data.currentIdx ? 'right' : 'left')
-    this._switching = true
-    this._cancelContentSwitchTransition()
-    this._contentTransitionDirection = switchDirection
-    this._contentTransitionStartedAt = Date.now()
-    this.setData({ showSwitchMask: true })
-    try {
-      const ctx = await this._prepareNavigationData(idx, navigationSeq)
-      if (!ctx) return
-      await this._commitNavigation(ctx, switchDirection, animMs, navigationSeq)
-    } catch (e) {
-      this._handleNavigateError(e, navigationSeq)
-    }
-  },
+return navigationFlow._navigateTo(this, idx, animMs, direction)
+},
 
   async _prepareNavigationData(idx, navigationSeq) {
-    var questionIds = this.data.questionIds || []
-    var wqId = Number(questionIds[idx])
-    if (!wqId || idx < 0 || idx >= questionIds.length) return null
-    var cached = this._wqCache && this._wqCache[wqId]
-    var wq = cached ? cached.data : await api.get(`/wrong-questions/${wqId}`)
-    if (!this._alive || navigationSeq !== this._navigationSeq) return null
-    if (!wq) throw new Error('not found')
-    if (!cached && this._wqCache) this._wqCache[wqId] = { data: wq, ts: Date.now() }
-    const raw = _processWqData(wq, this.data.safeModeActive)
-    const nextData = this._buildNavigateDataPatch(wq, raw, idx)
-    var nextAiResult = null
-    var preferredAnalysis = _resolvePreferredAnalysis(wq)
-    if (preferredAnalysis) {
-      nextAiResult = preferredAnalysis.normalized
-      nextData.aiCards = _normalizeAiResult(nextAiResult)
-      nextData.aiRequested = true
-      nextData.aiFromCache = preferredAnalysis.source === 'ai'
-      nextData.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
-      nextData.aiFallback = false
-      nextData.aiErrorText = ''
-    }
-    return { wqId, wq, raw, nextData, nextAiResult, navigationSeq }
-  },
+return navigationData._prepareNavigationData(this, idx, navigationSeq, { fetchWrongQuestion: wqId => api.get(`/wrong-questions/${wqId}`), _processWqData: (wq, safeMode) => _processWqData(wq, safeMode), _resolvePreferredAnalysis: wq => _resolvePreferredAnalysis(wq), _normalizeAiResult: result => _normalizeAiResult(result) })
+},
 
   _buildNavigateDataPatch(wq, raw, idx) {
-    const currentQuestion = Object.assign({}, wq, {
-      _optionList: raw._optionList, _optionKeys: raw._optionKeys,
-      _opts: raw._opts, _blankOptionGroups: raw._blankOptionGroups,
-      _hasBlankOptionGroups: raw._hasBlankOptionGroups, _renderModel: raw._renderModel,
-    })
-    var totalQ = this.data.totalQuestions || 1
-    var wrongQuestions = []
-    for (var wi = 0; wi < totalQ; wi++) wrongQuestions.push({ _answered: true })
-    return {
-      wq, currentQuestion, wrongQuestions,
-      runnerProgressPercent: totalQ > 0 ? Math.round((idx + 1) / totalQ * 100) : 0,
-      subjectLabelText: raw.subjectLabelText, aiLoading: false, aiRegenerating: false,
-      aiCards: null, aiRequested: false, aiFromCache: false, aiFromQuestionAnalysis: false,
-      aiFallback: false, aiErrorText: '', aiRetryable: true,
-      isCurrentMastered: _isWqMastered(wq), masterSubmitting: false, removeSubmitting: false,
-      errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
-      nextErrorAction: errorDiagnosis.buildNextAction(wq, errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis)),
-      diagnosisSheetVisible: false, diagnosisSaving: false, diagnosisSyncing: false,
-      teacherLoadingAction: '', teacherLastAction: '', teacherResult: null,
-      teacherSheetVisible: false, teacherErrorText: '', teacherFeedbackSent: '',
-      teacherActionsExpanded: false,
-    }
-  },
+return navigationData._buildNavigateDataPatch(this, wq, raw, idx, { _isWqMastered, errorDiagnosis })
+},
 
   async _commitNavigation(ctx, switchDirection, animMs, navigationSeq) {
-    const { wqId, wq, raw, nextData, nextAiResult } = ctx
-    await this._waitForContentSwitchOut(switchDirection, animMs)
-    if (!this._alive || navigationSeq !== this._navigationSeq) return
-    this._currentWqId = wqId
-    this._errorTypeLabelText = raw.errorTypeLabelText
-    this._aiResult = nextAiResult
-    clearTimeout(this._switchMaskTimer)
-    this._armSwitchWatchdog(QUESTION_SWITCH_ANIM_WATCHDOG_MS)
-    this.setData(Object.assign({ showSwitchMask: false }, nextData), () => {
-      this._finishContentSwitchTransition(switchDirection)
-      this._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
-    })
-    this._checkRenderInvariant(raw._renderModel)
-  },
+return navigationFlow._commitNavigation(this, ctx, switchDirection, animMs, navigationSeq, { QUESTION_SWITCH_ANIM_WATCHDOG_MS })
+},
 
   _handleNavigateError(e, navigationSeq) {
-    if (!this._alive || navigationSeq !== this._navigationSeq) return
-    console.error('切换题目失败', e)
-    clearTimeout(this._switchMaskTimer)
-    this._switching = false
-    this._clearSwitchWatchdog()
-    this._cancelContentSwitchTransition()
-    const statusCode = Number(e && (e.statusCode || e.status)) || 0
-    if (statusCode === 404 || statusCode === 410) {
-      this._dropQuestionFromNavigation(0)
-      this.setData({ showSwitchMask: false, aiRegenerating: false })
-      wx.showToast({ title: '该错题已被移除，已更新题目列表', icon: 'none' })
-      return
-    }
-    wx.showToast({ title: '加载失败', icon: 'none' })
-    this.setData({ showSwitchMask: false, aiRegenerating: false })
-  },
+return navigationFlow._handleNavigateError(this, e, navigationSeq, { showToast: options => wx.showToast(options) })
+},
 openDiagnosisSheet() {
 const diagnosis = this.data.errorDiagnosis
 const primary = diagnosis && diagnosis.primaryType && diagnosis.primaryType !== 'unknown'

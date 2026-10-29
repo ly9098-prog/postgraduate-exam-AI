@@ -34,3 +34,12 @@
 - 拆分前 9 项契约通过，最终扩展 11 项全部在原页面重放通过；当前含状态/边界测试共 26 passed。另有 6,000 次确定性状态/计时器/视图 patch 对照一致。
 - 全量 Node 2167 passed、渲染 5 fixtures/31 passed、八条架构门禁、语法、视觉/KaTeX、CI YAML 与 diff check 通过。详情门禁扩展为五个模块和 15 条委托模板，页面预算下调至 1454；CI 增加切题契约路径。
 - 本批临时证据 `/tmp/wrong-detail-transition-batch/`；前述两条 legacy 脚本既有失败和真实环境验收限制仍然有效。
+
+## 5. 错题切换与导航列表（2026-10-29 后续批次）
+
+- 本批页面由 1454→1355 行。六个导航数据准备/视图构造/切换提交/列表移除/错误处理入口迁入 `utils/wrong-detail-navigation-data.js`（51 行）与 `utils/wrong-detail-navigation-flow.js`（76 行）；页面保留名称、参数、异步声明和单次委托。
+- 保持 live API 读取及 await 后的页面 renderer/helper 查找、请求序号/存活检查先于缓存写入、缓存对象与时间戳、AI 优先/题目解析 fallback、字段顺序与重复诊断归一化调用。
+- 切换提交仍先等待出场动画，然后做序号与卸载检查，再更新页面私有 ID/AI 结果，依次清遮罩 timer、启动 5000ms watchdog、setData、检查渲染不变式；setData 回调中动画收尾先于服务端诊断刷新。
+- 保留无效索引时的原锁状态、404/410 通过旧 sentinel `drop(0)` 更新列表、存储异常吞掉与现有 toast。此轮不改变这些业务口径。
+- 拆分前 11 项导航契约通过；扩展后 13 项原页面重放通过。当前状态、模块边界、动画与导航定向共 39 passed；另有 800 次确定性 response/state/field-order 对照一致。
+- CI 增加导航契约；详情页门禁登记七个模块、21 条页面委托模板、1355 行 ceiling。全量 Node、渲染与八条门禁于提交前复验。原始证据 `/tmp/wrong-detail-navigation-batch/`。
