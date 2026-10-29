@@ -6,12 +6,12 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 1302
+const PAGE_CEILING = 1245
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
   'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js',
-  'wrong-detail-ai-recovery.js']
+  'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -39,7 +39,14 @@ const AI_RECOVERY_DELEGATES = {
   "_pollPersistedAiAnalysis": "async _pollPersistedAiAnalysis(wqId, requestId, options) {\nreturn aiRecovery._pollPersistedAiAnalysis(this, wqId, requestId, options, { AI_CACHE_POLL_ATTEMPTS, _sleep, _aiPollDelayMs, fetchStatus: id => api.get(`/ai/error-analysis/status/${id}`, {}, { timeout: 10000, suppressNetworkToast: true }), _normalizeAiPayload: value => _normalizeAiPayload(value), _hasAiContent: value => _hasAiContent(value) })\n}",
   "_applyRecoveredAiResult": "_applyRecoveredAiResult(recovered, options) {\nreturn aiRecovery._applyRecoveredAiResult(this, recovered, options, { _generationMarker, _normalizeAiResult: value => _normalizeAiResult(value) })\n}"
 }
+const AI_GENERATION_DELEGATES = {
+  "loadAiAnalysis": "async loadAiAnalysis(wqId) {\nreturn aiGeneration.loadAiAnalysis(this, wqId, { _generationMarker })\n}",
+  "_applyAiAnalysisResult": "async _applyAiAnalysisResult(result, wqId, requestId, baselineGeneratedAt) {\nreturn aiGeneration._applyAiAnalysisResult(this, result, wqId, requestId, baselineGeneratedAt, { _normalizeAiPayload: value => _normalizeAiPayload(value), _hasAiContent: value => _hasAiContent(value) })\n}",
+  "_commitAiAnalysisSuccess": "_commitAiAnalysisSuccess(result, normalized, wqId) {\nreturn aiGeneration._commitAiAnalysisSuccess(this, result, normalized, wqId, { _normalizeAiResult: value => _normalizeAiResult(value) })\n}",
+  "_handleAiAnalysisError": "async _handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt) {\nreturn aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError })\n}"
+}
 const DELEGATES = {
+  ...AI_GENERATION_DELEGATES,
   ...AI_RECOVERY_DELEGATES,
   ...NAVIGATION_DELEGATES,
   ...TRANSITION_DELEGATES,
@@ -159,7 +166,7 @@ function scanWrongDetail(options = {}) {
 }
 
 module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DIRECT_HELPERS,
-  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
+  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, AI_GENERATION_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
 
 if (require.main === module) {
   const result = scanWrongDetail()

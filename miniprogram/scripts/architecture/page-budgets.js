@@ -10,7 +10,7 @@ const PAGES = {
   'subpackages/study/practice/practice.js': 1212,
   'subpackages/study/practice-result/index.js': 823,
   'subpackages/study/wrong-book/wrong-book.js': 1306,
-  'subpackages/study/wrong-detail/wrong-detail.js': 1302,
+  'subpackages/study/wrong-detail/wrong-detail.js': 1245,
   'subpackages/study/review-today/review-today.js': 645,
   'subpackages/exam/exam-runner/index.js': 550,
   'subpackages/exam/result/index.js': 302,
