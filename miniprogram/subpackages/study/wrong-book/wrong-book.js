@@ -26,6 +26,8 @@ const { buildAnalysis, buildSummaryCards, buildActionPlan, rowsFromStats, counts
 const { buildItemViewCapabilities, buildAnalysisViewCapabilities } = require('./utils/wrong-book-view-page-adapter')
 const requestFlow = require('./utils/wrong-book-request-flow')
 const selectionFlow = require('./utils/wrong-book-selection-flow')
+const batchFlow = require('./utils/wrong-book-batch-flow')
+const batchUndo = require('./utils/wrong-book-batch-undo')
 Page({
 data: {
 list: [],
@@ -432,144 +434,50 @@ _syncSelectionState() {
 return selectionFlow._syncSelectionState(this)
 },
 _showAppOptions(opts) {
-const dialog = this.selectComponent('#appDialog')
-if (!dialog || typeof dialog.showOptions !== 'function') return Promise.resolve(-1)
-return dialog.showOptions(opts || {})
+return batchFlow._showAppOptions(this, opts)
 },
 async openBatchMore() {
-if (!this.data.selectedCount) {
-wx.showToast({ title: '请先选择错题', icon: 'none' })
-return
-}
-const index = await this._showAppOptions({
-title: '批量处理',
-message: `将作用于已选择的 ${this.data.selectedCount} 道错题`,
-items: ['移出错题本', '永久删除'],
-dangerIndexes: [1],
-})
-if (index < 0) return
-const action = index === 0 ? 'remove_from_book' : 'delete'
-this.onBatchAction({ currentTarget: { dataset: { action } } })
+return batchFlow.openBatchMore(this, { getPlatform: () => wx })
 },
 closeBatchMore() {},
 noop() {},
   async onBatchAction(e) {
-    if (this.data.batchSubmitting || this._batchMasterUndoInFlight) return
-    const action = e.currentTarget.dataset.action
-    if (this.data.batchMoreVisible) this.setData({ batchMoreVisible: false })
-    const ids = this._resolveBatchIds()
-    if (!ids.length) { wx.showToast({ title: '请先选择错题', icon: 'none' }); return }
-    const labels = this._batchActionLabels()
-    if (this._isDangerousBatchAction(action)) {
-      const confirmed = await this._confirmBatchAction(labels[action], this._batchConfirmMessage(action, ids.length))
-      if (!confirmed) return
-    }
-    this.setData({ batchSubmitting: true })
-    wx.showLoading({ title: '正在处理', mask: true })
-    try {
-      const result = await api.post('/wrong-questions/batch', { action, ids })
-      wx.hideLoading()
-      if (this._destroyed) return
-      if (action === 'mark_mastered') {
-        await this._handleBatchMastered(result, ids)
-        return
-      }
-      this._handleBatchSuccess(result, labels, action)
-      await this._reloadAfterBatch()
-    } catch (err) {
-      this._handleBatchError(err)
-    }
-  },
+return batchFlow.onBatchAction(this, e, { requestClient: api, getPlatform: () => wx })
+},
 
   _resolveBatchIds() {
-    return (this.data.selectedIds || []).map(id => {
-      const n = Number(id)
-      return Number.isFinite(n) && String(n) === String(id) ? n : id
-    })
-  },
+return batchFlow._resolveBatchIds(this)
+},
 
   _batchActionLabels() {
-    return {
-      add_to_review: '加入今日复习', mark_mastered: '标记为已掌握',
-      remove_from_book: '移出错题本', delete: '永久删除',
-    }
-  },
+return batchFlow._batchActionLabels()
+},
 
   _isDangerousBatchAction(action) {
-    return action === 'delete' || action === 'remove_from_book'
-  },
+return batchFlow._isDangerousBatchAction(action)
+},
 
   _batchConfirmMessage(action, count) {
-    return action === 'delete'
-      ? `将永久删除已选择的 ${count} 道错题记录，是否继续？`
-      : `将把已选择的 ${count} 道题移出错题本，是否继续？`
-  },
+return batchFlow._batchConfirmMessage(action, count)
+},
 
   async _handleBatchMastered(result, ids) {
-    const hasSkippedIds = Array.isArray(result && result.skipped_ids)
-    const skippedSet = new Set(hasSkippedIds ? result.skipped_ids.map(id => String(id)) : [])
-    const reportedUpdatedCount = result && result.updated_count != null ? Number(result.updated_count) : ids.length
-    const undoIds = hasSkippedIds
-      ? ids.filter(id => !skippedSet.has(String(id)))
-      : (reportedUpdatedCount === ids.length ? ids.slice() : [])
-    const updatedCount = Math.max(0, Number.isFinite(reportedUpdatedCount) ? reportedUpdatedCount : undoIds.length)
-    this._clearBatchMasterUndo()
-    this._batchMasterUndoIds = undoIds.slice()
-    const canUndo = undoIds.length > 0
-    this.setData({
-      batchSubmitting: false, batchMasterUndoVisible: canUndo,
-      _batchMasterUndoCount: canUndo ? undoIds.length : 0,
-      selectionPulse: false, selectedIds: [], selectedIdMap: {},
-      selectedCount: 0, allVisibleSelected: false,
-    })
-    if (canUndo) {
-      this._batchMasterUndoTimer = setTimeout(() => { this._clearBatchMasterUndo() }, 5000)
-    } else {
-      wx.showToast({ title: updatedCount > 0 ? `已标记掌握 ${updatedCount} 项` : '所选题目状态未变化', icon: 'none' })
-    }
-    await this._reloadAfterBatch()
-  },
+return batchUndo._handleBatchMastered(this, result, ids, { getPlatform: () => wx })
+},
 
   _handleBatchSuccess(result, labels, action) {
-    wx.showToast({
-      title: `${labels[action]}成功 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
-      icon: 'success',
-    })
-    this._clearBatchCapsuleIdleTimer()
-    this.setData({
-      batchSubmitting: false, batchMode: false, batchCapsuleVisible: true,
-      batchMoreVisible: false, selectionPulse: false, selectedIds: [],
-      selectedIdMap: {}, selectedCount: 0, allVisibleSelected: false,
-    })
-  },
+return batchFlow._handleBatchSuccess(this, result, labels, action, { getPlatform: () => wx })
+},
 
   _handleBatchError(err) {
-    wx.hideLoading()
-    if (this._destroyed) return
-    this.setData({ batchSubmitting: false })
-    const isMissingEndpoint = err && (err.statusCode === 404 || err.statusCode === 405)
-    if (isMissingEndpoint) {
-      this._showBatchMissingEndpoint()
-    } else {
-      wx.showToast({ title: (err && err.message) || '批量操作失败', icon: 'none' })
-    }
-  },
+return batchFlow._handleBatchError(this, err, { getPlatform: () => wx })
+},
 
   async _showBatchMissingEndpoint() {
-    const modal = this.selectComponent('#actionConfirm')
-    if (modal) {
-      await modal.show({
-        scenario: 'info', eyebrow: 'NOTICE', title: '批量接口尚未接入',
-        message: '当前页面交互已经完成，但后端暂不支持该批量操作。',
-        confirmText: '知道了', hideCancel: true,
-      })
-    } else {
-      wx.showToast({ title: '批量接口尚未接入', icon: 'none' })
-    }
-  },
+return batchFlow._showBatchMissingEndpoint(this, { getPlatform: () => wx })
+},
 _reloadAfterBatch() {
-if (this._destroyed) return Promise.resolve([])
-return Promise.all([this.loadStats(), this.loadList(true)])
+return batchFlow._reloadAfterBatch(this)
 },
 onExportSelected() {
 if (!this.data.exportAvailable) {
@@ -600,55 +508,13 @@ onViewExportRecords() {
 wx.navigateTo({ url: '/subpackages/export/export-records/export-records' })
 },
 undoBatchMaster() {
-const ids = (this._batchMasterUndoIds || []).slice()
-if (!ids.length || this._batchMasterUndoInFlight) return
-this._batchMasterUndoInFlight = true
-if (this._batchMasterUndoTimer) {
-clearTimeout(this._batchMasterUndoTimer)
-this._batchMasterUndoTimer = null
-}
-wx.showLoading({ title: '正在撤销', mask: true })
-api.post('/wrong-questions/batch', { action: 'unmark_mastered', ids }).then(result => {
-wx.hideLoading()
-this._batchMasterUndoInFlight = false
-if (this._destroyed) return
-this._clearBatchMasterUndo()
-wx.showToast({
-title: `已撤销掌握 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
-icon: 'success',
-})
-this._reloadAfterBatch()
-}).catch(err => {
-wx.hideLoading()
-this._batchMasterUndoInFlight = false
-if (this._destroyed) return
-wx.showToast({ title: (err && err.message) || '撤销失败，可再次尝试', icon: 'none' })
-this._batchMasterUndoTimer = setTimeout(() => {
-this._clearBatchMasterUndo()
-}, 5000)
-})
+return batchUndo.undoBatchMaster(this, { requestClient: api, getPlatform: () => wx })
 },
 _clearBatchMasterUndo(skipSetData) {
-if (this._batchMasterUndoTimer) {
-clearTimeout(this._batchMasterUndoTimer)
-this._batchMasterUndoTimer = null
-}
-this._batchMasterUndoIds = []
-if (!skipSetData && !this._destroyed) {
-this.setData({ batchMasterUndoVisible: false, _batchMasterUndoCount: 0 })
-}
+return batchUndo._clearBatchMasterUndo(this, skipSetData)
 },
 _confirmBatchAction(title, content) {
-const modal = this.selectComponent('#actionConfirm')
-if (!modal) return Promise.resolve(false)
-return modal.show({
-scenario: 'danger',
-eyebrow: 'IRREVERSIBLE',
-title,
-message: content,
-confirmText: '继续操作',
-cancelText: '取消',
-})
+return batchFlow._confirmBatchAction(this, title, content)
 },
 goDetail(e) {
 this._navigateToDetail(e.currentTarget.dataset.id)

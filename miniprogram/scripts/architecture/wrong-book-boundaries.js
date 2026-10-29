@@ -6,10 +6,10 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-book/wrong-book.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-book/utils'
-const PAGE_CEILING = 1028
+const PAGE_CEILING = 894
 const MODULES = ['wrong-book-value-view.js', 'wrong-book-item-view.js',
   'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js',
-  'wrong-book-selection-flow.js']
+  'wrong-book-selection-flow.js', 'wrong-book-batch-flow.js', 'wrong-book-batch-undo.js']
 const REQUEST_DELEGATES = {
   "_beginFilterReload": "_beginFilterReload(patch) {\nreturn requestFlow._beginFilterReload(this, patch)\n}",
   "_loadPage": "async _loadPage() {\nreturn requestFlow._loadPage(this)\n}",
@@ -36,7 +36,25 @@ const SELECTION_DELEGATES = {
   "toggleSelectAll": "toggleSelectAll() {\nreturn selectionFlow.toggleSelectAll(this)\n}",
   "_syncSelectionState": "_syncSelectionState() {\nreturn selectionFlow._syncSelectionState(this)\n}"
 }
+const BATCH_DELEGATES = {
+  "_showAppOptions": "_showAppOptions(opts) {\nreturn batchFlow._showAppOptions(this, opts)\n}",
+  "openBatchMore": "async openBatchMore() {\nreturn batchFlow.openBatchMore(this, { getPlatform: () => wx })\n}",
+  "onBatchAction": "async onBatchAction(e) {\nreturn batchFlow.onBatchAction(this, e, { requestClient: api, getPlatform: () => wx })\n}",
+  "_resolveBatchIds": "_resolveBatchIds() {\nreturn batchFlow._resolveBatchIds(this)\n}",
+  "_batchActionLabels": "_batchActionLabels() {\nreturn batchFlow._batchActionLabels()\n}",
+  "_isDangerousBatchAction": "_isDangerousBatchAction(action) {\nreturn batchFlow._isDangerousBatchAction(action)\n}",
+  "_batchConfirmMessage": "_batchConfirmMessage(action, count) {\nreturn batchFlow._batchConfirmMessage(action, count)\n}",
+  "_handleBatchMastered": "async _handleBatchMastered(result, ids) {\nreturn batchUndo._handleBatchMastered(this, result, ids, { getPlatform: () => wx })\n}",
+  "_handleBatchSuccess": "_handleBatchSuccess(result, labels, action) {\nreturn batchFlow._handleBatchSuccess(this, result, labels, action, { getPlatform: () => wx })\n}",
+  "_handleBatchError": "_handleBatchError(err) {\nreturn batchFlow._handleBatchError(this, err, { getPlatform: () => wx })\n}",
+  "_showBatchMissingEndpoint": "async _showBatchMissingEndpoint() {\nreturn batchFlow._showBatchMissingEndpoint(this, { getPlatform: () => wx })\n}",
+  "_reloadAfterBatch": "_reloadAfterBatch() {\nreturn batchFlow._reloadAfterBatch(this)\n}",
+  "undoBatchMaster": "undoBatchMaster() {\nreturn batchUndo.undoBatchMaster(this, { requestClient: api, getPlatform: () => wx })\n}",
+  "_clearBatchMasterUndo": "_clearBatchMasterUndo(skipSetData) {\nreturn batchUndo._clearBatchMasterUndo(this, skipSetData)\n}",
+  "_confirmBatchAction": "_confirmBatchAction(title, content) {\nreturn batchFlow._confirmBatchAction(this, title, content)\n}"
+}
 const DELEGATES = {
+  ...BATCH_DELEGATES,
   ...REQUEST_DELEGATES,
   ...SELECTION_DELEGATES,
   "_flattenSubjectOptions": "_flattenSubjectOptions(raw) {\nreturn flattenSubjectOptions(raw)\n}",
