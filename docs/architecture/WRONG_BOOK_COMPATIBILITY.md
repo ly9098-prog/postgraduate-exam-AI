@@ -1,6 +1,6 @@
 # 错题本页面兼容边界
 
-核对日期：2026-10-29。覆盖小程序错题本页面的值格式化、题目装饰、任务分组、统计分析投影、加载请求、选择交互、批量请求/撤销、生命周期、导航/导出及 AI 状态/缓存/设置编排，不表示错题学习闭环或真实客户端验收完成。
+核对日期：2026-10-29。覆盖小程序错题本页面的值格式化、题目装饰、任务分组、统计分析投影、加载请求、选择交互、批量请求/撤销、生命周期、导航/导出及 AI 状态/缓存/设置/请求/交互编排，不表示错题学习闭环或真实客户端验收完成。
 
 ## 1. 职责与动态端口
 
@@ -67,3 +67,13 @@
 - 自动开关保持存储→旧 timer 清理→patch→420ms timer→toast→自动启动顺序。关闭时仅已有加载/刷新使请求序号失效；开启仍要求统计已加载且总数>0，已有 Promise 时沿原 finally 注册启动，callback 执行时读取当前 alive/开关/分析方法，不等待分析请求。timer 失活时仍清空私有句柄，不新增 Promise 链接管或异常吞掉。
 - 新增 15 项契约在原页面与当前页面均通过；八组定向 93 项、全量 Node 2391 项、渲染 5 fixtures/31 项、八条架构门禁、JS 语法、visual/math 与 CI YAML 解析通过。13 个方法体按 AST token 校验，仅替换接收者/注入端口，1300 组入口、返回、状态、缓存、timer、轨迹与字段顺序差分一致；独立实现 review 无 P0–P3。
 - 门禁收紧至页面 652 行、12 模块/88 委托，CI 注册 AI 状态契约；临时证据 `/tmp/wrong-book-ai-state-batch/`。筛选、AI 请求/轮询/结果分流及交互剩余编排继续待治理，真实客户端/外部 AI/完整学习闭环仍未验收。
+
+## 9. AI 请求、轮询与结果交互
+
+- 页面由 652→504 行；诊断检查/延迟/轮询/ensure/请求装配/执行/fetch/结果分流/错误处理九个方法迁至 `utils/wrong-book-ai-request-flow.js`（147 行），洞察展开/手动刷新/反馈三个方法迁至 `utils/wrong-book-ai-interaction.js`（53 行），函数均≤50 行。原参数、async 与单次委托保持，其余 122 个 Page 属性原文不变。
+- 诊断检查保留 destroyed/统计就绪/严格 total=0/自动开关的原顺序与清缓存规则。ensure 保留严格零先于 Promise 去重、已有请求先于 force、前台已有数据直接返回、缓存陈旧与来源变化/冷却条件的优先级；请求装配先递增序号并写 loading/refreshing，再保存当前 executor 返回值。
+- 请求保持 55000ms timeout、force/refresh 才传 refresh=true；pending 时读取当前 poll helper。轮询最多四次，延迟 1200/1550/1900/2250ms，每次延迟后检查请求序号/alive，再读取当前 API 方法；第四次响应后仍直接返回，无新增最终守卫。仍 pending 时保留 detail/message/默认错误的优先级。
+- executor 保留 await 后序号/alive 守卫、当前结果/错误 helper、原 return 而非 return-await 和 catch/finally 范围。新刻画并保留既有并发限制：finally 无条件清空当前 Promise 字段，旧执行结束可能清除较新字段；本批未加入身份检查。结果分流、错误日志先于守卫、保留旧数据及强制刷新才 toast 的口径不变。
+- 洞察展开保留先收起再忙碌判断、showLoading 位于 try 外、finally 中读取当前 hideLoading、响应后无新增存活守卫；手动刷新仍不等待 ensure。反馈保留选项 fallback、source/feedback_type 字段和 API receiver，成功 toast 仍处于原 catch 范围。
+- 新增 20 项契约在原页面与当前页面均通过；九组定向 113 项、全量 Node 2411 项、渲染 5 fixtures/31 项、八条架构门禁、JS 语法、visual/math 与 CI YAML 解析通过。12 个方法体按 AST token 校验，仅替换接收者/注入端口，1200 组入口、返回、状态、请求/轮询、轨迹与字段顺序差分一致；独立实现 review 无 P0–P3。
+- 门禁收紧至页面 504 行、14 模块/100 委托，CI 注册 AI 请求契约；临时证据 `/tmp/wrong-book-ai-request-batch/`。筛选剩余编排与页面完整入口门禁继续待治理，真实客户端/外部 AI/完整学习闭环仍未验收。

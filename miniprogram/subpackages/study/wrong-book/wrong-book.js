@@ -32,6 +32,8 @@ const lifecycle = require('./utils/wrong-book-lifecycle')
 const navigationFlow = require('./utils/wrong-book-navigation-flow')
 const aiState = require('./utils/wrong-book-ai-state')
 const aiPersistence = require('./utils/wrong-book-ai-persistence')
+const aiRequestFlow = require('./utils/wrong-book-ai-request-flow')
+const aiInteraction = require('./utils/wrong-book-ai-interaction')
 Page({
 data: {
 list: [],
@@ -364,37 +366,7 @@ _buildAiDiagnosisSourceSignature() {
 return aiPersistence._buildAiDiagnosisSourceSignature(this, { diagnosisCache: aiCache })
 },
 async _checkAiDiagnosis() {
-if (this._destroyed) return null
-var stats = this.data.stats || {}
-var total = stats.total
-if (!this._aiStatsLoaded) {
-return this.data.aiDiagnosis || null
-}
-if (total === 0) {
-if (this.data.aiDiagnosis) {
-var uid = this._getUserId()
-aiCache.clear(uid)
-this.setData({
-aiDiagnosis: null,
-aiDiagnosisLoading: false,
-aiDiagnosisRefreshing: false,
-aiDiagnosisCacheTimeLabel: '',
-aiDiagnosisCacheStale: false,
-aiDiagnosisError: false,
-aiInsightExpanded: false,
-aiInsightHasDetails: false,
-aiInsightWeakPoints: [],
-aiInsightSuggestions: [],
-})
-} else {
-this.setData({ aiDiagnosisLoading: false })
-}
-return null
-}
-if (!this.data.autoAiInsightEnabled) {
-return this.data.aiDiagnosis || null
-}
-return this.ensureAiDiagnosis({ background: true, refreshOnChange: true })
+return aiRequestFlow._checkAiDiagnosis(this, { diagnosisCache: aiCache })
 },
 _hasAiDiagnosisContent(value) {
 return aiState._hasAiDiagnosisContent(this, value)
@@ -403,169 +375,49 @@ _isAiDiagnosisPending(value) {
 return aiState._isAiDiagnosisPending(value)
 },
 _delay(ms) {
-return new Promise(resolve => setTimeout(resolve, ms))
+return aiRequestFlow._delay(ms)
 },
 async _pollAiDiagnosis(initial, requestId) {
-let current = initial
-for (let attempt = 0; attempt < 4 && this._isAiDiagnosisPending(current); attempt++) {
-await this._delay(1200 + attempt * 350)
-if (requestId !== this._aiDiagnosisRequestId || !this._alive) return null
-current = await api.get('/stats/ai-diagnosis', {}, { timeout: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
-}
-return current
+return aiRequestFlow._pollAiDiagnosis(this, initial, requestId, { requestClient: api, timeoutMs: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
 },
 async ensureAiDiagnosis(options) {
-options = options || {}
-if (this._aiStatsLoaded) {
-var total = (this.data.stats || {}).total
-if (total === 0) return null
-}
-if (this._aiDiagnosisPromise) return this._aiDiagnosisPromise
-if (options.force) {
-return this._requestAiDiagnosis({ force: true })
-}
-var hasData = !!this.data.aiDiagnosis
-if (hasData && !options.background) {
-return this.data.aiDiagnosis
-}
-var needRefresh = false
-var sourceChanged = false
-if (!hasData) {
-needRefresh = true
-} else {
-var cachedAt = this._aiDiagnosisCachedAt
-var isStale = this.data.aiDiagnosisCacheStale || aiCache.isExpired(cachedAt, this.data.aiDiagnosis)
-if (isStale) {
-needRefresh = true
-} else {
-var currentSig = this._buildAiDiagnosisSourceSignature()
-var uid = this._getUserId()
-var cache = aiCache.restore(uid)
-if (cache.signature && cache.signature !== currentSig && (options.refreshOnChange || aiCache.canRefresh(cachedAt))) {
-needRefresh = true
-sourceChanged = true
-}
-}
-}
-if (!needRefresh) {
-return this.data.aiDiagnosis
-}
-return this._requestAiDiagnosis({ background: true, refresh: sourceChanged })
+return aiRequestFlow.ensureAiDiagnosis(this, options, { diagnosisCache: aiCache })
 },
   async _requestAiDiagnosis(opts) {
-    opts = opts || {}
-    var hasData = !!this.data.aiDiagnosis
-    var requestId = ++this._aiDiagnosisRequestId
-    this.setData(hasData ? { aiDiagnosisRefreshing: true, aiDiagnosisError: false } : { aiDiagnosisLoading: true, aiDiagnosisError: false })
-    this._aiDiagnosisPromise = this._executeAiDiagnosisRequest(opts, hasData, requestId)
-    return this._aiDiagnosisPromise
-  },
+return aiRequestFlow._requestAiDiagnosis(this, opts)
+},
 
   async _executeAiDiagnosisRequest(opts, hasData, requestId) {
-    try {
-      var diagnosis = await this._fetchAiDiagnosisData(opts, requestId)
-      if (requestId !== this._aiDiagnosisRequestId || !this._alive) return this.data.aiDiagnosis
-      return this._applyAiDiagnosisResult(diagnosis, hasData)
-    } catch (e) {
-      return this._handleAiDiagnosisError(e, opts, hasData, requestId)
-    } finally {
-      this._aiDiagnosisPromise = null
-    }
-  },
+return aiRequestFlow._executeAiDiagnosisRequest(this, opts, hasData, requestId)
+},
 
   async _fetchAiDiagnosisData(opts, requestId) {
-    var params = (opts.force || opts.refresh) ? { refresh: true } : {}
-    var diagnosis = await api.get('/stats/ai-diagnosis', params, { timeout: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
-    if (this._isAiDiagnosisPending(diagnosis)) {
-      diagnosis = await this._pollAiDiagnosis(diagnosis, requestId)
-    }
-    if (this._isAiDiagnosisPending(diagnosis)) {
-      throw new Error(String((diagnosis && (diagnosis.detail || diagnosis.message)) || 'AI 解析仍在生成，请稍后重试'))
-    }
-    return diagnosis
-  },
+return aiRequestFlow._fetchAiDiagnosisData(this, opts, requestId, { requestClient: api, timeoutMs: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
+},
 
   _applyAiDiagnosisResult(diagnosis, hasData) {
-    var normalized = this._normalizeAiDiagnosis(diagnosis)
-    var hasContent = this._hasAiDiagnosisContent(normalized)
-    if (hasContent) return this._commitAiDiagnosisContent(normalized)
-    if (hasData) {
-      this.setData({ aiDiagnosisLoading: false, aiDiagnosisRefreshing: false })
-      return this.data.aiDiagnosis
-    }
-    this.setData({ aiDiagnosis: null, aiDiagnosisLoading: false, aiDiagnosisRefreshing: false, aiDiagnosisError: true })
-    return null
-  },
+return aiRequestFlow._applyAiDiagnosisResult(this, diagnosis, hasData)
+},
 
   _commitAiDiagnosisContent(normalized) {
 return aiPersistence._commitAiDiagnosisContent(this, normalized, { diagnosisCache: aiCache })
 },
 
   _handleAiDiagnosisError(e, opts, hasData, requestId) {
-    console.error('加载 AI 诊断失败', e)
-    if (requestId !== this._aiDiagnosisRequestId || !this._alive) return this.data.aiDiagnosis
-    if (hasData) {
-      this.setData({ aiDiagnosisLoading: false, aiDiagnosisRefreshing: false })
-      if (opts.force) {
-        wx.showToast({ title: (e && typeof e.message === 'string' && e.message) || '更新失败，请稍后重试', icon: 'none' })
-      }
-      return this.data.aiDiagnosis
-    }
-    this.setData({ aiDiagnosis: null, aiDiagnosisLoading: false, aiDiagnosisRefreshing: false, aiDiagnosisError: true })
-    return null
-  },
+return aiRequestFlow._handleAiDiagnosisError(this, e, opts, hasData, requestId, { getPlatform: () => wx })
+},
 _buildAiInsightDetails(diagnosis) {
 return aiState._buildAiInsightDetails(diagnosis)
 },
 async toggleAiInsight() {
-if (this.data.aiInsightExpanded) {
-this.setData({ aiInsightExpanded: false })
-return
-}
-if (this.data.aiDiagnosisLoading || this.data.aiDiagnosisRefreshing) {
-wx.showToast({ title: 'AI 正在分析，请稍候', icon: 'none' })
-return
-}
-if (!this.data.aiDiagnosis) {
-wx.showLoading({ title: '正在生成洞察', mask: false })
-try {
-const diagnosis = await this.ensureAiDiagnosis({ force: false })
-if (!diagnosis) {
-wx.showToast({ title: '暂未生成有效洞察', icon: 'none' })
-return
-}
-} finally {
-wx.hideLoading()
-}
-}
-this.setData({ aiInsightExpanded: true })
+return aiInteraction.toggleAiInsight(this, { getPlatform: () => wx })
 },
 noop() {},
 refreshAiDiagnosis() {
-if (this._aiDiagnosisPromise || this.data.aiDiagnosisRefreshing || this.data.aiDiagnosisLoading) {
-wx.showToast({ title: this.data.aiDiagnosisRefreshing ? '正在更新中...' : '正在分析中...', icon: 'none' })
-return
-}
-if (this._aiStatsLoaded) {
-var total = (this.data.stats || {}).total
-if (total === 0) {
-wx.showToast({ title: '暂无错题数据', icon: 'none' })
-return
-}
-}
-this.ensureAiDiagnosis({ force: true })
+return aiInteraction.refreshAiDiagnosis(this, { getPlatform: () => wx })
 },
 async onAiFeedback() {
-const types = ['分析不准确', '遗漏薄弱点', '建议不合理', '其他问题']
-const index = await this._showAppOptions({ title: '反馈这次分析', items: types })
-if (index < 0) return
-const feedbackType = types[index] || '其他问题'
-try {
-await api.post('/ai/feedback', { source: 'wrong_book', feedback_type: feedbackType })
-wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
-} catch (_) {
-wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
-}
+return aiInteraction.onAiFeedback(this, { requestClient: api, getPlatform: () => wx })
 },
   _decorateItem(item) {
 return decorateItem(item, buildItemViewCapabilities(this))

@@ -6,12 +6,13 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-book/wrong-book.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-book/utils'
-const PAGE_CEILING = 652
+const PAGE_CEILING = 504
 const MODULES = ['wrong-book-value-view.js', 'wrong-book-item-view.js',
   'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js',
   'wrong-book-selection-flow.js', 'wrong-book-batch-flow.js', 'wrong-book-batch-undo.js',
   'wrong-book-lifecycle.js', 'wrong-book-navigation-flow.js',
-  'wrong-book-ai-state.js', 'wrong-book-ai-persistence.js']
+  'wrong-book-ai-state.js', 'wrong-book-ai-persistence.js',
+  'wrong-book-ai-request-flow.js', 'wrong-book-ai-interaction.js']
 const REQUEST_DELEGATES = {
   "_beginFilterReload": "_beginFilterReload(patch) {\nreturn requestFlow._beginFilterReload(this, patch)\n}",
   "_loadPage": "async _loadPage() {\nreturn requestFlow._loadPage(this)\n}",
@@ -83,7 +84,22 @@ const AI_STATE_DELEGATES = {
   "_commitAiDiagnosisContent": "_commitAiDiagnosisContent(normalized) {\nreturn aiPersistence._commitAiDiagnosisContent(this, normalized, { diagnosisCache: aiCache })\n}",
   "_buildAiInsightDetails": "_buildAiInsightDetails(diagnosis) {\nreturn aiState._buildAiInsightDetails(diagnosis)\n}"
 }
+const AI_REQUEST_DELEGATES = {
+  "_checkAiDiagnosis": "async _checkAiDiagnosis() {\nreturn aiRequestFlow._checkAiDiagnosis(this, { diagnosisCache: aiCache })\n}",
+  "_delay": "_delay(ms) {\nreturn aiRequestFlow._delay(ms)\n}",
+  "_pollAiDiagnosis": "async _pollAiDiagnosis(initial, requestId) {\nreturn aiRequestFlow._pollAiDiagnosis(this, initial, requestId, { requestClient: api, timeoutMs: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })\n}",
+  "ensureAiDiagnosis": "async ensureAiDiagnosis(options) {\nreturn aiRequestFlow.ensureAiDiagnosis(this, options, { diagnosisCache: aiCache })\n}",
+  "_requestAiDiagnosis": "async _requestAiDiagnosis(opts) {\nreturn aiRequestFlow._requestAiDiagnosis(this, opts)\n}",
+  "_executeAiDiagnosisRequest": "async _executeAiDiagnosisRequest(opts, hasData, requestId) {\nreturn aiRequestFlow._executeAiDiagnosisRequest(this, opts, hasData, requestId)\n}",
+  "_fetchAiDiagnosisData": "async _fetchAiDiagnosisData(opts, requestId) {\nreturn aiRequestFlow._fetchAiDiagnosisData(this, opts, requestId, { requestClient: api, timeoutMs: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })\n}",
+  "_applyAiDiagnosisResult": "_applyAiDiagnosisResult(diagnosis, hasData) {\nreturn aiRequestFlow._applyAiDiagnosisResult(this, diagnosis, hasData)\n}",
+  "_handleAiDiagnosisError": "_handleAiDiagnosisError(e, opts, hasData, requestId) {\nreturn aiRequestFlow._handleAiDiagnosisError(this, e, opts, hasData, requestId, { getPlatform: () => wx })\n}",
+  "toggleAiInsight": "async toggleAiInsight() {\nreturn aiInteraction.toggleAiInsight(this, { getPlatform: () => wx })\n}",
+  "refreshAiDiagnosis": "refreshAiDiagnosis() {\nreturn aiInteraction.refreshAiDiagnosis(this, { getPlatform: () => wx })\n}",
+  "onAiFeedback": "async onAiFeedback() {\nreturn aiInteraction.onAiFeedback(this, { requestClient: api, getPlatform: () => wx })\n}"
+}
 const DELEGATES = {
+  ...AI_REQUEST_DELEGATES,
   ...AI_STATE_DELEGATES,
   ...LIFECYCLE_DELEGATES,
   ...BATCH_DELEGATES,
