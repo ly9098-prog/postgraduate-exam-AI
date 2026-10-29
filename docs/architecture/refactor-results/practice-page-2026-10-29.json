@@ -1,0 +1,95 @@
+{
+  "batch": "practice-page-2026-10-29",
+  "behavior_baseline": "4593692e229e5ec325830436fe28009b329b1eee",
+  "commit_parent": "a61c214680d4da69fb1f024b05426ab5c29704ed",
+  "scope": "practice remaining page responsibilities; one page batch",
+  "page_lines": {
+    "before": 1212,
+    "after": 542
+  },
+  "new_modules": {
+    "practice-lifecycle-flow.js": 209,
+    "practice-exit-page-adapter.js": 115,
+    "practice-submit-page-adapter.js": 174,
+    "practice-launch-flow.js": 112,
+    "practice-question-page-adapter.js": 215,
+    "practice-subject-page-adapter.js": 57
+  },
+  "migrated_methods": 42,
+  "unchanged_page_properties": 71,
+  "registered_page_properties": 113,
+  "verification": {
+    "original_contracts": 37,
+    "current_contracts": 37,
+    "targeted_practice_tests": 495,
+    "full_node": {
+      "passed": 2466,
+      "failed": 0,
+      "scope": "Business source and original five boundary tests; followed by gate-only review fixes verified separately"
+    },
+    "render": {
+      "fixtures": 5,
+      "passed": 31
+    },
+    "architecture_gates": 9,
+    "inverse_ast_bodies": 41,
+    "separately_verified_wiring_methods": 1,
+    "controller_port_comparisons": 9312,
+    "syntax": "passed",
+    "visual_math": "passed",
+    "ci_yaml": "passed",
+    "diff": "passed",
+    "protected_paths": 21,
+    "targeted_practice_tests_scope": "Before gate-only review fixes; business source unchanged afterward",
+    "review_incremental": {
+      "boundary_tests": 7,
+      "architecture_gates": 9,
+      "business_source_changed": false,
+      "status": "passed"
+    }
+  },
+  "commands": [
+    "PRACTICE_PAGE_SOURCE=/tmp/practice-page-batch/before.js node --test tests/test-practice-page-contracts.js",
+    "node --test tests/test-practice*.js",
+    "node --test tests/*.js",
+    "node tests/render_regression/run.js",
+    "node scripts/architecture/page-budgets.js",
+    "node scripts/architecture/learning-controller-budgets.js",
+    "node scripts/architecture/pomodoro-boundaries.js",
+    "node scripts/architecture/exam-runner-boundaries.js",
+    "node scripts/architecture/review-today-boundaries.js",
+    "node scripts/architecture/practice-result-boundaries.js",
+    "node scripts/architecture/practice-boundaries.js",
+    "node scripts/architecture/wrong-book-boundaries.js",
+    "node scripts/architecture/wrong-detail-boundaries.js",
+    "node scripts/test-wrong-detail-ai-visual.js",
+    "node scripts/test-wrong-detail-ai-math.js",
+    "node --check <affected JavaScript files>",
+    "git diff --check"
+  ],
+  "evidence_directory": "/tmp/practice-page-batch",
+  "limitations": [
+    "VM/Node mocks do not verify real WeChat compilation, simulator or device",
+    "External AI/OCR/network and complete learning flow not accepted",
+    "Controller-port comparison normalizes this/page names in engine TypeError diagnostics; no exact runtime diagnostic-text parity claim"
+  ],
+  "review": {
+    "status": "all findings closed; independent incremental recheck passed",
+    "findings": {
+      "P3": 2
+    },
+    "fixes": [
+      "Validate six unique const require bindings and paths",
+      "Reject direct module imports, platform globals and dynamic execution in injected modules"
+    ]
+  },
+  "business_source_sha256": {
+    "miniprogram/subpackages/study/practice/practice.js": "e894ae1c5442222dbe0a9678272ed46672ee9ad144dc50af613094e1d30b58a4",
+    "miniprogram/subpackages/study/practice/utils/practice-subject-page-adapter.js": "1b60d8b6a2fa4a1fd4cccb16f66af858b2b6927196f51df4b11ed7c024407ca2",
+    "miniprogram/subpackages/study/practice/utils/practice-exit-page-adapter.js": "848956597d10d704d0bb4625ef37c6677752e9f119b38c95f90dd5b948ea3a2a",
+    "miniprogram/subpackages/study/practice/utils/practice-question-page-adapter.js": "f9e82c3961b8df9171e44b9843c496b608d720100ea82746a83a8236bf9a4562",
+    "miniprogram/subpackages/study/practice/utils/practice-submit-page-adapter.js": "b54a06d9a233dbb515e7f2f15dec832f6842c4c1fb374216a5e127082c5d2713",
+    "miniprogram/subpackages/study/practice/utils/practice-lifecycle-flow.js": "5643492327c58fa8776c15326cd6d127f0a653a4ffc5ead04e4dfd12f4bcb18c",
+    "miniprogram/subpackages/study/practice/utils/practice-launch-flow.js": "edbafe135e1ca585e4ff5d1255d729a4314fc979fed0dc8ed6634ce3b965669c"
+  }
+}

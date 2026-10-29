@@ -314,3 +314,16 @@
 - 按当前 `reliability.yml` 的小程序步骤（264 行命令，含新增两项）本机精确重放：退出码 0、
   0 个 `not ok`、14,158 行输出、23.2 秒；本机重放不等于远端 CI。仍未执行真实微信开发者工具、
   模拟器或真机验收，也未验证结果页在真机上的排版与交互。
+
+
+## 23. Practice 页面剩余职责收敛（2026-10-29）
+
+本批以整个 practice 页面为交付范围，统一处理科目配置、返回与退出、题目交互、提交恢复四组 controller 能力装配，以及生命周期和启动预设编排。原 controller、纯规则与已有生命周期/计时/科目请求适配器继续复用；Page 保留声明、依赖注入和薄入口。未更改 WXML/WXSS、路由、存储键、API 或业务行为。
+
+- 六个职责模块为 `practice-subject-page-adapter`、`practice-exit-page-adapter`、`practice-question-page-adapter`、`practice-submit-page-adapter`、`practice-lifecycle-flow` 和 `practice-launch-flow`。controller 惰性实例字段与跨调用身份保持，page/session/data 和平台方法继续在原调用时刻读取；导入的 helper、对象和构造器仍从原页面注入。
+- 生命周期保留原序号/flag/会话重置、render guard 与 hook 顺序、timer 清理及同步失败后的部分状态。ready 保留等待恢复、快速启动后当前存活判断、科目静默补载非等待且捕获拒绝的原边界；未新增取消或回滚逻辑。
+- 启动预设保留原对象修改、subjectCode 回填、科目不可用和定向题 mode 校验、override 写入、setData callback 后计算字段及最近科目记录顺序。手动配置清空的 override 字段集、请求参数字段顺序及默认科目存储回退不变。
+- 退出/暂停/交卷/恢复仍由既有 controller 决策；平台 receiver、当前 helper、确认组件返回身份、timer/请求序号写回和恢复 await 后状态判定保持。题目加载 controller 保留首次装配时的平台对象捕获，后续返回缓存实例；其他原动态平台 callback 使用 getter 保留调用时读取。
+- `practice-boundaries.js` 按实际 Page 直接属性逐项验证注册顺序、数量和 token 模板，拒绝未知/重复/spread/别名或委托漂移，字符串内部空白不会被忽略。模块/函数继续受现有预算门禁约束；六个页面 require 绑定按 const/路径/次数核对，职责模块拒绝新增导入、裸平台引用和动态执行。独立审查发现的两处门禁缺口已补检查及负例，业务实现未改变；CI 注册新门禁与契约，原 UI 测试夹具更新模块加载路径。
+
+本轮剩余职责提取与入口登记完成。验收命令、数字、模块行数和证据限制统一见 `refactor-results/practice-page-2026-10-29.json`；临时原页及对照脚本位于该清单的 evidence_directory，不重跑 extract.js。对照包含原页契约、逆变换 AST token、全部原声明顺序及 controller 端口状态/轨迹；引擎 TypeError 的 this/page 名称归一化，未宣称错误诊断文本逐字一致。未执行真实微信开发者工具、模拟器或真机，也未验收真实网络/外部AI及完整学习闭环。

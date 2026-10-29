@@ -7,7 +7,7 @@ const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typesc
 
 const PAGES = {
   'pages/pomodoro/pomodoro.js': 1596,
-  'subpackages/study/practice/practice.js': 1212,
+  'subpackages/study/practice/practice.js': 542,
   'subpackages/study/practice-result/index.js': 823,
   'subpackages/study/wrong-book/wrong-book.js': 478,
   'subpackages/study/wrong-detail/wrong-detail.js': 502,

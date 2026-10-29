@@ -177,6 +177,9 @@ const wxCalls = []
 const context = {
   Page: definition => { pageDefinition = definition },
   require: name => {
+    if (/^\.\/utils\/practice-(subject-page-adapter|exit-page-adapter|question-page-adapter|submit-page-adapter|lifecycle-flow|launch-flow)$/.test(name)) {
+      return require(path.join(root, 'subpackages/study/practice', name + '.js'))
+    }
     if (name === './utils/exit-request-controller') {
       return require(path.join(root, 'subpackages/study/practice/utils/exit-request-controller.js'))
     }

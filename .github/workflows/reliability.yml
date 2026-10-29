@@ -377,6 +377,7 @@ jobs:
           node miniprogram/scripts/architecture/exam-runner-boundaries.js
           node miniprogram/scripts/architecture/review-today-boundaries.js
           node miniprogram/scripts/architecture/practice-result-boundaries.js
+          node miniprogram/scripts/architecture/practice-boundaries.js
           node miniprogram/scripts/architecture/wrong-book-boundaries.js
           node miniprogram/scripts/architecture/wrong-detail-boundaries.js
           node --test miniprogram/tests/test-page-budgets.js
@@ -513,6 +514,8 @@ jobs:
           node --test miniprogram/tests/test-practice-subject-selection-controller.js
           node --test miniprogram/tests/test-practice-launch-return-controller.js
           node --test miniprogram/tests/test-practice-exit-guard-controller.js
+          node --test miniprogram/tests/test-practice-page-contracts.js
+          node --test miniprogram/tests/test-practice-module-boundaries.js
           node --test miniprogram/tests/test-practice-exit-request-controller.js
           node --test miniprogram/tests/test-practice-paused-confirm-controller.js
           node --test miniprogram/tests/test-practice-submitted-result-controller.js
