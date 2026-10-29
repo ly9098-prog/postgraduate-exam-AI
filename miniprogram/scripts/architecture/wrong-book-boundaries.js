@@ -6,10 +6,19 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-book/wrong-book.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-book/utils'
-const PAGE_CEILING = 1306
+const PAGE_CEILING = 1141
 const MODULES = ['wrong-book-value-view.js', 'wrong-book-item-view.js',
-  'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js']
+  'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js']
+const REQUEST_DELEGATES = {
+  "_beginFilterReload": "_beginFilterReload(patch) {\nreturn requestFlow._beginFilterReload(this, patch)\n}",
+  "_loadPage": "async _loadPage() {\nreturn requestFlow._loadPage(this)\n}",
+  "loadStats": "async loadStats() {\nreturn requestFlow.loadStats(this, { requestClient: api })\n}",
+  "loadList": "async loadList(reset = false) {\nreturn requestFlow.loadList(this, reset, { requestClient: api })\n}",
+  "loadTaskFlow": "async loadTaskFlow() {\nreturn requestFlow.loadTaskFlow(this, { requestClient: api })\n}",
+  "loadSubjects": "async loadSubjects() {\nreturn requestFlow.loadSubjects(this, { requestClient: api })\n}"
+}
 const DELEGATES = {
+  ...REQUEST_DELEGATES,
   "_flattenSubjectOptions": "_flattenSubjectOptions(raw) {\nreturn flattenSubjectOptions(raw)\n}",
   "_decorateItem": "_decorateItem(item) {\nreturn decorateItem(item, buildItemViewCapabilities(this))\n}",
   "_resolveReviewCount": "_resolveReviewCount(item) {\nreturn resolveReviewCount(item, buildItemViewCapabilities(this))\n}",
@@ -105,5 +114,5 @@ if (require.main === module) {
     console.error(result.errors.join('\n'))
     process.exitCode = 1
   } else console.log('Wrong-book boundaries passed: ' + result.pageLines + ' page lines, ' +
-    result.modules + ' projection/adapter modules, ' + result.delegates + ' delegates')
+    result.modules + ' modules, ' + result.delegates + ' delegates')
 }

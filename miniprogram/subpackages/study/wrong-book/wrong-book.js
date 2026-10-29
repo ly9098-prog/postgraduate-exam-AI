@@ -24,6 +24,7 @@ const { masteryProgress, positiveNumber, subjectLabel, errorTypeLabel, timeLabel
 const { decorateItem, resolveReviewCount, resolveItemStatus, resolveItemContent, buildDecoratedItem, flattenSubjectOptions, buildTaskGroups } = require('./utils/wrong-book-item-view')
 const { buildAnalysis, buildSummaryCards, buildActionPlan, rowsFromStats, countsFromList, topItems, toPercentItems, radarPolygonStyle, radarAxisText, focusInsight } = require('./utils/wrong-book-analysis-view')
 const { buildItemViewCapabilities, buildAnalysisViewCapabilities } = require('./utils/wrong-book-view-page-adapter')
+const requestFlow = require('./utils/wrong-book-request-flow')
 Page({
 data: {
 list: [],
@@ -114,25 +115,7 @@ if (this.data.dateTo) params.date_to = this.data.dateTo
 return params
 },
 _beginFilterReload(patch) {
-this._listRequestSeq++
-this._taskFlowRequestSeq++
-this.setData(Object.assign({
-list: [],
-listTotal: 0,
-page: 1,
-hasMore: false,
-loading: true,
-listError: '',
-taskGroups: [],
-ungroupedCount: 0,
-selectedIds: [],
-selectedIdMap: {},
-selectedCount: 0,
-allVisibleSelected: false,
-batchMoreVisible: false,
-}, patch || {}))
-this._updateFilterCount()
-this.loadList(true)
+return requestFlow._beginFilterReload(this, patch)
 },
 _ready: false,
 _alive: false,
@@ -253,13 +236,7 @@ exportUnavailableText: exportApi.getExportCapabilityErrorMessage(error),
 }
 },
 async _loadPage() {
-this.setData({ list: [], page: 1 })
-await Promise.all([
-this.loadStats(),
-this.loadList(true),
-])
-if (this._destroyed) return
-await this._checkAiDiagnosis()
+return requestFlow._loadPage(this)
 },
 _getAiAutoSettingKey() {
 const userId = this._getUserId()
@@ -336,158 +313,16 @@ aiInsightText: this._oneLineInsight(cache.data.summary) || this.data.aiInsightTe
 }
 },
 async loadStats() {
-const requestSeq = ++this._statsRequestSeq
-try {
-const stats = await api.get('/wrong-questions/stats', { product_scope: 'exam408' })
-if (this._destroyed || requestSeq !== this._statsRequestSeq) return
-this._aiStatsLoaded = true
-const masteredCount = typeof stats.unmastered === 'number'
-? Math.max(0, (stats.total || 0) - stats.unmastered)
-: this.data.list.filter(item => item._isMastered).length
-const primaryStatCount = typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0)
-const patch = {
-stats,
-primaryStatCount,
-masteredCount,
-highFrequencyCount: this._positiveNumber(
-stats.high_frequency_count,
-this.data.highFrequencyCount || 0
-),
-}
-this.setData(patch)
-const hasFilter = this._hasFilters()
-if (!hasFilter && this.data.list.length > 0) {
-const analysis = this._buildAnalysis(stats, this.data.list)
-this.setData({
-analysis,
-aiInsightText: this.data.aiDiagnosis
-? this._oneLineInsight(this.data.aiDiagnosis.summary)
-: this._getAiInsightIdleText(this.data.autoAiInsightEnabled),
-})
-}
-} catch (e) {
-if (this._destroyed || requestSeq !== this._statsRequestSeq) return
-console.error('加载错题统计失败', e)
-}
+return requestFlow.loadStats(this, { requestClient: api })
 },
 async loadList(reset = false) {
-const previousRange = `${this.data.dateFrom}/${this.data.dateTo}`
-this._syncDateFilter()
-if (previousRange !== `${this.data.dateFrom}/${this.data.dateTo}`) {
-reset = true
-this._taskFlowRequestSeq++
-}
-const page = reset ? 1 : this.data.page
-const seq = ++this._listRequestSeq
-this.setData({ loading: true, listError: '' })
-try {
-const params = Object.assign({ page, page_size: 20 }, this._filterParams())
-const data = await api.get('/wrong-questions', params)
-if (seq !== this._listRequestSeq || !this._alive) return
-const items = (data.items || []).map(item => this._decorateItem(item))
-const nextList = reset ? items : (this.data.list || []).concat(items)
-const hasFilter = this._hasFilters()
-const statsForAnalysis = hasFilter ? {} : (this.data.stats || {})
-if (seq !== this._listRequestSeq || !this._alive) return
-const analysis = this._buildAnalysis(statsForAnalysis, nextList)
-const taskVm = this._buildTaskGroups(nextList)
-const statsHighFrequency = Number((this.data.stats || {}).high_frequency_count)
-const highFrequencyCount = Number.isFinite(statsHighFrequency)
-? Math.max(0, Math.round(statsHighFrequency))
-: nextList.filter(item => !item._isMastered && item._wrongCount >= 3).length
-this.setData({
-list: nextList,
-listTotal: Math.max(0, Number(data.total) || 0),
-analysis,
-taskGroups: taskVm.groups,
-ungroupedCount: taskVm.ungroupedCount,
-highFrequencyCount,
-aiInsightText: this.data.aiDiagnosis
-? this._oneLineInsight(this.data.aiDiagnosis.summary)
-: this._getAiInsightIdleText(this.data.autoAiInsightEnabled),
-hasMore: page < data.total_pages,
-page: reset ? 2 : page + 1,
-loading: false,
-})
-this._syncSelectionState()
-if (reset) this.loadTaskFlow()
-} catch (e) {
-console.error('加载错题列表失败', e)
-if (seq === this._listRequestSeq && this._alive) {
-this.setData({ loading: false, listError: api.getErrorMessage(e) })
-}
-}
+return requestFlow.loadList(this, reset, { requestClient: api })
 },
 async loadTaskFlow() {
-const requestSeq = ++this._taskFlowRequestSeq
-const params = Object.assign({ preview_size: 3 }, this._filterParams())
-try {
-const data = await api.get('/wrong-questions/task-flow', params)
-if (this._destroyed || !this._alive || requestSeq !== this._taskFlowRequestSeq) return
-const meta = {
-today_due: { desc: '基于复习计划，今天最值得先做的题', icon: '今', tone: 'lime' },
-high_frequency: { desc: '重复出错次数较多，建议集中攻克', icon: '频', tone: 'orange' },
-recent_added: { desc: '近 14 天新加入错题本的题目', icon: '新', tone: 'blue' },
-to_consolidate: { desc: '尚未到复习日，但仍未完全掌握', icon: '固', tone: 'neutral' },
-mastered: { desc: '已达到掌握标准，不再进入正常复习；再次答错会重新加入', icon: '✓', tone: 'green' },
-}
-const groups = (data.groups || []).map(group => {
-const cfg = meta[group.key] || { desc: '', icon: '·', tone: 'neutral' }
-return {
-key: group.key,
-title: group.title || '',
-total: Math.max(0, Number(group.total) || 0),
-items: (group.items || []).map(item => this._decorateItem(item)),
-desc: cfg.desc,
-icon: cfg.icon,
-tone: cfg.tone,
-}
-}).filter(group => group.total > 0 || group.items.length > 0)
-const summary = data.summary || {}
-const totalCount = Math.max(0, Number(summary.total_count) || 0)
-const previewCount = groups.reduce((sum, group) => sum + group.items.length, 0)
-const hasFilter = this._hasFilters()
-const globalHighFrequency = Number((this.data.stats || {}).high_frequency_count)
-const highFrequencyCount = Number.isFinite(globalHighFrequency)
-? Math.max(0, Math.round(globalHighFrequency))
-: (!hasFilter
-? Math.max(0, Number(summary.high_frequency_count) || 0)
-: this._positiveNumber(this.data.highFrequencyCount, 0))
-this.setData({
-taskGroups: groups,
-ungroupedCount: Math.max(0, totalCount - previewCount),
-highFrequencyCount,
-})
-this._syncSelectionState()
-} catch (e) {
-if (this._destroyed || requestSeq !== this._taskFlowRequestSeq) return
-console.warn('加载错题任务流失败，保留当前列表分组兜底', e)
-}
+return requestFlow.loadTaskFlow(this, { requestClient: api })
 },
 async loadSubjects() {
-if (this.data.subjectsLoading) return
-const requestSeq = ++this._subjectsRequestSeq
-this.setData({ subjectsLoading: true, subjectsError: false })
-try {
-const raw = await api.get('/practice/subjects')
-if (this._destroyed || requestSeq !== this._subjectsRequestSeq) return
-const subjects = this._flattenSubjectOptions(raw)
-this.setData({
-subjects: [{ value: '', label: '全部' }].concat(subjects),
-subjectsLoading: false,
-subjectsError: false,
-subjectsLoaded: true,
-})
-} catch (e) {
-if (this._destroyed || requestSeq !== this._subjectsRequestSeq) return
-console.error('加载学科筛选失败', e)
-this.setData({
-subjects: [{ value: '', label: '全部' }],
-subjectsLoading: false,
-subjectsError: true,
-subjectsLoaded: false,
-})
-}
+return requestFlow.loadSubjects(this, { requestClient: api })
 },
 _flattenSubjectOptions(raw) {
 return flattenSubjectOptions(raw)
