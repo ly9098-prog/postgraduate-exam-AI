@@ -19,6 +19,7 @@ import re
 import time
 import uuid
 from datetime import datetime
+from functools import partial
 from typing import Any
 
 from app.core.document_ir import DocumentIR
@@ -70,8 +71,15 @@ from app.features.pipeline_chunked_result import (
     project_chunked_result,
 )
 from app.features.pipeline_chunked_state import ChunkedRunState
+from app.features.pipeline_cross_page_merge import (
+    apply_cross_page_block_merge,
+    merge_cross_page_blocks,
+)
 from app.features.pipeline_extract_stage import run_extract_stage
+from app.features.pipeline_freeze_comparison import compare_freeze_results
 from app.features.pipeline_freeze_orchestration import run_structure_freeze_mode
+from app.features.pipeline_freeze_rebinding import remap_frozen_registry
+from app.features.pipeline_frozen_options import apply_frozen_options
 from app.features.pipeline_ocr_router_config import build_router_config
 from app.features.pipeline_ocr_router_stage import run_ocr_router_stage
 from app.features.pipeline_resume_context import (
@@ -89,6 +97,7 @@ from app.features.pipeline_resume_result import finalize_resume
 from app.features.pipeline_resume_state import ResumeRunState
 from app.features.pipeline_single_pass_stage import run_single_pass
 from app.features.pipeline_split_stage import run_split_stage
+from app.features.pipeline_split_state import resolve_split_port
 from app.features.pipeline_stage_completion import complete_stage_data  # noqa: F401
 from app.features.pipeline_stages._helpers import _log_multi_blank_stage  # noqa: F401
 from app.features.pipeline_stages.code_language_noise_layer import (
@@ -275,129 +284,7 @@ def _apply_frozen_options(
     freeze_checksum: str | None = None,
     normalized_blocks: list[dict] | None = None,
 ) -> None:
-    """Enrich raw_questions with frozen option data from the freeze stage.
-
-    This is the SINGLE SOURCE OF TRUTH for options. When frozen options
-    are found for a question, they REPLACE the option_lines entirely
-    (no merge with regex-extracted options). ``is_frozen`` is set to
-    ``True`` so downstream stages know not to re-extract or modify
-    options.
-
-    Uses exact page + block_index mapping (NO option-value substring matching).
-    For each question, determines which normalized blocks it spans by matching
-    block text content against the question's raw_text (both from the same
-    ``normalized_blocks`` source), then looks up ``page:block_index`` keys
-    in the frozen_option_registry.
-
-    Mutates ``raw_questions`` in place.
-    """
-    if not frozen_option_registry:
-        return
-
-    # IMPORT: checksum function at module top (not inline)
-    from app.features.pipeline_stages.structure_freeze_stage import (
-        _compute_freeze_checksum as _verify_checksum,
-    )
-
-    # ── Checksum verification (best-effort, always logged on failure) ──
-    if freeze_checksum and len(frozen_option_registry) > 0:
-        try:
-            _plain: dict = {}
-            for _k, _v in frozen_option_registry.items():
-                _plain[_k] = dict(_v)
-            _actual = _verify_checksum(_plain)
-            if _actual != freeze_checksum:
-                logger.warning(
-                    "[FREEZE] checksum MISMATCH in _apply_frozen_options: "
-                    "expected=%s actual=%s — frozen data may have been modified!",
-                    freeze_checksum,
-                    _actual,
-                )
-        except Exception as exc:
-            logger.warning(
-                "[FREEZE] checksum verification failed: %s",
-                exc,
-            )
-
-    # ── Build block text index: {page: {block_index: text}} ──
-    # Used to map each question to the specific blocks it spans.
-    block_index_by_page: dict[int, dict[int, str]] = {}
-    if normalized_blocks:
-        for b in normalized_blocks:
-            p = b.get("page", 0)
-            bi = b.get("block_index", 0)
-            txt = (b.get("normalized_text") or b.get("text", "")).strip()
-            if txt:
-                block_index_by_page.setdefault(p, {})[bi] = txt
-
-    applied_count = 0
-    for q in raw_questions:
-        q_text = q.get("raw_question_text") or ""
-        q_page_start = q.get("page_start", 1)
-        q_page_end = q.get("page_end", q_page_start)
-        if not q_text:
-            continue
-
-        # ── Find which blocks this question spans ──
-        # For each page in the question's page range, check each block:
-        # if the block's text appears in the question's raw_text, that block
-        # contributed to this question. This is exact content matching — both
-        # come from the same normalized_blocks source.
-        question_block_keys: set[str] = set()
-        for p in range(q_page_start, q_page_end + 1):
-            if p not in block_index_by_page:
-                continue
-            for bi, block_text in block_index_by_page[p].items():
-                registry_key = f"{p}:{bi}"
-                if registry_key not in frozen_option_registry:
-                    continue  # no frozen options in this block → skip
-                if block_text in q_text:
-                    question_block_keys.add(registry_key)
-
-        if not question_block_keys:
-            continue
-
-        # ── Collect frozen options from matching blocks ──
-        frozen_matches: dict[str, str] = {}
-        for registry_key in sorted(question_block_keys):
-            opts = frozen_option_registry.get(registry_key, {})
-            for key, text in opts.items():
-                if text and key not in frozen_matches:
-                    frozen_matches[str(key)] = str(text)
-
-        if frozen_matches:
-            # ── AUTHORITATIVE REPLACEMENT ──
-            # Frozen options COMPLETELY REPLACE option_lines. Any options that
-            # the freeze stage didn't detect are not included, ensuring zero
-            # contamination from regex extraction.
-            q["option_lines"] = dict(frozen_matches)
-            q["has_options"] = True
-            q["is_frozen"] = True
-            applied_count += 1
-            logger.debug(
-                "[FREEZE] applied frozen options to q%s (page %s, blocks=%s): %s",
-                q.get("number", "?"),
-                q_page_start,
-                sorted(question_block_keys),
-                sorted(frozen_matches.keys()),
-            )
-        elif not q.get("is_frozen"):
-            pass
-
-    if applied_count:
-        logger.info(
-            "[FREEZE] applied frozen options to %d/%d questions",
-            applied_count,
-            len(raw_questions),
-        )
-    elif raw_questions:
-        logger.info(
-            "[FREEZE] zero questions matched from %d normalized blocks, "
-            "%d registry entries, %d raw questions",
-            len(normalized_blocks or []),
-            len(frozen_option_registry),
-            len(raw_questions),
-        )
+    return apply_frozen_options(raw_questions, frozen_option_registry, freeze_checksum, normalized_blocks, ports=partial(resolve_split_port, globals()))
 
 
 # ---------------------------------------------------------------------------
@@ -434,96 +321,7 @@ def _compare_freeze_results(
     legacy_registry: dict[str, dict[str, str]],
     ir_registry: dict[str, list[FrozenOptionEntry]],
 ) -> dict:
-    """Compare legacy and IR freeze results for dual mode diagnostics.
-
-    Compares at the option level: flattened (key, text) pairs. Also
-    reports per-binding differences.
-
-    Returns:
-        Diagnostics dict with comparison metrics and difference list.
-    """
-    # ── Flatten legacy options ──
-    legacy_opts: set[tuple[str, str]] = set()
-    for _key, opts in legacy_registry.items():
-        for k, v in opts.items():
-            legacy_opts.add((k, str(v).strip()))
-
-    # ── Flatten IR options ──
-    ir_opts: set[tuple[str, str]] = set()
-    for _rid, entries in ir_registry.items():
-        for entry in entries:
-            ir_opts.add((entry.option_key, entry.original_text.strip()))
-
-    # ── Comparison ──
-    common = legacy_opts & ir_opts
-    only_legacy = legacy_opts - ir_opts
-    only_ir = ir_opts - legacy_opts
-
-    differences: list[dict] = []
-    for key, text in sorted(only_legacy):
-        differences.append(
-            {
-                "type": "only_in_legacy",
-                "option_key": key,
-                "legacy_text": text,
-                "ir_text": "",
-            }
-        )
-    for key, text in sorted(only_ir):
-        differences.append(
-            {
-                "type": "only_in_ir",
-                "option_key": key,
-                "ir_text": text,
-                "legacy_text": "",
-            }
-        )
-
-    # ── Text mismatch for shared keys ──
-    legacy_by_key: dict[str, str] = {}
-    for k, v in legacy_opts:
-        legacy_by_key.setdefault(k, v)
-    ir_by_key: dict[str, str] = {}
-    for k, v in ir_opts:
-        ir_by_key.setdefault(k, v)
-
-    text_mismatches = 0
-    for k in sorted(set(legacy_by_key.keys()) & set(ir_by_key.keys())):
-        lt = legacy_by_key[k].strip()
-        it = ir_by_key[k].strip()
-        if lt != it:
-            text_mismatches += 1
-            differences.append(
-                {
-                    "type": "text_mismatch",
-                    "option_key": k,
-                    "legacy_text": lt,
-                    "ir_text": it,
-                }
-            )
-
-    option_key_match = len(only_legacy) == 0 and len(only_ir) == 0
-    option_text_match = text_mismatches == 0
-
-    # ── Binding lost count (IR side) ──
-    binding_lost_count = 0
-    for _rid, entries in ir_registry.items():
-        for entry in entries:
-            if entry.binding_status == "binding_lost":
-                binding_lost_count += 1
-
-    return {
-        "freeze_mode": "dual",
-        "legacy_option_count": len(legacy_opts),
-        "ir_option_count": len(ir_opts),
-        "common_option_count": len(common),
-        "option_key_match": option_key_match,
-        "option_text_match": option_text_match,
-        "binding_lost_count": binding_lost_count,
-        "differences_count": len(differences),
-        "differences": differences[:50],  # cap at 50 for diagnostics
-        "differences_truncated": max(0, len(differences) - 50),
-    }
+    return compare_freeze_results(legacy_result, ir_result, legacy_registry, ir_registry, ports=partial(resolve_split_port, globals()))
 
 
 def _safe_hash_preview(data: list[dict]) -> dict:
@@ -560,140 +358,14 @@ def _remap_frozen_registry_vl_rebuild(
     old_registry: dict,
     rebuilt_blocks: list[dict],
 ) -> dict:
-    """Re-map frozen option registry after VL block rebuild.
-
-    Matches frozen options to rebuilt blocks by option key and text content.
-    Unmatched options are marked ``binding_lost`` explicitly.
-
-    Returns:
-        dict with keys:
-        - ``registry``: remapped frozen option registry (same format as input)
-        - ``binding_lost_questions``: list[str] of question keys with binding loss
-        - ``binding_lost_option_keys``: list[tuple(str,str)] of (qkey, opt_key) with loss
-    """
-    if not old_registry:
-        return {
-            "registry": {},
-            "binding_lost_questions": [],
-            "binding_lost_option_keys": [],
-        }
-
-    # Build a text index of rebuilt blocks: option_key → texts found in block
-    rebuilt_texts: dict[str, list[str]] = {}
-    for block in rebuilt_blocks:
-        text = str(block.get("normalized_text", "") or "")
-        lines = text.split("\n")
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            # Try to extract option key from line ("A. content", "B. content")
-            for opt_key in ("A", "B", "C", "D", "E", "F"):
-                if line.startswith(f"{opt_key}.") or line.startswith(f"{opt_key}、"):
-                    rebuilt_texts.setdefault(opt_key, []).append(line)
-
-    new_registry: dict = {}
-    binding_lost_questions: list[str] = []
-    binding_lost_option_keys: list[tuple[str, str]] = []
-
-    for question_key, entries in old_registry.items():
-        if isinstance(entries, dict):
-            # Legacy format: {option_key: text}
-            new_opts: dict[str, str] = {}
-            lost_keys: list[str] = []
-            for opt_key, opt_text in entries.items():
-                found = False
-                if opt_key in rebuilt_texts:
-                    for found_line in rebuilt_texts[opt_key]:
-                        if opt_text.strip() in found_line or found_line in opt_text:
-                            new_opts[opt_key] = opt_text
-                            found = True
-                            break
-                if not found:
-                    # EXPLICIT binding_lost: preserve content but mark as lost
-                    new_opts[opt_key] = opt_text
-                    lost_keys.append(opt_key)
-                    binding_lost_option_keys.append((question_key, opt_key))
-            new_registry[question_key] = new_opts
-            if lost_keys:
-                binding_lost_questions.append(question_key)
-        elif isinstance(entries, list):
-            # FrozenOptionEntry format
-            new_entries = list(entries)
-            for entry in new_entries:
-                if (
-                    hasattr(entry, "binding_status")
-                    and getattr(entry, "binding_status", "") == "binding_lost"
-                ):
-                    binding_lost_questions.append(question_key)
-            new_registry[question_key] = new_entries
-        else:
-            new_registry[question_key] = entries
-
-    return {
-        "registry": new_registry,
-        "binding_lost_questions": list(set(binding_lost_questions)),
-        "binding_lost_option_keys": list(set(binding_lost_option_keys)),
-    }
+    return remap_frozen_registry(old_registry, rebuilt_blocks, ports=partial(resolve_split_port, globals()))
 
 
 def _merge_cross_page_blocks(
     blocks: list[dict],
     doc_ir: Any = None,
 ) -> tuple[list[dict], list[dict], list[str], list[dict]]:
-    """Detect cross-page links and merge linked page content into blocks.
-
-    Returns (merged_blocks, cross_page_links, warnings, merge_results).
-    merge_results is a list of serialized CrossPageMergeResult dicts.
-    """
-    warnings: list[str] = []
-    cross_page_links: list[dict] = []
-    merge_results: list[dict] = []
-
-    # Workbooks with exactly one self-contained question per page have no real
-    # cross-page continuations; the heuristic falsely merges every page pair.
-    # Env DISABLE_CROSS_PAGE_MERGING=1 turns it off (cs_ds.pdf case).
-    if os.environ.get("DISABLE_CROSS_PAGE_MERGING", "") == "1":
-        return blocks, cross_page_links, warnings, merge_results
-
-    if len(blocks) < 2:
-        return blocks, cross_page_links, warnings, merge_results
-
-    if doc_ir is None:
-        doc_ir = _get_blocks_document_ir(blocks)
-
-    if doc_ir is None or not hasattr(doc_ir, "pages") or not doc_ir.pages:
-        return blocks, cross_page_links, warnings, merge_results
-
-    try:
-        from app.features.cross_page_linking import detect_cross_page_links
-
-        links = detect_cross_page_links(doc_ir.pages)
-        if not links:
-            return blocks, cross_page_links, warnings, merge_results
-
-        cross_page_links = [link.to_dict() for link in links]
-        if hasattr(doc_ir, "cross_page_links"):
-            doc_ir.cross_page_links = cross_page_links
-
-        merged_blocks, merge_results = _apply_cross_page_block_merge(
-            blocks, links, doc_ir
-        )
-
-        logger.info(
-            "[CROSS-PAGE] detected %d links, merged across %d pages",
-            len(links),
-            len(
-                set(l.source_page_id for l in links)
-                | set(l.target_page_id for l in links)
-            ),
-        )
-        return merged_blocks, cross_page_links, warnings, merge_results
-
-    except Exception as exc:
-        logger.warning("[CROSS-PAGE] detection failed: %s", exc)
-        warnings.append(f"cross_page_error: {exc}")
-        return blocks, cross_page_links, warnings, merge_results
+    return merge_cross_page_blocks(blocks, doc_ir, ports=partial(resolve_split_port, globals()))
 
 
 def _apply_cross_page_block_merge(
@@ -701,117 +373,7 @@ def _apply_cross_page_block_merge(
     links: list,
     doc_ir: Any,
 ) -> tuple[list[dict], list[dict]]:
-    """Merge cross-page linked content with idempotency and traceability.
-
-    Idempotency: each block tracks its current merge ``_cross_page_revision``.
-    If a block already has a revision >= the link's revision, the merge is
-    skipped. This prevents duplicate text appending on repeated calls.
-
-    Returns (merged_blocks, merge_results) where merge_results is a list of
-    serialized CrossPageMergeResult dicts.
-    """
-    from app.features.cross_page_linking import CrossPageMergeResult, _get_page_text
-
-    merged = list(blocks)
-    merged_pages: set[int] = set()
-    merge_results: list[CrossPageMergeResult] = []
-
-    for link_idx, link in enumerate(links):
-        source_idx = None
-        target_idx = None
-        for p in doc_ir.pages:
-            pid = getattr(p, "page_id", "")
-            pidx = getattr(p, "page_index", -1)
-            if pid == link.source_page_id:
-                source_idx = pidx
-            if pid == link.target_page_id:
-                target_idx = pidx
-
-        if source_idx is None or target_idx is None:
-            continue
-        if link.is_ambiguous:
-            continue
-
-        target_page = None
-        for p in doc_ir.pages:
-            if getattr(p, "page_id", "") == link.target_page_id:
-                target_page = p
-                break
-        if target_page is None:
-            continue
-
-        target_text = _get_page_text(target_page)
-        if not target_text:
-            continue
-
-        source_page_num = source_idx + 1
-        link_id = f"{link.source_page_id}->{link.target_page_id}"
-
-        for block in merged:
-            if block.get("page") == source_page_num:
-                existing = block.get("normalized_text", "") or ""
-                block_revision = block.get("_cross_page_revision", 0)
-
-                # Idempotency: skip if already at or above this merge revision
-                if block_revision >= link_idx + 1:
-                    logger.debug(
-                        "[CROSS-PAGE] skip idempotent merge %s (rev=%d >= %d)",
-                        link_id,
-                        block_revision,
-                        link_idx + 1,
-                    )
-                    break
-
-                # Check if text already present (defense-in-depth)
-                if target_text in existing:
-                    block_revision = max(block_revision, link_idx + 1)
-                    block["_cross_page_revision"] = block_revision
-                    logger.debug(
-                        "[CROSS-PAGE] text already present, updating revision for %s",
-                        link_id,
-                    )
-                    break
-
-                block["normalized_text"] = existing + "\n" + target_text
-                block["_cross_page_revision"] = link_idx + 1
-                merged_pages.add(source_page_num)
-
-                # Build merge result for traceability
-                source_region_ids: list[str] = []
-                if hasattr(doc_ir.pages[source_idx], "regions"):
-                    source_region_ids = [
-                        getattr(r, "region_id", "")
-                        for r in doc_ir.pages[source_idx].regions
-                    ]
-                merge_result = CrossPageMergeResult(
-                    merged_block_id=f"{link.source_page_id}:block_{source_page_num}",
-                    source_block_ids=[str(block.get("block_index", ""))],
-                    source_page_ids=[link.source_page_id],
-                    source_region_ids=source_region_ids + list(link.source_region_ids),
-                    applied_link_ids=[link_id],
-                    revision=link_idx + 1,
-                    link_confidence=link.confidence,
-                    reason_codes=list(link.reason_codes),
-                )
-                merge_results.append(merge_result)
-                logger.debug(
-                    "[CROSS-PAGE] merged %s → p%d (rev=%d, conf=%.2f, reasons=%s)",
-                    link_id,
-                    source_page_num,
-                    link_idx + 1,
-                    link.confidence,
-                    link.reason_codes,
-                )
-                break
-
-    if merged_pages:
-        logger.info(
-            "[CROSS-PAGE] merged content into pages %s (%d merge results)",
-            sorted(merged_pages),
-            len(merge_results),
-        )
-
-    return merged, [r.to_dict() for r in merge_results]
+    return apply_cross_page_block_merge(blocks, links, doc_ir, ports=partial(resolve_split_port, globals()))
 
 
 # ---------------------------------------------------------------------------

@@ -33,7 +33,7 @@
 
 | 路径 | 文件行数 | 候选函数/方法及行数 | 已确认职责或待分离边界 |
 | --- | ---: | --- | --- |
-| `backend/app/features/pipeline_orchestrator.py` | 7151 | `_run_split` 473 | 阶段输入/输出、检查点、恢复与异常传播；复用已有 stages，待故障注入。 |
+| `backend/app/features/pipeline_orchestrator.py` | 4003 | `run` 185 / `run_pipeline_background` 180 | 冻结投影/VL 重绑定/跨页合并已按完整链路迁至四职责模块，见兼容文档 §16；继续治理诊断、工件/检查点、后台编排及异常传播。 |
 | `backend/app/services/practice_service.py` | 4132 | `get_smart_practice_questions` 446 / `get_smart_scored_questions` 144 | smart 策略编排仍由入口持有；scored 满额/缺口补充已迁至 `practice.smart_scored_supplement`，查询、评分、最终日志与事务仍由调用方负责，后续继续收口其余分支。 |
 | `backend/app/services/task_queue_service.py` | 2690 | `fail_v2` 187 | 21 个 Lua 脚本与键空间构造已迁至独立协议模块，脚本源/实例绑定顺序集中于 `task_queue_script_bindings.py`；v1→v2 已改为单任务原子迁移，脚本字节、既有 key 命名和 v2 状态返回保持不变。`DurableTaskQueue` 仍持有入队、认领、租约、重试、死信和管理编排，须继续结合真实队列集成拆分。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
@@ -263,3 +263,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第一百零八批（2026-10-21）smart scored满额/缺口补充编排迁至practice/smart_scored_supplement.run_scored_supplement，ScoredSupplementRequest显式携带17个参数/端口，模块保留原scored优先、remaining计算、exclude_ids、合并后截断、普通异常返回None继续内联weakness路径及取消传播；查询、推荐提供者、合并、最终日志和事务仍由practice_service拥有，模块无I/O依赖。模块100/函数49、16，practice_service4132/入口446；图577模块/2251边/零循环/反向API。新增4项完整入口契约与3项架构/新进程门禁入CI，修复旧smart/path异步scalar、真实patch目标与sequential替身；知识路径在练习过滤前写日志/提交请求会话的既有缺陷仍单列。定向11、修复旧子集8、练习/API混合270通过；最终原YAML静态2,075（2既有警告）/readiness69/云OCR30通过；严格Ruff/全应用Ruff/compileall/diff/CI路径/33保护哈希通过。真实PG/外部推荐服务未验收。
 
 第一百一十二阶段（2026-10-22）运行时启动/关闭失败边界：HTTP lifespan 以同一 try/finally 覆盖 startup 与 yield，yield 前 db/executor/OCR 失败也走有序清理，已有启动异常不被清理错误或清理取消覆盖；standalone 资源拆为 `StandaloneRuntimeResources(role, registry, ocr)`，worker OCR client 在 gateway 构造窗口保留并按自身 shutdown 关闭，gateway 普通失败或取消不跳过暂存 worker/shared client，显式 resources 不回落全局 singleton；新增 `runtime_startup_cleanup` 统一保留原失败及 SystemError 身份。readiness 将 Alembic stale 作为关键失败返回 503，生产 checks 继续脱敏。OCR shutdown 定向 47 项、全量 architecture 255 项通过；tests/core 为 1,620 passed、4 skipped、3 failed，后者为交接既有 safe_remote_fetch/staging orphan 用例失败。Ruff、compileall、diff 通过；已本地提交 `5c62d707`，本轮未重新执行 33 路径哈希核对；未运行真实 PostgreSQL/Redis/OCR/AI、生产退出或客户端验收。
+
+2026-10-29 按新工作流完成 OCR 冻结投影/VL 重绑定/跨页合并一个完整批次，原五入口为薄委托，职责归四模块；行为与既有异常/部分写回保持。兼容边界见 `PIPELINE_ORCHESTRATOR_COMPATIBILITY.md` §16，命令、数字、源码 hash 与既有门禁失败记录见 `refactor-results/ocr-freeze-cross-page-2026-10-29.json`。余下 OCR 工件/诊断/后台编排和 AI 长函数继续，不以本批完成代表全栈验收。

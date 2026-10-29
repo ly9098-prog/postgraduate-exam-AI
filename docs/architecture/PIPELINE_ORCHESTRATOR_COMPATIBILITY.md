@@ -214,3 +214,35 @@
   6986 passed、0 failed、64 条既有弃用 warning，451.03 秒；Mocked readiness
   boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
   这是本地清单重放，不代表远端 CI 或生产验收。
+
+## 16. 冻结投影、VL 重绑定与跨页合并（2026-10-29）
+
+- 本批以完整链路交付：`pipeline_frozen_options` 负责冻结选项应用，
+  `pipeline_freeze_comparison` 负责双轨诊断，`pipeline_freeze_rebinding` 负责 VL
+  重建后的内容保留和绑定丢失报告，`pipeline_cross_page_merge` 负责链接检测与合并。
+  原编排器五个私有入口保留签名及同步单次委托，复用既有 namespace resolver，
+  在使用时读取原模块 logger、辅助入口和 builtin；函数级导入仍在原执行位置捕获。
+- 冻结选项仍是权威替换：先校验 checksum（普通失败只告警），再按页和块文本映射，
+  按 registry 字符串 key 的字典序取首个 truthy 选项；保留先检查原 key、后转字符串的
+  历史口径。无匹配不改问题，成功原地写 option_lines/has_options/is_frozen。
+  双轨对比保留 set 迭代的同 key 首值、差异字段和顺序、50 条截断及 binding_lost 计数。
+- VL 重绑定仅索引 normalized_text 的 A–F 标记，不回退 text；未匹配的 legacy
+  选项仍保留原内容并报告丢失。IR list 浅复制且保留 entry 身份，其他值保持引用；
+  丢失列表仍经 set 去重，不新增稳定排序。
+- 跨页禁用、少于两块和无 DocumentIR 时保持原 list 身份；DocumentIR 解析在
+  try 外，解析错误继续传播。检测结果先写 cross_page_links 再调用实时合并入口；
+  普通失败返回原 blocks 和已写入链接/告警，保留失败前的块修改，不新增回滚。
+  CancelledError 等 BaseException 继续传播。页文本和结果类型每次合并调用延迟导入，
+  同一调用内不重新捕获；logger 继续实时读取。
+- 合并仍浅复制列表、原地修改块，只处理首个源页块；保留 revision 守卫、文本已存在
+  时只更新 revision、按链接序号形成 revision 和 trace 字段。页索引仍用于原来的
+  pages[source_idx] 取 region，索引不一致时可能在文本写入后报错；这是刻画并保留的
+  既有行为，不在本次重构中修复。
+- 新入口契约和预算/能力门禁接入静态 CI。原实现/当前实现契约、逆展开 AST、
+  带字段序/引用/日志/异常的种子差分与批末验证结果集中记录于
+  `refactor-results/ocr-freeze-cross-page-2026-10-29.json`。额外全目录 architecture
+  扫描发现两项既有 legacy-name 门禁失败：旧 freeze/router/split 模块已使用
+  normalized_blocks 而未列入历史白名单；隔离本批新增模块后同样复现，未扩大白名单。
+  本批新模块不新增该命名命中。该已知基线不等于静态 CI 固定清单失败。
+- 本地替身与静态清单重放不代表真实 PDF、外部 PaddleOCR/LLM、生产 PostgreSQL/Redis、
+  多 worker 或备份恢复验收；编排器其他职责与全栈未完成项继续按交接治理。
