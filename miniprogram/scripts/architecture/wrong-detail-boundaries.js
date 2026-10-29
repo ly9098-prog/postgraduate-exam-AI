@@ -6,14 +6,14 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 963
+const PAGE_CEILING = 867
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
   'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js',
   'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
   'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js',
-  'wrong-detail-diagnosis-flow.js']
+  'wrong-detail-diagnosis-flow.js', 'wrong-detail-load-flow.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -76,7 +76,18 @@ const DIAGNOSIS_DELEGATES = {
   "openNextErrorAction": "openNextErrorAction() {\nreturn diagnosisFlow.openNextErrorAction(this, { get platform() { return wx } })\n}",
   "_refreshDiagnosisFromServer": "async _refreshDiagnosisFromServer(wqId, fallbackRaw) {\nreturn diagnosisFlow._refreshDiagnosisFromServer(this, wqId, fallbackRaw, { requestClient: api, errorDiagnosis })\n}"
 }
+const LOAD_DELEGATES = {
+  "loadData": "async loadData(wqId) {\nreturn loadFlow.loadData(this, wqId, { requestClient: api })\n}",
+  "_loadDataInitialPatch": "_loadDataInitialPatch() {\nreturn loadFlow._loadDataInitialPatch()\n}",
+  "_buildLoadedDataPatch": "_buildLoadedDataPatch(wq, wqId, loadSeq) {\nreturn loadFlow._buildLoadedDataPatch(this, wq, wqId, loadSeq, { _processWqData: (wq, safeMode) => _processWqData(wq, safeMode), _generationMarker })\n}",
+  "_buildLoadedDataFields": "_buildLoadedDataFields(wq, currentQuestion, wrongQuestions, raw, totalQ) {\nreturn loadFlow._buildLoadedDataFields(this, wq, currentQuestion, wrongQuestions, raw, totalQ, { _isWqMastered, errorDiagnosis })\n}",
+  "_applyPreferredAnalysisToData": "_applyPreferredAnalysisToData(data, wq) {\nreturn loadFlow._applyPreferredAnalysisToData(this, data, wq, { _resolvePreferredAnalysis: wq => _resolvePreferredAnalysis(wq), _hasAiContent: value => _hasAiContent(value), _normalizeAiResult: value => _normalizeAiResult(value) })\n}",
+  "_checkLoadedRenderInvariant": "_checkLoadedRenderInvariant(data) {\nreturn loadFlow._checkLoadedRenderInvariant(this, data)\n}",
+  "_handleLoadDataError": "_handleLoadDataError(e, loadSeq) {\nreturn loadFlow._handleLoadDataError(this, e, loadSeq)\n}",
+  "_prefetchWrongQuestion": "_prefetchWrongQuestion(idx) {\nreturn loadFlow._prefetchWrongQuestion(this, idx, { requestClient: api })\n}"
+}
 const DELEGATES = {
+  ...LOAD_DELEGATES,
   ...DIAGNOSIS_DELEGATES,
   ...AI_REQUEST_DELEGATES,
   ...AI_REGENERATION_DELEGATES,
@@ -200,7 +211,7 @@ function scanWrongDetail(options = {}) {
 }
 
 module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DIRECT_HELPERS,
-  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, AI_GENERATION_DELEGATES, AI_REGENERATION_DELEGATES, AI_REQUEST_DELEGATES, DIAGNOSIS_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
+  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, AI_GENERATION_DELEGATES, AI_REGENERATION_DELEGATES, AI_REQUEST_DELEGATES, DIAGNOSIS_DELEGATES, LOAD_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
 
 if (require.main === module) {
   const result = scanWrongDetail()

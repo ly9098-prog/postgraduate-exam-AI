@@ -42,9 +42,12 @@ function fixture(options = {}) {
       const resolved = require.resolve(path.resolve(path.dirname(filename), request))
       return resolved.startsWith(root + path.sep) ? load(resolved) : require(resolved)
     }
-    const source = fs.readFileSync(
+    let source = fs.readFileSync(
       filename === path.join(root, 'wrong-detail.js') && process.env.WRONG_DETAIL_AI_RECOVERY_SOURCE
         ? process.env.WRONG_DETAIL_AI_RECOVERY_SOURCE : filename, 'utf8')
+    if (options.exposeDetailHelpers && filename === path.join(root, 'wrong-detail.js')) source +=
+      '\nglobalThis.replaceDetailRenderer = value => { _processWqData = value }\n' +
+      'globalThis.replacePreferredAnalysis = value => { _resolvePreferredAnalysis = value }\n'
     vm.runInContext(`(function(require,module,exports) {\n${source}\n})`,
       context, { filename })(required, module, module.exports)
     return module.exports

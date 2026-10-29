@@ -29,6 +29,7 @@ const aiGeneration = require('./utils/wrong-detail-ai-generation')
 const aiRegeneration = require('./utils/wrong-detail-ai-regeneration')
 const aiRequest = require('./utils/wrong-detail-ai-request')
 const diagnosisFlow = require('./utils/wrong-detail-diagnosis-flow')
+const loadFlow = require('./utils/wrong-detail-load-flow')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -275,117 +276,32 @@ this._aiGenerationMarker = ''
 resetRenderGuard()
 },
   async loadData(wqId) {
-    var loadSeq = ++this._aiRequestId
-    this._resetAiLoadingState()
-    this._aiResult = null
-    this.setData(this._loadDataInitialPatch())
-    this._diagnosisRequestSeq++
-    this._teacherRequestSeq++
-    try {
-      const wq = await api.get(`/wrong-questions/${wqId}`)
-      if (loadSeq !== this._aiRequestId || !this._alive) return
-      if (!wq) throw new Error('not found')
-      if (this._wqCache) this._wqCache[wqId] = { data: wq, ts: Date.now() }
-      const data = this._buildLoadedDataPatch(wq, wqId, loadSeq)
-      if (!data) return
-      this.setData(data)
-      this._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
-      this._checkLoadedRenderInvariant(data)
-    } catch (e) {
-      this._handleLoadDataError(e, loadSeq)
-    }
-  },
+return loadFlow.loadData(this, wqId, { requestClient: api })
+},
 
   _loadDataInitialPatch() {
-    return {
-      loading: true, errorText: '', aiFallback: false, aiErrorText: '',
-      aiRetryable: true, aiRequested: false, aiFromCache: false,
-      aiFromQuestionAnalysis: false, masterConfirmVisible: false,
-      unmasterConfirmVisible: false, moreMenuVisible: false,
-      removeConfirmVisible: false, masterSubmitting: false,
-      removeSubmitting: false, diagnosisSheetVisible: false,
-      diagnosisSaving: false, diagnosisSyncing: false,
-    }
-  },
+return loadFlow._loadDataInitialPatch()
+},
 
   _buildLoadedDataPatch(wq, wqId, loadSeq) {
-    const raw = _processWqData(wq, this.data.safeModeActive)
-    const currentQuestion = Object.assign({}, wq, {
-      _optionList: raw._optionList, _optionKeys: raw._optionKeys,
-      _opts: raw._opts, _blankOptionGroups: raw._blankOptionGroups,
-      _hasBlankOptionGroups: raw._hasBlankOptionGroups, _renderModel: raw._renderModel,
-    })
-    var totalQ = this.data.totalQuestions || 1
-    var wrongQuestions = []
-    for (var wi = 0; wi < totalQ; wi++) wrongQuestions.push({ _answered: true })
-    this._currentWqId = wqId
-    this._diagnosisRequestSeq++
-    this._teacherRequestSeq++
-    this._errorTypeLabelText = raw.errorTypeLabelText
-    this._aiGenerationMarker = _generationMarker(wq)
-    this._aiResult = null
-    var data = this._buildLoadedDataFields(wq, currentQuestion, wrongQuestions, raw, totalQ)
-    this._applyPreferredAnalysisToData(data, wq)
-    if (loadSeq !== this._aiRequestId || !this._alive) return null
-    return data
-  },
+return loadFlow._buildLoadedDataPatch(this, wq, wqId, loadSeq, { _processWqData: (wq, safeMode) => _processWqData(wq, safeMode), _generationMarker })
+},
 
   _buildLoadedDataFields(wq, currentQuestion, wrongQuestions, raw, totalQ) {
-    return {
-      wq, currentQuestion, wrongQuestions,
-      runnerProgressPercent: totalQ > 0 ? Math.round((this.data.currentIdx + 1) / totalQ * 100) : 0,
-      subjectLabelText: raw.subjectLabelText, loading: false, aiLoading: false,
-      errorText: '', aiCards: null, aiRequested: false, aiFromCache: false,
-      aiFromQuestionAnalysis: false, aiFallback: false, aiErrorText: '', aiRetryable: true,
-      isCurrentMastered: _isWqMastered(wq), masterSubmitting: false, removeSubmitting: false,
-      errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
-      nextErrorAction: errorDiagnosis.buildNextAction(wq, errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis)),
-      diagnosisSyncing: false, teacherLoadingAction: '', teacherLastAction: '',
-      teacherResult: null, teacherSheetVisible: false, teacherErrorText: '',
-      teacherFeedbackSent: '', teacherActionsExpanded: false,
-    }
-  },
+return loadFlow._buildLoadedDataFields(this, wq, currentQuestion, wrongQuestions, raw, totalQ, { _isWqMastered, errorDiagnosis })
+},
 
   _applyPreferredAnalysisToData(data, wq) {
-    var preferredAnalysis = _resolvePreferredAnalysis(wq)
-    if (!preferredAnalysis) return
-    var preferredNormalized = preferredAnalysis.normalized
-    data.aiRequested = true
-    if (_hasAiContent(preferredNormalized)) {
-      this._aiResult = preferredNormalized
-      data.aiCards = _normalizeAiResult(this._aiResult)
-      data.aiFromCache = preferredAnalysis.source === 'ai'
-      data.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
-      data.aiFallback = false
-      data.aiErrorText = ''
-    } else {
-      this._aiResult = null
-      data.aiCards = null
-      data.aiFromCache = false
-      data.aiFromQuestionAnalysis = false
-      data.aiFallback = true
-      data.aiErrorText = preferredNormalized && preferredNormalized.formatError
-        ? 'AI 返回格式异常，请重新生成' : 'AI 分析结果为空，请重新生成'
-    }
-  },
+return loadFlow._applyPreferredAnalysisToData(this, data, wq, { _resolvePreferredAnalysis: wq => _resolvePreferredAnalysis(wq), _hasAiContent: value => _hasAiContent(value), _normalizeAiResult: value => _normalizeAiResult(value) })
+},
 
   _checkLoadedRenderInvariant(data) {
-    const checkModel = data.currentQuestion && data.currentQuestion._renderModel
-    if (checkModel) {
-      this._checkRenderInvariant(checkModel)
-      this._recordRenderTrace(checkModel.renderTrace)
-    }
-  },
+return loadFlow._checkLoadedRenderInvariant(this, data)
+},
 
   _handleLoadDataError(e, loadSeq) {
-    if (loadSeq !== this._aiRequestId || !this._alive) return
-    console.error('加载错题详情失败', e)
-    this._aiResult = null
-    this.setData({
-      loading: false, errorText: '错题不存在或已被移除', wq: null,
-      aiLoading: false, aiFallback: false,
-    })
-  },
+return loadFlow._handleLoadDataError(this, e, loadSeq)
+},
 _resetAiLoadingState() {
 return aiRequest._resetAiLoadingState(this)
 },
@@ -946,18 +862,6 @@ wx.pageScrollTo({ selector: '#ai-card', duration: 220 })
 },
 noop() {},
 _prefetchWrongQuestion(idx) {
-if (idx < 0 || idx >= this.data.questionIds.length) return
-var wqId = this.data.questionIds[idx]
-if (!wqId) return
-var cached = this._wqCache[wqId]
-if (cached && Date.now() - cached.ts < 300000) return
-var requestStartedAt = Date.now()
-var self = this
-api.get(`/wrong-questions/${wqId}`).then(function(wq) {
-if (!wq || !self._alive || !self._wqCache) return
-var latest = self._wqCache[wqId]
-if (latest && Number(latest.ts || 0) >= requestStartedAt) return
-self._wqCache[wqId] = { data: wq, ts: Date.now() }
-}).catch(function() {})
+return loadFlow._prefetchWrongQuestion(this, idx, { requestClient: api })
 },
 })

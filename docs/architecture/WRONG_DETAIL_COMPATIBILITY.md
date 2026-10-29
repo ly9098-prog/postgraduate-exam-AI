@@ -90,3 +90,12 @@
 - 新增基线限制：save 响应若为 `data` 包装，本地 raw 顶层虽写入用户选择及 `user_confirmed=true`，后续 normalizer 仍优先读取保留的内层 `data`，normalized primary/confirmed 可能保留旧值；直接响应与 `diagnosis` 包装不出现该差异。该行为在原页面重放确认，本批刻画并保留，未作为兼容重构中的业务修复。
 - 15 项契约在原页面与当前页面通过；九组定向共 106 项通过，1120 组七入口状态/调用轨迹/字段顺序对照一致；独立只读审查无 P0–P3 可操作发现。全量 Node 2247 passed，渲染 5 fixtures/31 passed，八条门禁与视觉/KaTeX通过。
 - CI 增加诊断契约；详情门禁为十二个模块、51 条委托，页面 ceiling 为 963。legacy diagnosis 脚本的错题详情断言改指新归属并单独验证通过，完整脚本在原版/当前均复现 practice-result occurrence diagnosis_id 的既有失败；未修改该失败。证据 `/tmp/wrong-detail-diagnosis-batch/`；真实微信/AI与完整闭环等验收限制继续有效。
+
+## 11. 详情加载、投影与预取（2026-10-29 后续批次）
+
+- 本批页面由 963→867 行。加载入口、初始 patch、加载投影/字段、优先解析写回、渲染检查、加载错误和题目预取八个方法迁入 `utils/wrong-detail-load-flow.js`（130 行，函数均 ≤50 行）；纯初始 patch 无需 page，其余按原依赖注入。页面签名、async 与单次委托保持，八个方法体仅改变接收者及 API 对象名，其余 111 个 Page 属性原文不变。
+- 加载保持 request 序号、reset/初始 patch/诊断和 teacher 序号、await 请求与迟响应守卫次序；先写原响应到缓存，再构造投影。投影为 null 时保留已写缓存；诊断刷新不等待，随后执行渲染检查；请求/投影/同步副作用异常仍交当前错误处理方法。
+- 投影保持 raw/原题目引用关系、占位题循环、当前 ID/序号/label/生成标记等私有字段的写入及最终 guard 位置；不把最终检查前的副作用提前取消。字段顺序、重复两次 diagnosis.normalize、AI/题库解析来源、空内容/格式异常与卡片文案不变；renderer/优先解析/helper 按调用时读取。
+- 渲染检查仍先执行 invariant，再读取当前 trace 方法和 trace 字段。预取沿用 300000ms 缓存边界，在请求开始记录时间，拒绝覆盖时间戳大于或等于开始时间的缓存；结果还须页面存活和缓存存在。预取不返回 Promise，Promise 拒绝吞掉，同步请求异常仍传播。
+- 15 项加载契约在原页面与当前页面全部通过；十组定向共 121 项通过，1000 组八入口返回值/状态/调用轨迹/字段顺序对照一致。全量 Node 2262 passed，渲染 5 fixtures/31 passed，八条架构门禁及视觉/KaTeX通过。
+- 独立实现只读审查无 P0–P3 可操作发现，独立运行 121 项定向与详情门禁通过。CI 增加加载契约；详情门禁为十三个模块、59 条委托，页面 ceiling 为 867。证据 `/tmp/wrong-detail-load-batch/`；生命周期、掌握/撤销、删除及其他剩余页面职责继续核查，前述 data envelope 限制、legacy 源断言失败和真实环境验收限制保持。
