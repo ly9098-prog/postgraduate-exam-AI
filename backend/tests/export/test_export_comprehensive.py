@@ -554,16 +554,16 @@ class TestExportStoragePath:
                 )
                 break
 
-    def test_resolve_local_path_goes_through_export_dir(self):
-        """_resolve_local_path must resolve through settings.EXPORT_DIR."""
-        import inspect
-
+    def test_resolve_local_path_goes_through_export_dir(self, monkeypatch, tmp_path):
+        """Resolve relative keys through the authoritative export storage root."""
         from app.api.v1.exports import _resolve_local_path
-        source = inspect.getsource(_resolve_local_path)
+        from app.services import storage_backend
 
-        assert "settings.EXPORT_DIR" in source or "export_root" in source, (
-            "_resolve_local_path must reference EXPORT_DIR"
+        monkeypatch.setattr(storage_backend, "get_export_storage_root", lambda: str(tmp_path))
+        assert _resolve_local_path("owned/file.pdf") == os.path.realpath(
+            tmp_path / "owned/file.pdf"
         )
+        assert _resolve_local_path("../outside.pdf") is None
 
 
 # ══════════════════════════════════════════════════════════════

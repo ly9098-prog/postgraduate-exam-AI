@@ -10,6 +10,7 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -150,32 +151,63 @@ class TestDeleteExportStorage:
     @pytest.mark.asyncio
     async def test_delete_uses_export_storage_not_get_storage(self):
         """Verify delete_export calls get_export_storage(), not get_storage()."""
-
-        # The production code (exports.py) was changed to use get_export_storage()
-        # in the delete_export endpoint. Verify by reading the source.
-        import inspect
-
         from app.api.v1 import exports as exports_module
 
-        source = inspect.getsource(exports_module.delete_export)
-        assert "get_export_storage()" in source, (
-            "delete_export must use get_export_storage, not get_storage"
+        task = SimpleNamespace(
+            status="completed",
+            snapshot_id=None,
+            file_key="owned/file.pdf",
+            file_format="pdf",
         )
-        assert "get_storage" not in source.replace("get_export_storage", ""), (
-            "delete_export should not contain get_storage()"
-        )
+        storage = SimpleNamespace(delete=AsyncMock(return_value=True))
+        db = AsyncMock()
+        with (
+            patch.object(
+                exports_module, "_get_user_task", AsyncMock(return_value=task)
+            ),
+            patch.object(
+                exports_module, "get_export_storage", return_value=storage
+            ) as get_storage,
+        ):
+            result = await exports_module.delete_export(8, db, SimpleNamespace(id=3))
+        assert result == {"success": True}
+        get_storage.assert_called_once_with()
+        storage.delete.assert_awaited_once_with("owned/file.pdf")
+        db.delete.assert_awaited_once_with(task)
+        db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_download_uses_export_storage(self):
         """Verify download_export calls get_export_storage(), not get_storage()."""
-        import inspect
-
         from app.api.v1 import exports as exports_module
 
-        source = inspect.getsource(exports_module.download_export)
-        assert "get_export_storage()" in source, (
-            "download_export must use get_export_storage, not get_storage"
+        task = SimpleNamespace(
+            status="completed",
+            file_key="owned/file.pdf",
+            expires_at=None,
+            file_format="pdf",
+            file_name="file.pdf",
+            file_size=8,
         )
+        storage = SimpleNamespace(
+            get_download_url=AsyncMock(return_value="signed-test-url")
+        )
+        with (
+            patch.object(
+                exports_module, "_get_user_task", AsyncMock(return_value=task)
+            ),
+            patch.object(
+                exports_module, "get_export_storage", return_value=storage
+            ) as get_storage,
+        ):
+            result = await exports_module.download_export(
+                8, AsyncMock(), SimpleNamespace(id=3)
+            )
+        get_storage.assert_called_once_with()
+        storage.get_download_url.assert_awaited_once_with(
+            "owned/file.pdf", expiry_sec=3600
+        )
+        assert result.method == "signed_url" and result.url == "signed-test-url"
 
     @pytest.mark.asyncio
     async def test_cleanup_uses_export_storage(self):
@@ -309,9 +341,12 @@ class TestCreateExportPermission:
             mock_settings.EXPORT_DOCX_ENABLED = False
             app.dependency_overrides.clear()
             _setup_auth(1)
-            resp = client.post("/api/v1/exports", json={
-                "range_type": "all",
-                "file_format": "docx",
-            })
+            resp = client.post(
+                "/api/v1/exports",
+                json={
+                    "range_type": "all",
+                    "file_format": "docx",
+                },
+            )
         assert resp.status_code == 403
         assert _get_detail(resp)["error"]["code"] == "HTTP_403"
