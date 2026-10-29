@@ -6,13 +6,13 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-book/wrong-book.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-book/utils'
-const PAGE_CEILING = 504
+const PAGE_CEILING = 478
 const MODULES = ['wrong-book-value-view.js', 'wrong-book-item-view.js',
   'wrong-book-analysis-view.js', 'wrong-book-view-page-adapter.js', 'wrong-book-request-flow.js',
   'wrong-book-selection-flow.js', 'wrong-book-batch-flow.js', 'wrong-book-batch-undo.js',
   'wrong-book-lifecycle.js', 'wrong-book-navigation-flow.js',
   'wrong-book-ai-state.js', 'wrong-book-ai-persistence.js',
-  'wrong-book-ai-request-flow.js', 'wrong-book-ai-interaction.js']
+  'wrong-book-ai-request-flow.js', 'wrong-book-ai-interaction.js', 'wrong-book-filter-flow.js']
 const REQUEST_DELEGATES = {
   "_beginFilterReload": "_beginFilterReload(patch) {\nreturn requestFlow._beginFilterReload(this, patch)\n}",
   "_loadPage": "async _loadPage() {\nreturn requestFlow._loadPage(this)\n}",
@@ -98,7 +98,22 @@ const AI_REQUEST_DELEGATES = {
   "refreshAiDiagnosis": "refreshAiDiagnosis() {\nreturn aiInteraction.refreshAiDiagnosis(this, { getPlatform: () => wx })\n}",
   "onAiFeedback": "async onAiFeedback() {\nreturn aiInteraction.onAiFeedback(this, { requestClient: api, getPlatform: () => wx })\n}"
 }
+const FILTER_DELEGATES = {
+  "_updateFilterCount": "_updateFilterCount() {\nreturn filterFlow._updateFilterCount(this)\n}",
+  "_hasFilters": "_hasFilters() {\nreturn filterFlow._hasFilters(this)\n}",
+  "_syncDateFilter": "_syncDateFilter() {\nreturn filterFlow._syncDateFilter(this, { requestClient: api, rangeHelper: dateFilter })\n}",
+  "_filterParams": "_filterParams() {\nreturn filterFlow._filterParams(this)\n}",
+  "toggleFilter": "toggleFilter() {\nreturn filterFlow.toggleFilter(this)\n}",
+  "selectSubject": "selectSubject(e) {\nreturn filterFlow.selectSubject(this, e)\n}",
+  "selectErrorType": "selectErrorType(e) {\nreturn filterFlow.selectErrorType(this, e)\n}",
+  "onDateFilterChange": "onDateFilterChange(e) {\nreturn filterFlow.onDateFilterChange(this, e)\n}",
+  "retryList": "retryList() {\nreturn filterFlow.retryList(this)\n}",
+  "clearTopic": "clearTopic() {\nreturn filterFlow.clearTopic(this)\n}",
+  "loadMore": "loadMore() {\nreturn filterFlow.loadMore(this)\n}",
+  "resetFilters": "resetFilters() {\nreturn filterFlow.resetFilters(this)\n}"
+}
 const DELEGATES = {
+  ...FILTER_DELEGATES,
   ...AI_REQUEST_DELEGATES,
   ...AI_STATE_DELEGATES,
   ...LIFECYCLE_DELEGATES,
@@ -134,19 +149,73 @@ const DELEGATES = {
   "_toCleanText": "_toCleanText(text) {\nreturn toCleanText(text, toPlainInlineMathText)\n}"
 }
 
+const PAGE_METHODS = { ...DELEGATES, closeBatchMore: 'closeBatchMore() {}', noop: 'noop() {}' }
+const PAGE_FIELDS = {
+  "_ready": "_ready: false",
+  "_alive": "_alive: false",
+  "_aiDiagnosisPromise": "_aiDiagnosisPromise: null",
+  "_aiDiagnosisRequestId": "_aiDiagnosisRequestId: 0",
+  "_aiDiagnosisCachedAt": "_aiDiagnosisCachedAt: 0",
+  "_aiStatsLoaded": "_aiStatsLoaded: false",
+  "_listRequestSeq": "_listRequestSeq: 0",
+  "_suppressQuestionTapUntil": "_suppressQuestionTapUntil: 0",
+  "_selectionPulseTimer": "_selectionPulseTimer: null",
+  "_batchCapsuleIdleTimer": "_batchCapsuleIdleTimer: null",
+  "_batchMasterUndoIds": "_batchMasterUndoIds: []",
+  "_batchMasterUndoTimer": "_batchMasterUndoTimer: null",
+  "_batchMasterUndoInFlight": "_batchMasterUndoInFlight: false",
+  "_aiAutoSwitchTimer": "_aiAutoSwitchTimer: null",
+  "_exportCapabilityRequestId": "_exportCapabilityRequestId: 0",
+  "_statsRequestSeq": "_statsRequestSeq: 0",
+  "_subjectsRequestSeq": "_subjectsRequestSeq: 0",
+  "_taskFlowRequestSeq": "_taskFlowRequestSeq: 0",
+  "_destroyed": "_destroyed: false"
+}
+
 function compact(source) { return source.replace(/\s+/g, '') }
 
 function pageViolations(source) {
   const errors = []
   const parsed = ts.createSourceFile(PAGE, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
-  const methods = new Map()
+  const methods = new Map(), counts = new Map(), pages = []
   function walk(node) {
-    if (ts.isMethodDeclaration(node)) methods.set(node.name.getText(parsed), node.getText(parsed))
+    if (ts.isCallExpression(node) && node.expression.getText(parsed) === 'Page') pages.push(node)
     ts.forEachChild(node, walk)
   }
   walk(parsed)
-  for (const [name, expected] of Object.entries(DELEGATES)) {
-    if (compact(methods.get(name) || '') !== compact(expected)) errors.push('delegate drift: ' + name)
+  if (pages.length !== 1 || pages[0].arguments.length !== 1 ||
+    !ts.isObjectLiteralExpression(pages[0].arguments[0])) errors.push('page declaration')
+  const object = pages.length === 1 && pages[0].arguments[0]
+  if (object && ts.isObjectLiteralExpression(object)) {
+    const fields = new Set()
+    for (const property of object.properties) {
+      if (ts.isSpreadAssignment(property)) { errors.push('unregistered page spread'); continue }
+      const name = property.name && property.name.getText(parsed)
+      if (ts.isMethodDeclaration(property)) {
+        methods.set(name, property.getText(parsed))
+        counts.set(name, (counts.get(name) || 0) + 1)
+        if (!Object.hasOwn(PAGE_METHODS, name)) errors.push('unregistered page method: ' + name)
+        else if (compact(property.getText(parsed)) !== compact(PAGE_METHODS[name])) {
+          errors.push('delegate drift: ' + name)
+        }
+      } else if (ts.isPropertyAssignment(property)) {
+        fields.add(name)
+        if (name === 'data') {
+          if (!ts.isObjectLiteralExpression(property.initializer)) errors.push('page data drift')
+        } else if (!Object.hasOwn(PAGE_FIELDS, name) ||
+          compact(property.getText(parsed)) !== compact(PAGE_FIELDS[name])) {
+          errors.push('page field drift: ' + name)
+        }
+      } else errors.push('unregistered page property: ' + name)
+    }
+    for (const name of ['data', ...Object.keys(PAGE_FIELDS)]) {
+      if (!fields.has(name)) errors.push('missing page field: ' + name)
+    }
+  }
+  for (const name of Object.keys(PAGE_METHODS)) {
+    if (!methods.has(name)) errors.push('delegate drift: ' + name)
+    // The original page declares noop twice; retain that shape without allowing new overrides.
+    if (counts.get(name) !== (name === 'noop' ? 2 : 1)) errors.push('page method count: ' + name)
   }
   for (const module of MODULES) {
     const request = "require('./utils/" + module.replace(/\.js$/, '') + "')"
@@ -188,10 +257,11 @@ function scanWrongBook(options = {}) {
   for (const name of MODULES) if (!(name in modules)) errors.push('missing module: ' + name)
   for (const [name, source] of Object.entries(modules)) errors.push(...moduleViolations(name, source))
   return { errors, pageLines: pageSource.trimEnd().split('\n').length,
-    modules: Object.keys(modules).length, delegates: Object.keys(DELEGATES).length }
+    modules: Object.keys(modules).length, delegates: Object.keys(DELEGATES).length,
+    pageMethods: Object.keys(PAGE_METHODS).length }
 }
 
-module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DELEGATES,
+module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DELEGATES, PAGE_METHODS,
   pageViolations, moduleViolations, scanWrongBook }
 
 if (require.main === module) {

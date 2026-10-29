@@ -34,6 +34,7 @@ const aiState = require('./utils/wrong-book-ai-state')
 const aiPersistence = require('./utils/wrong-book-ai-persistence')
 const aiRequestFlow = require('./utils/wrong-book-ai-request-flow')
 const aiInteraction = require('./utils/wrong-book-ai-interaction')
+const filterFlow = require('./utils/wrong-book-filter-flow')
 Page({
 data: {
 list: [],
@@ -100,28 +101,16 @@ subjectsLoaded: false,
 errorTypes: ERROR_TYPES,
 },
 _updateFilterCount() {
-const count = (this.data.selectedSubjectId ? 1 : 0) + (this.data.selectedErrorType ? 1 : 0) + (this.data.selectedTopic ? 1 : 0) + (this.data.dateFrom || this.data.dateTo ? 1 : 0)
-this.setData({ filterCount: count })
+return filterFlow._updateFilterCount(this)
 },
 _hasFilters() {
-return !!(this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic || this.data.dateFrom || this.data.dateTo)
+return filterFlow._hasFilters(this)
 },
 _syncDateFilter() {
-const now = api.now()
-const patch = {}
-if (this.data.selectedDatePreset !== 'custom') {
-Object.assign(patch, dateFilter.presetRange(this.data.selectedDatePreset, now))
-}
-this.setData(patch)
+return filterFlow._syncDateFilter(this, { requestClient: api, rangeHelper: dateFilter })
 },
 _filterParams() {
-const params = { product_scope: 'exam408' }
-if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
-if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
-if (this.data.selectedTopic) params.topic = this.data.selectedTopic
-if (this.data.dateFrom) params.date_from = this.data.dateFrom
-if (this.data.dateTo) params.date_to = this.data.dateTo
-return params
+return filterFlow._filterParams(this)
 },
 _beginFilterReload(patch) {
 return requestFlow._beginFilterReload(this, patch)
@@ -200,43 +189,28 @@ goBack() {
 return navigationFlow.goBack({ getPlatform: () => wx })
 },
 toggleFilter() {
-this._syncDateFilter()
-if (!this.data.subjectsLoaded && !this.data.subjectsLoading) this.loadSubjects()
-this.setData({ showFilter: !this.data.showFilter })
+return filterFlow.toggleFilter(this)
 },
 selectSubject(e) {
-const val = e.detail.value
-const subjectId = (val === '' || val === null || val === undefined) ? null : Number(val)
-this._beginFilterReload({ selectedSubjectId: subjectId })
+return filterFlow.selectSubject(this, e)
 },
 selectErrorType(e) {
-const val = e.detail.value
-this._beginFilterReload({ selectedErrorType: val })
+return filterFlow.selectErrorType(this, e)
 },
 onDateFilterChange(e) {
-const range = e.detail || {}
-this._beginFilterReload({ selectedDatePreset: range.preset || '', dateFrom: range.dateFrom || '', dateTo: range.dateTo || '' })
+return filterFlow.onDateFilterChange(this, e)
 },
 retryList() {
-return this.loadList(this.data.list.length === 0)
+return filterFlow.retryList(this)
 },
 clearTopic() {
-this._beginFilterReload({ selectedTopic: '' })
+return filterFlow.clearTopic(this)
 },
 loadMore() {
-if (this.data.loading || !this.data.hasMore) return
-this.loadList()
+return filterFlow.loadMore(this)
 },
 resetFilters() {
-this._beginFilterReload({
-selectedSubjectId: null,
-selectedErrorType: '',
-selectedTopic: '',
-selectedDatePreset: '',
-dateFrom: '',
-dateTo: '',
-filterCount: 0,
-})
+return filterFlow.resetFilters(this)
 },
 switchView(e) {
 return selectionFlow.switchView(this, e)
