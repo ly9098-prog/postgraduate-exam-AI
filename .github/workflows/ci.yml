@@ -707,6 +707,10 @@ jobs:
             tests/export/test_export_request_contract.py \
             tests/architecture/test_export_request_boundaries.py \
             tests/test_api/test_wrong_question_update_cache.py \
+            tests/test_features/test_wrong_question_batch.py \
+            tests/test_features/test_wrong_question_date_filter.py \
+            tests/test_api/test_wrong_question_request_contract.py \
+            tests/architecture/test_wrong_book_request_boundaries.py \
             tests/test_api/test_import_page_range.py \
             tests/test_api/test_image_import_status.py \
             tests/test_api/test_import_sse_metrics.py \

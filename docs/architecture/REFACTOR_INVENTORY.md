@@ -2,7 +2,7 @@
 
 ## 当前接口执行优先级（2026-10-29）
 
-用户明确顺序：**小程序接口 > 后台管理系统接口 > OCR 接口**。先按小程序真实调用链处理Public API及必要后端职责，再处理Admin API/管理端接口编排，最后处理OCR专用导入、识别与恢复接口。下文历史批次及热点表不是调度顺序；保持完整业务链路一批与兼容验证，不按文件长度机械排序。当前OCR后续只有只读盘点、无新增实现；错题AI剩余长函数已核对为依赖装配，避免只为行数再拆。小程序公式库Public API整链已完成，当前推进小程序导出请求生命周期。
+用户明确顺序：**小程序接口 > 后台管理系统接口 > OCR 接口**。先按小程序真实调用链处理Public API及必要后端职责，再处理Admin API/管理端接口编排，最后处理OCR专用导入、识别与恢复接口。下文历史批次及热点表不是调度顺序；保持完整业务链路一批与兼容验证，不按文件长度机械排序。当前OCR后续只有只读盘点、无新增实现；错题AI剩余长函数已核对为依赖装配，避免只为行数再拆。小程序公式库Public API及导出请求生命周期已完成，当前推进错题Public API查询/清洗/响应富化与请求编排。
 
 > 核对日期：2026-10-23（§1 计数为当日复跑；各批次叙事截止 2026-10-22）；对应 `prompts/tasks/current_task.md` 阶段 0/4。
 > 本清单登记真实入口、结构证据、回归入口和后续决策，不代表所有业务语义已审查完毕。
@@ -273,3 +273,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 2026-10-29 小程序公式库Public API按一个完整批次收敛目录/筛选/分页/详情/随机/收藏及响应投影，原鉴权/Query/事务与动态依赖保持，分类薄入口保留现状。职责及外部边界见 `FORMULA_LIBRARY_COMPATIBILITY.md`，结果与hash见 `refactor-results/miniprogram-formula-interface-2026-10-29.json`。本批遵循“小程序接口 > 后台管理系统接口 > OCR接口”；AI既有纯装配不按行数机械拆分，其他小程序接口仍需继续盘点。
 
 2026-10-30 小程序导出Public API按一个完整批次收敛预览/创建/分页与详情、下载/文件响应、删除、重试/原记录重导出和WebSocket鉴权交接；原请求声明和动态端口保留，生成器/processor/worker及数据库结构保持原实现。七个职责模块遵循300/50预算，保留锁、幂等冲突回滚、文件失败回滚、旧文件可读与日志上下文finally边界。兼容说明见 `EXPORT_REQUEST_COMPATIBILITY.md`；命令/结果/hash见 `refactor-results/miniprogram-export-interface-2026-10-30.json`。无真实文件删除或生产操作，其他小程序接口与真实环境验收继续。
+
+2026-10-30 小程序错题Public API整链收敛至六个职责模块：代码/普通文本及选项清洗、AI标记/响应投影、当前题目与复习聚合查询、列表/任务流/详情读取、更新/批量缓存编排、诊断读取/确认/建议。原三个统计/分类薄入口保留，原23函数声明和动态端口语义保持，历史question_version_id用于复习计数而当前Question用于展示的边界保持。兼容说明见 `WRONG_BOOK_REQUEST_COMPATIBILITY.md`；命令/数量/hash见 `refactor-results/miniprogram-wrong-interface-2026-10-30.json`。底层service/事务与小程序页面实现未改，后续继续核实practice提交/记录/知识状态请求职责和其余Public API覆盖。
