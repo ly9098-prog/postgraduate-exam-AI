@@ -6,13 +6,14 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 1101
+const PAGE_CEILING = 963
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
   'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js',
   'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
-  'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js']
+  'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js',
+  'wrong-detail-diagnosis-flow.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -66,7 +67,17 @@ const AI_REQUEST_DELEGATES = {
   "_analysisFailureState": "_analysisFailureState(model, result) {\nreturn aiRequest._analysisFailureState(model, result, { _fallbackMessage })\n}",
   "onTapAiAnalysis": "onTapAiAnalysis() {\nreturn aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options) })\n}"
 }
+const DIAGNOSIS_DELEGATES = {
+  "openDiagnosisSheet": "openDiagnosisSheet() {\nreturn diagnosisFlow.openDiagnosisSheet(this)\n}",
+  "closeDiagnosisSheet": "closeDiagnosisSheet() {\nreturn diagnosisFlow.closeDiagnosisSheet(this)\n}",
+  "selectDiagnosisPrimary": "selectDiagnosisPrimary(e) {\nreturn diagnosisFlow.selectDiagnosisPrimary(this, e)\n}",
+  "toggleDiagnosisSecondary": "toggleDiagnosisSecondary(e) {\nreturn diagnosisFlow.toggleDiagnosisSecondary(this, e, { get platform() { return wx } })\n}",
+  "saveDiagnosis": "async saveDiagnosis() {\nreturn diagnosisFlow.saveDiagnosis(this, { requestClient: api, errorDiagnosis, get platform() { return wx } })\n}",
+  "openNextErrorAction": "openNextErrorAction() {\nreturn diagnosisFlow.openNextErrorAction(this, { get platform() { return wx } })\n}",
+  "_refreshDiagnosisFromServer": "async _refreshDiagnosisFromServer(wqId, fallbackRaw) {\nreturn diagnosisFlow._refreshDiagnosisFromServer(this, wqId, fallbackRaw, { requestClient: api, errorDiagnosis })\n}"
+}
 const DELEGATES = {
+  ...DIAGNOSIS_DELEGATES,
   ...AI_REQUEST_DELEGATES,
   ...AI_REGENERATION_DELEGATES,
   ...AI_GENERATION_DELEGATES,
@@ -189,7 +200,7 @@ function scanWrongDetail(options = {}) {
 }
 
 module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DIRECT_HELPERS,
-  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, AI_GENERATION_DELEGATES, AI_REGENERATION_DELEGATES, AI_REQUEST_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
+  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, AI_GENERATION_DELEGATES, AI_REGENERATION_DELEGATES, AI_REQUEST_DELEGATES, DIAGNOSIS_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
 
 if (require.main === module) {
   const result = scanWrongDetail()

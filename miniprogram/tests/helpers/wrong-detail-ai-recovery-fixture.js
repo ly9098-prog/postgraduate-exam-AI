@@ -3,7 +3,7 @@ const path = require('node:path')
 const vm = require('node:vm')
 const root = path.resolve(__dirname, '../../subpackages/study/wrong-detail')
 
-function fixture() {
+function fixture(options = {}) {
   let definition
   const calls = [], cache = new Map(), sleeps = []
   const api = {
@@ -27,7 +27,7 @@ function fixture() {
         hasAiAnalysisContent: value => !!(value && value.content),
       }
       if (request === '../utils/ai-math-render') return { buildAiRichText: value => value }
-      if (request === '../utils/error-diagnosis') return { TAXONOMY: [] }
+      if (request === '../utils/error-diagnosis') return options.diagnosis || { TAXONOMY: [] }
       if (request === '../utils/ai-teacher-408') return {}
       if (request === './teacher-presentation') return { presentTeacherResult: value => value }
       if (request === './utils/teacher-action-controller') return {

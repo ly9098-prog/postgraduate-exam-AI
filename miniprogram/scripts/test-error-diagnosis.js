@@ -78,7 +78,7 @@ function source(rel) {
 for (const rel of [
   'subpackages/study/practice-result/index.js',
   'subpackages/exam/result/index.js',
-  'subpackages/study/wrong-detail/wrong-detail.js',
+  'subpackages/study/wrong-detail/utils/wrong-detail-diagnosis-flow.js',
 ]) {
   const text = source(rel)
   assert.ok(text.includes('/diagnosis'), `${rel} should call diagnosis API`)
@@ -90,10 +90,12 @@ assert.ok(dashboard.includes('/wrong-questions/diagnosis/stats'))
 assert.ok(!dashboard.includes("product_scope: 'exam408'"), '学习报告错因统计不应再硬编码单一产品范围')
 
 const wrongDetail = source('subpackages/study/wrong-detail/wrong-detail.js')
+const wrongDetailDiagnosis = source('subpackages/study/wrong-detail/utils/wrong-detail-diagnosis-flow.js')
 assert.ok(wrongDetail.includes('_refreshDiagnosisFromServer'), '错因详情应从持久化 diagnosis 接口回显')
-assert.ok(wrongDetail.includes('/wrong-questions/${id}/diagnosis'), '错因详情应读取 occurrence 级 diagnosis')
-assert.ok(!wrongDetail.includes('/diagnosis/suggest'), '我的错因区域不应再发起 AI 推荐请求')
-assert.ok(!wrongDetail.includes('enableDiagnosisAi()'), '我的错因区域不应再暴露 AI 推荐开关')
+assert.ok(wrongDetail.includes('return diagnosisFlow._refreshDiagnosisFromServer(this,'), '错因详情应委托诊断编排')
+assert.ok(wrongDetailDiagnosis.includes('/wrong-questions/${id}/diagnosis'), '错因详情应读取 occurrence 级 diagnosis')
+assert.ok(!(wrongDetail + wrongDetailDiagnosis).includes('/diagnosis/suggest'), '我的错因区域不应再发起 AI 推荐请求')
+assert.ok(!(wrongDetail + wrongDetailDiagnosis).includes('enableDiagnosisAi()'), '我的错因区域不应再暴露 AI 推荐开关')
 const wrongDetailWxml = source('subpackages/study/wrong-detail/wrong-detail.wxml')
 assert.ok(!wrongDetailWxml.includes('AI 推荐'), '我的错因 UI 不应再展示 AI 推荐')
 assert.ok(wrongDetailWxml.includes('circle-question-mark.svg'), '未记录错因应使用问号状态图标')

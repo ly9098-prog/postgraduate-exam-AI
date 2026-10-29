@@ -80,3 +80,13 @@
 - 缓存写回仅替换 entry.data，保留 cache/entry 身份、timestamp、旧 status 与无关字段；normalized 引用保持。generatedAt 为 undefined 时不写 marker，其他 falsey 值写空字符串；不增加 ready 状态或改变失效规则。
 - 13 项契约在原页面与当前页面全部通过；八组定向共 91 项通过。900 组六入口返回值、状态、调用轨迹及字段顺序对照一致；独立只读审查无 P0–P3 可操作发现。夹具额外暴露真实 Page definition，确保 reset/cache 契约执行真实方法而非既有 mock。
 - 全量 Node 2232 passed、渲染 5 fixtures/31 passed、八条架构门禁及视觉/KaTeX检查通过。CI 增加请求支持契约；详情门禁登记十一个模块、44 条委托模板，页面 ceiling 为 1101。证据 `/tmp/wrong-detail-ai-request-batch/`；错因、详情加载、掌握/撤销及其他剩余页面职责和真实环境验收仍待继续。
+
+## 10. 错因选择、保存与持久化刷新（2026-10-29 后续批次）
+
+- 本批页面由 1101→963 行。诊断弹层打开/关闭、主次错因选择、保存、后续行动路由及服务端刷新七个方法迁入 `utils/wrong-detail-diagnosis-flow.js`（168 行，函数均 ≤50 行）；页面方法名、参数、async 和单次委托保持。七个方法体仅替换接收者及注入端口访问，其余 112 个 Page 属性原文不变。
+- API 与 diagnosis 工具对象显式注入，保留方法 receiver、API 方法在 payload 前求值，以及 await 后当前 helper、occurrence ID、视图和时钟读取；平台 getter 每次读取当前全局 wx。错误 toast 方法仍在错误 formatter 之前取得，保存/cache/setData/toast 顺序不变。
+- 次级错因仍最多三个，切换主因时复制并移除同名次因；路由过滤 null/undefined/空字符串而保留 0/false，按原键序编码。保存捕获原选择，在响应后读取当前 occurrence ID，写入本地确认事实并保留服务端 ID；缓存 entry 替换与视图引用关系保持。
+- 刷新先展示 embedded fallback，再请求 occurrence 级 diagnosis；序号/存活/题目守卫、confirmed fallback 对滞后聚合结果的保护、视图与缓存分别合并、finally 仅检查序号与存活的既有差异保持。失败不弹 toast，保留 fallback。
+- 新增基线限制：save 响应若为 `data` 包装，本地 raw 顶层虽写入用户选择及 `user_confirmed=true`，后续 normalizer 仍优先读取保留的内层 `data`，normalized primary/confirmed 可能保留旧值；直接响应与 `diagnosis` 包装不出现该差异。该行为在原页面重放确认，本批刻画并保留，未作为兼容重构中的业务修复。
+- 15 项契约在原页面与当前页面通过；九组定向共 106 项通过，1120 组七入口状态/调用轨迹/字段顺序对照一致；独立只读审查无 P0–P3 可操作发现。全量 Node 2247 passed，渲染 5 fixtures/31 passed，八条门禁与视觉/KaTeX通过。
+- CI 增加诊断契约；详情门禁为十二个模块、51 条委托，页面 ceiling 为 963。legacy diagnosis 脚本的错题详情断言改指新归属并单独验证通过，完整脚本在原版/当前均复现 practice-result occurrence diagnosis_id 的既有失败；未修改该失败。证据 `/tmp/wrong-detail-diagnosis-batch/`；真实微信/AI与完整闭环等验收限制继续有效。

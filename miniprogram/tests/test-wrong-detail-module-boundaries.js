@@ -12,11 +12,11 @@ const page = fs.readFileSync(path.join(root, PAGE), 'utf8')
 const modules = Object.fromEntries(MODULES.map(name =>
   [name, fs.readFileSync(path.join(root, DIRECTORY, name), 'utf8')]))
 
-test('wrong-detail page and eleven modules preserve budgets and teacher ports', () => {
+test('wrong-detail page and twelve modules preserve budgets and teacher ports', () => {
   const result = scanWrongDetail()
   assert.deepEqual(result.errors, [])
   assert.equal(result.pageLines, PAGE_CEILING)
-  assert.equal(result.modules, 11)
+  assert.equal(result.modules, 12)
   assert.equal(result.teacherPorts, 22)
 })
 
