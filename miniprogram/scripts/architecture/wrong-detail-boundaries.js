@@ -6,11 +6,12 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 const PAGE = 'miniprogram/subpackages/study/wrong-detail/wrong-detail.js'
 const DIRECTORY = 'miniprogram/subpackages/study/wrong-detail/utils'
-const PAGE_CEILING = 1355
+const PAGE_CEILING = 1302
 const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-question-view.js', 'wrong-detail-teacher-page-adapter.js',
   'wrong-detail-content-transition.js',
-  'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js']
+  'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js',
+  'wrong-detail-ai-recovery.js']
 const DIRECT_HELPERS = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_isWqMastered']
 const TRANSITION_DELEGATES = {
@@ -33,7 +34,13 @@ const NAVIGATION_DELEGATES = {
   "_commitNavigation": "async _commitNavigation(ctx, switchDirection, animMs, navigationSeq) {\nreturn navigationFlow._commitNavigation(this, ctx, switchDirection, animMs, navigationSeq, { QUESTION_SWITCH_ANIM_WATCHDOG_MS })\n}",
   "_handleNavigateError": "_handleNavigateError(e, navigationSeq) {\nreturn navigationFlow._handleNavigateError(this, e, navigationSeq, { showToast: options => wx.showToast(options) })\n}"
 }
+const AI_RECOVERY_DELEGATES = {
+  "_isCurrentAiRequest": "_isCurrentAiRequest(requestId, wqId) {\nreturn aiRecovery._isCurrentAiRequest(this, requestId, wqId)\n}",
+  "_pollPersistedAiAnalysis": "async _pollPersistedAiAnalysis(wqId, requestId, options) {\nreturn aiRecovery._pollPersistedAiAnalysis(this, wqId, requestId, options, { AI_CACHE_POLL_ATTEMPTS, _sleep, _aiPollDelayMs, fetchStatus: id => api.get(`/ai/error-analysis/status/${id}`, {}, { timeout: 10000, suppressNetworkToast: true }), _normalizeAiPayload: value => _normalizeAiPayload(value), _hasAiContent: value => _hasAiContent(value) })\n}",
+  "_applyRecoveredAiResult": "_applyRecoveredAiResult(recovered, options) {\nreturn aiRecovery._applyRecoveredAiResult(this, recovered, options, { _generationMarker, _normalizeAiResult: value => _normalizeAiResult(value) })\n}"
+}
 const DELEGATES = {
+  ...AI_RECOVERY_DELEGATES,
   ...NAVIGATION_DELEGATES,
   ...TRANSITION_DELEGATES,
   "_processWqData": "function _processWqData(wq, safeMode) {\nreturn processWqData(wq, safeMode, { isTrueFalseType, config, buildRenderModel, adapter, _subjectLabel, _errorTypeLabel })\n}",
@@ -152,7 +159,7 @@ function scanWrongDetail(options = {}) {
 }
 
 module.exports = { PAGE, DIRECTORY, PAGE_CEILING, MODULES, DIRECT_HELPERS,
-  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
+  DELEGATES, TRANSITION_DELEGATES, NAVIGATION_DELEGATES, AI_RECOVERY_DELEGATES, TEACHER_PORTS, pageViolations, moduleViolations, teacherPortViolations, scanWrongDetail }
 
 if (require.main === module) {
   const result = scanWrongDetail()

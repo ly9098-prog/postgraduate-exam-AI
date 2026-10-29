@@ -24,6 +24,7 @@ const { buildTeacherActionPageCapabilities } = require('./utils/wrong-detail-tea
 const contentTransition = require('./utils/wrong-detail-content-transition')
 const navigationData = require('./utils/wrong-detail-navigation-data')
 const navigationFlow = require('./utils/wrong-detail-navigation-flow')
+const aiRecovery = require('./utils/wrong-detail-ai-recovery')
 function _sleep(ms) {
 return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -494,67 +495,13 @@ wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
 }
 },
 _isCurrentAiRequest(requestId, wqId) {
-return requestId === this._aiRequestId &&
-this._alive &&
-this.data.wq &&
-String(this.data.wq.id) === String(wqId)
+return aiRecovery._isCurrentAiRequest(this, requestId, wqId)
 },
 async _pollPersistedAiAnalysis(wqId, requestId, options) {
-const pollOptions = options || {}
-const baselineGeneratedAt = String(pollOptions.baselineGeneratedAt || '')
-const requireNewGeneration = !!pollOptions.requireNewGeneration
-for (var attempt = 0; attempt < AI_CACHE_POLL_ATTEMPTS; attempt++) {
-if (!this._isCurrentAiRequest(requestId, wqId)) return null
-if (attempt > 0) await _sleep(_aiPollDelayMs(attempt))
-if (!this._isCurrentAiRequest(requestId, wqId)) return null
-try {
-const status = await api.get(`/ai/error-analysis/status/${wqId}`, {}, {
-timeout: 10000,
-suppressNetworkToast: true,
-})
-if (!this._isCurrentAiRequest(requestId, wqId)) return null
-if (!status || !status.ready) continue
-const generatedAt = String(status.generated_at || '')
-if (requireNewGeneration && generatedAt === baselineGeneratedAt) continue
-const normalized = _normalizeAiPayload(status.content)
-if (_hasAiContent(normalized)) {
-const latestWq = Object.assign({}, this.data.wq || {}, {
-ai_analysis: normalized,
-ai_analysis_status: 'ready',
-ai_analysis_generated_at: generatedAt,
-})
-return { normalized, latestWq, generatedAt }
-}
-} catch (_) {
-}
-}
-return null
+return aiRecovery._pollPersistedAiAnalysis(this, wqId, requestId, options, { AI_CACHE_POLL_ATTEMPTS, _sleep, _aiPollDelayMs, fetchStatus: id => api.get(`/ai/error-analysis/status/${id}`, {}, { timeout: 10000, suppressNetworkToast: true }), _normalizeAiPayload: value => _normalizeAiPayload(value), _hasAiContent: value => _hasAiContent(value) })
 },
 _applyRecoveredAiResult(recovered, options) {
-if (!recovered) return false
-const applyOptions = options || {}
-this._resetAiLoadingState()
-this._aiResult = recovered.normalized
-this._aiGenerationMarker = String(recovered.generatedAt || _generationMarker(recovered.latestWq) || '')
-if (recovered.latestWq) {
-this._syncWqCacheAi(
-recovered.latestWq.id,
-recovered.normalized,
-this._aiGenerationMarker
-)
-}
-const latestWq = recovered.latestWq || this.data.wq
-this.setData({
-wq: latestWq,
-aiCards: _normalizeAiResult(recovered.normalized),
-aiFallback: false,
-aiFromCache: !applyOptions.fromRegeneration,
-aiFromQuestionAnalysis: false,
-aiErrorText: '',
-aiRetryable: true,
-aiInlineNotice: '',
-})
-return true
+return aiRecovery._applyRecoveredAiResult(this, recovered, options, { _generationMarker, _normalizeAiResult: value => _normalizeAiResult(value) })
 },
   async loadAiAnalysis(wqId) {
     if (!wqId || this.data.aiLoading) return
