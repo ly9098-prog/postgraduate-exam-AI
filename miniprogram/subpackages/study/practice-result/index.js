@@ -5,11 +5,9 @@ const errorDiagnosis = require('../utils/error-diagnosis');
 const { buildLocalErrorDistribution: _buildLocalErrorDistribution, getResultTip: _getResultTip } = require('./utils/result-tips');
 const { hasDetailedPracticePayload: _hasDetailedPayload, readSummaryFromOptions: _readSummaryFromOptions } = require('./utils/payload-readers');
 const { isPayloadRequestValid: _isPayloadRequestValid, extractCreatedAtFromCacheKey } = require('./utils/cache-validation');
-const { resolveResultCounts } = require('./utils/result-counts');
 const { buildReviewItem: _buildReviewItem, normalizeReviewItem: _normalizeReviewItem } = require('./utils/review-item-builder');
-const { normalizePercent: _normalizePercent, getQuestionListHeightRpx: _getQuestionListHeightRpx, formatDuration: _formatDuration, buildErrorDonutGradient: _buildErrorDonutGradient } = require('./utils/format-helpers');
+const { getQuestionListHeightRpx: _getQuestionListHeightRpx, buildErrorDonutGradient: _buildErrorDonutGradient } = require('./utils/format-helpers');
 const { stripLevelPrefix: _stripLevelPrefix, growthFromTotalExp: _growthFromTotalExp, normalizeGrowthProfile: _normalizeGrowthProfile, growthFromOverview: _growthFromOverview } = require('./utils/growth-helpers');
-const { buildTrendPlot: _buildTrendPlot } = require('./utils/trend-plot-builder');
 const { buildRecoveredResultPayload: _buildRecoveredResultPayload } = require('./utils/recovered-payload-builder');
 const { normalizePracticeReturnRoute: _normalizePracticeReturnRoute, safeDecodeJson: _safeDecodeJson } = require('./utils/route-helpers');
 const aiTeacher408 = require('../utils/ai-teacher-408');
@@ -23,6 +21,14 @@ const { createTrendLoadController } = require('./utils/trend-load-controller');
 const { createReview408TeacherController } = require('./utils/review-408-teacher-controller');
 const { createBatchDiagnosisController } = require('./utils/batch-diagnosis-controller');
 const { createBackNavigationController } = require('./utils/back-navigation-controller');
+const {
+  buildPracticePayloadPageState,
+  buildPracticePayloadPageCapabilities,
+} = require('./utils/practice-result-payload-page-adapter');
+const { buildBatchDiagnosisPageCapabilities } = require('./utils/practice-result-diagnosis-page-adapter');
+const { buildTrendLoadPageCapabilities } = require('./utils/practice-result-trend-page-adapter');
+const { buildReview408TeacherPageCapabilities } = require('./utils/practice-result-teacher-page-adapter');
+const { buildBackNavigationPageCapabilities } = require('./utils/practice-result-navigation-page-adapter');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
 const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1';
@@ -41,9 +47,7 @@ daily_boost: '',
 badges: []
 };
 function normalizePracticeReturnRoute(value) { return _normalizePracticeReturnRoute(value) }
-function normalizePercent(value) { return _normalizePercent(value) }
 function getQuestionListHeightRpx(count) { return _getQuestionListHeightRpx(count) }
-function buildTrendPlot(data) { return _buildTrendPlot(data) }
 function buildErrorDonutGradient(distribution) { return _buildErrorDonutGradient(distribution) }
 function getErrorDonutMetrics() {
 let windowWidth = 375;
@@ -91,7 +95,6 @@ return `<path d="M ${p1.x.toFixed(3)} ${p1.y.toFixed(3)} A ${pathRadius.toFixed(
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.toFixed(3)} ${size.toFixed(3)}" shape-rendering="geometricPrecision"><circle cx="${cx.toFixed(3)}" cy="${cy.toFixed(3)}" r="${pathRadius.toFixed(3)}" fill="none" stroke="#EEF2EF" stroke-width="${lineWidth.toFixed(3)}"/>${paths}</svg>`;
 return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
-function formatDuration(seconds) { return _formatDuration(seconds) }
 function safeDecodeJson(value) { return _safeDecodeJson(value) }
 function stripLevelPrefix(title, level) { return _stripLevelPrefix(title, level) }
 function growthFromTotalExp(totalExp, streakDays, badges) { return _growthFromTotalExp(totalExp, streakDays, badges) }
@@ -449,39 +452,15 @@ wx.showToast({ title: '详细复盘恢复失败，可稍后重试', icon: 'none'
   },
 
   _practicePageState() {
-    return {
-      incrementDiagnosisRefreshSeq: () => { this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1 },
-      setSessionPayload: source => { this._sessionPayload = source },
-      isPageAlive: () => this._pageAlive,
-      isResultVisible: () => this._resultVisible,
-      setData: patch => this.setData(patch),
-      refreshWrongDiagnoses: () => this.refreshWrongDiagnoses(),
-    }
+    return buildPracticePayloadPageState(this)
   },
 
   _practicePayloadPorts() {
     if (!this._practicePayloadPortsCached) {
-      this._practicePayloadPortsCached = {
-        buildReviewItem: (q, r, a, i) => this.buildReviewItem(q, r, a, i),
-        normalizeReviewItem: (item, index) => this.normalizeReviewItem(item, index),
-        resolveResultCounts: (source, reviewItems) => resolveResultCounts(source, reviewItems),
-        normalizePercent,
-        formatDuration,
-        getQuestionListHeightRpx,
-        buildErrorDonutGradient,
+      this._practicePayloadPortsCached = buildPracticePayloadPageCapabilities(this, {
+        knowledgePracticeSync,
         buildErrorDonutSvg,
-        normalizeGrowthProfile,
-        buildLocalErrorDistribution: items => this.buildLocalErrorDistribution(items),
-        getResultTip: (acc, wrong, skipped, partial, total) =>
-          this.getResultTip(acc, wrong, skipped, partial, total),
-        getLaunchKnowledgePointId: () => this._launchKnowledgePointId,
-        getLaunchSource: () => this._launchSource,
-        getLaunchSubjectId: () => this._launchSubjectId,
-        getPracticeRequestId: () => this._practiceRequestId,
-        recordKnowledgePractice: data => knowledgePracticeSync.record(data),
-        consumeKnowledgeBaseline: (subjectId, kpId) =>
-          knowledgePracticeSync.consumeBaseline(subjectId, kpId),
-      };
+      });
     }
     return this._practicePayloadPortsCached;
   },
@@ -538,21 +517,9 @@ batchSelectedCount: Object.keys(selected).length,
 
   _batchDiagnosisController() {
     if (!this._batchDiagnosis) {
-      this._batchDiagnosis = createBatchDiagnosisController({
-        getBatchDiagnosisSaving: () => this.data.batchDiagnosisSaving,
-        getBatchSelectedMap: () => this.data.batchSelectedMap,
-        getWrongReviewItems: () => this.data.wrongReviewItems,
-        getReviewItems: () => this.data.reviewItems,
-        getFilteredReviewItems: () => this.data.filteredReviewItems,
-        isPageAlive: () => this._pageAlive,
-        setData: patch => this.setData(patch),
-        showToast: options => wx.showToast(options),
-        getQuickTypes: () => errorDiagnosis.QUICK_TYPES,
-        showOptions: opts => this._showAppOptions(opts),
-        incrementDiagnosisRefreshSeq: () => { this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1 },
-        putDiagnosis: (wqId, payload) => api.put(`/wrong-questions/${wqId}/diagnosis`, payload),
-        normalizeDiagnosis: raw => errorDiagnosis.normalizeDiagnosis(raw),
-      })
+      this._batchDiagnosis = createBatchDiagnosisController(
+        buildBatchDiagnosisPageCapabilities(this, { api })
+      )
     }
     return this._batchDiagnosis
   },
@@ -579,13 +546,9 @@ return this._pageAlive && loadId === this._dashboardLoadId;
 
   _trendLoadController() {
     if (!this._trendLoad) {
-      this._trendLoad = createTrendLoadController({
-        isLoadCurrent: id => this._isDashboardLoadCurrent(id),
-        setData: patch => this.setData(patch),
-        requestTrends: () => this.requestApi('/api/v1/stats/trends', { days: 7 }),
-        normalizePercent,
-        buildTrendPlot: data => buildTrendPlot(data),
-      })
+      this._trendLoad = createTrendLoadController(
+        buildTrendLoadPageCapabilities(this, {})
+      )
     }
     return this._trendLoad
   },
@@ -766,34 +729,9 @@ if (action) this.run408TeacherFromReview(action);
 
   _review408TeacherController() {
     if (!this._review408Teacher) {
-      this._review408Teacher = createReview408TeacherController({
-        getTeacherLoading: () => this.data.teacherLoading,
-        getReviewDialog: () => this.data.reviewDialog,
-        setData: patch => this.setData(patch),
-        buildCacheKey: (dialog, action) => this._teacherCacheKey(dialog, action),
-        getCacheEntry: key => this._teacherCache && this._teacherCache[key],
-        setCacheEntry: (key, value) => {
-          if (!this._teacherCache) this._teacherCache = Object.create(null)
-          this._teacherCache[key] = value
-        },
-        getFeedbackEntry: key => (this._teacherFeedbackCache && this._teacherFeedbackCache[key]) || '',
-        setActiveCacheKey: key => { this._activeTeacherCacheKey = key },
-        getInflight: key => {
-          if (!this._teacherInflight) this._teacherInflight = Object.create(null)
-          return this._teacherInflight[key]
-        },
-        setInflight: (key, promise) => {
-          if (!this._teacherInflight) this._teacherInflight = Object.create(null)
-          this._teacherInflight[key] = promise
-        },
-        deleteInflight: key => { delete this._teacherInflight[key] },
-        nextRequestSequence: () => ++this._teacherRequestSeq,
-        getRequestSequence: () => this._teacherRequestSeq,
-        isPageAlive: () => this._pageAlive,
-        postTeacher: payload => api.post('/ai/408-teacher', payload, { timeout: 55000 }),
-        normalizeResult: raw => aiTeacher408.normalizeResult(raw),
-        errorMessage: error => aiTeacher408.errorMessage(error, api),
-      })
+      this._review408Teacher = createReview408TeacherController(
+        buildReview408TeacherPageCapabilities(this, { api })
+      )
     }
     return this._review408Teacher
   },
@@ -876,20 +814,9 @@ this.navigateToWrongDetail(wrongQuestionId);
 
   _backNavigationController() {
     if (!this._backNavigation) {
-      this._backNavigation = createBackNavigationController({
-        getNavigationLocked: () => this._navigationLocked,
-        setNavigationLocked: value => { this._navigationLocked = value },
-        getReturnTo: () => this._returnTo || '',
-        getLaunchSource: () => this._launchSource,
-        getLaunchSubjectId: () => this._launchSubjectId,
-        isPageAlive: () => this._pageAlive,
-        getCurrentPages: () => (typeof getCurrentPages === 'function' ? getCurrentPages() : []),
-        navigateBack: options => wx.navigateBack(options),
-        redirectTo: options => wx.redirectTo(options),
-        reLaunch: options => wx.reLaunch(options),
-        showToast: options => wx.showToast(options),
-        setTimeout,
-      })
+      this._backNavigation = createBackNavigationController(
+        buildBackNavigationPageCapabilities(this, {})
+      )
     }
     return this._backNavigation
   },
