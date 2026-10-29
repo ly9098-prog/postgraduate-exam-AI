@@ -378,6 +378,7 @@ jobs:
           node miniprogram/scripts/architecture/review-today-boundaries.js
           node miniprogram/scripts/architecture/practice-result-boundaries.js
           node miniprogram/scripts/architecture/wrong-book-boundaries.js
+          node miniprogram/scripts/architecture/wrong-detail-boundaries.js
           node --test miniprogram/tests/test-page-budgets.js
           node --test miniprogram/tests/test-learning-controller-budgets.js
           node --test \
@@ -642,6 +643,8 @@ jobs:
           node --test miniprogram/tests/test-practice-result-page-adapter-contracts.js
           node --test miniprogram/tests/test-wrong-book-module-boundaries.js
           node --test miniprogram/tests/test-wrong-book-view-contracts.js
+          node --test miniprogram/tests/test-wrong-detail-module-boundaries.js
+          node --test miniprogram/tests/test-wrong-detail-state-contracts.js
           node --test miniprogram/tests/test-practice-result-recovered-payload.js
           node --test miniprogram/tests/test-practice-result-route-helpers.js
           node --test miniprogram/tests/test-practice-result-review-preview-format.js

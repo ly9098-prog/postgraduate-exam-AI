@@ -7,6 +7,7 @@ function assert(cond, msg) {
 
 const root = path.resolve(__dirname, '..')
 const js = fs.readFileSync(path.join(root, 'subpackages/study/wrong-detail/wrong-detail.js'), 'utf8')
+const aiState = fs.readFileSync(path.join(root, 'subpackages/study/wrong-detail/utils/wrong-detail-ai-state.js'), 'utf8')
 const wxml = fs.readFileSync(path.join(root, 'subpackages/study/wrong-detail/wrong-detail.wxml'), 'utf8')
 const wxss = fs.readFileSync(path.join(root, 'subpackages/study/wrong-detail/wrong-detail.wxss'), 'utf8')
 
@@ -19,6 +20,7 @@ assert(!wxml.includes('添加题图 / 表格'), 'manual upload CTA should be rem
 assert(!wxml.includes('aiAttachment'), 'attachment-dependent rendering should be removed')
 assert(!wxss.includes('.ai-visual-context'), 'unused visual upload styles should be removed')
 assert(js.includes("wq.ai_analysis_status && wq.ai_analysis_status !== 'ready'"), 'stale/generating AI caches must not be treated as ready')
-assert(js.includes("!wq.ai_analysis_status || wq.ai_analysis_status === 'ready'"), 'only ready/legacy caches may render directly')
+assert(aiState.includes("!wq.ai_analysis_status || wq.ai_analysis_status === 'ready'"), 'only ready/legacy caches may render directly')
+assert(js.includes('return aiState._resolvePreferredAnalysis(wq, _hasStoredAnalysisValue, _normalizeAiPayload)'), 'page must delegate preferred cache selection')
 
 console.log('wrong-detail AI DB-image-only regression passed')

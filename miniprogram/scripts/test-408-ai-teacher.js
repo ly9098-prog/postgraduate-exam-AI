@@ -65,6 +65,8 @@ const surfaces = [
     wxml: 'subpackages/study/wrong-detail/wrong-detail.wxml',
     handler: 'run408TeacherAction',
     extra: 'diagnosis_id',
+    apiSource: 'subpackages/study/wrong-detail/utils/wrong-detail-teacher-page-adapter.js',
+    contextSource: 'subpackages/study/wrong-detail/utils/teacher-action-controller.js',
   },
   {
     js: 'subpackages/study/practice-result/index.js',
@@ -83,8 +85,12 @@ const surfaces = [
 surfaces.forEach(surface => {
   const js = fs.readFileSync(path.join(miniRoot, surface.js), 'utf8')
   const wxml = fs.readFileSync(path.join(miniRoot, surface.wxml), 'utf8')
-  assert(js.includes("api.post('/ai/408-teacher'"), `${surface.js} 未调用 408 teacher API`)
-  assert(js.includes(surface.extra), `${surface.js} 未携带 ${surface.extra} 上下文`)
+  const apiSource = surface.apiSource
+    ? fs.readFileSync(path.join(miniRoot, surface.apiSource), 'utf8') : js
+  const contextSource = surface.contextSource
+    ? fs.readFileSync(path.join(miniRoot, surface.contextSource), 'utf8') : js
+  assert(apiSource.includes("api.post('/ai/408-teacher'"), `${surface.js} 未调用 408 teacher API`)
+  assert(contextSource.includes(surface.extra), `${surface.js} 未携带 ${surface.extra} 上下文`)
   assert(js.includes(`${surface.handler}(`), `${surface.js} 缺少 ${surface.handler}`)
   assert(wxml.includes(surface.handler), `${surface.wxml} 未绑定 ${surface.handler}`)
   assert(js.includes('feedback408Teacher('), `${surface.js} 缺少 AI 反馈处理`)
