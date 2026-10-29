@@ -20,6 +20,10 @@ const ERROR_TYPES = [
 { value: 'method', label: '方法错误' },
 { value: 'other', label: '其他' },
 ]
+const { masteryProgress, positiveNumber, subjectLabel, errorTypeLabel, timeLabel, toCleanText, reviewDueInfo, isRecentDate, shortDateLabel, oneLineInsight } = require('./utils/wrong-book-value-view')
+const { decorateItem, resolveReviewCount, resolveItemStatus, resolveItemContent, buildDecoratedItem, flattenSubjectOptions, buildTaskGroups } = require('./utils/wrong-book-item-view')
+const { buildAnalysis, buildSummaryCards, buildActionPlan, rowsFromStats, countsFromList, topItems, toPercentItems, radarPolygonStyle, radarAxisText, focusInsight } = require('./utils/wrong-book-analysis-view')
+const { buildItemViewCapabilities, buildAnalysisViewCapabilities } = require('./utils/wrong-book-view-page-adapter')
 Page({
 data: {
 list: [],
@@ -486,30 +490,7 @@ subjectsLoaded: false,
 }
 },
 _flattenSubjectOptions(raw) {
-const source = Array.isArray(raw)
-? raw
-: (raw && Array.isArray(raw.items) ? raw.items : [])
-const result = []
-const seen = new Set()
-const visit = (node) => {
-if (!node || node.is_active === false) return
-const value = node.subject_id != null
-? node.subject_id
-: (node.id != null ? node.id : null)
-const label = node.subject_name != null
-? node.subject_name
-: (node.display_name != null ? node.display_name : (node.name != null ? node.name : null))
-if (value != null && label) {
-const key = String(value)
-if (!seen.has(key)) {
-seen.add(key)
-result.push({ value: Number(value), label: String(label) })
-}
-}
-if (Array.isArray(node.children)) node.children.forEach(visit)
-}
-source.forEach(visit)
-return result
+return flattenSubjectOptions(raw)
 },
 goBack() {
 wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
@@ -1241,306 +1222,85 @@ wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
 }
 },
   _decorateItem(item) {
-    const wrongCount = this._positiveNumber(item.wrong_count || item.error_count || item.mistake_count || item.incorrect_count, 0)
-    const reviewCount = this._resolveReviewCount(item)
-    const lastErrorAt = item.last_wrong_at || item.last_error_at || item.updated_at || item.created_at
-    const mastery = this._masteryProgress(item, reviewCount)
-    const isMastered = item.is_mastered === true || item.status === "mastered" || item.mastered === true
-    const dueInfo = this._reviewDueInfo(item, isMastered)
-    const isRecent = this._isRecentDate(item.created_at || item.last_wrong_at || item.updated_at, 14)
-    const statusInfo = this._resolveItemStatus(isMastered, dueInfo, isRecent)
-    const contentInfo = this._resolveItemContent(item)
-    return this._buildDecoratedItem(item, { wrongCount, reviewCount, lastErrorAt, mastery, isMastered, dueInfo, isRecent, statusInfo, contentInfo })
-  },
+return decorateItem(item, buildItemViewCapabilities(this))
+},
 
   _resolveReviewCount(item) {
-    const raw = item.review_record_count !== undefined && item.review_record_count !== null ? item.review_record_count : item.review_count
-    return this._positiveNumber(raw, 0)
-  },
+return resolveReviewCount(item, buildItemViewCapabilities(this))
+},
 
   _resolveItemStatus(isMastered, dueInfo, isRecent) {
-    let label = "待巩固", tone = "waiting"
-    if (isMastered) { label = "已掌握"; tone = "mastered" }
-    else if (dueInfo.overdue) { label = "已逾期"; tone = "overdue" }
-    else if (dueInfo.today) { label = "今天到期"; tone = "due" }
-    else if (isRecent) { label = "最近新增"; tone = "recent" }
-    else if (dueInfo.date) { label = this._shortDateLabel(dueInfo.date) + "复习" }
-    return { label, tone }
-  },
+return resolveItemStatus(isMastered, dueInfo, isRecent, buildItemViewCapabilities(this))
+},
 
   _resolveItemContent(item) {
-    const rawContent = item.content
-    const contentText = typeof rawContent === "string" ? rawContent : (rawContent && (rawContent.text || rawContent.stem)) || ""
-    const cleanText = this._toCleanText(contentText)
-    const hasImage = Array.isArray(item.image_url) ? item.image_url.length > 0 : !!item.image_url
-    return { cleanText, hasImage }
-  },
+return resolveItemContent(item, buildItemViewCapabilities(this))
+},
 
   _buildDecoratedItem(item, ctx) {
-    const { wrongCount, reviewCount, lastErrorAt, mastery, isMastered, dueInfo, isRecent, statusInfo, contentInfo } = ctx
-    return {
-      ...item,
-      _subjectLabel: this._subjectLabel(item.subject_code, item.subject_name),
-      _errorTypeLabel: this._errorTypeLabel(item.error_type),
-      _timeLabel: this._timeLabel(item.created_at),
-      _lastErrorLabel: this._timeLabel(lastErrorAt) || "待记录",
-      _wrongCount: wrongCount,
-      _reviewCount: reviewCount,
-      _masteryPercent: mastery.percent,
-      _masteryLabel: mastery.label,
-      _cleanText: contentInfo.cleanText || (contentInfo.hasImage ? "图片题 · 点击查看完整题目" : ""),
-      _isMastered: isMastered,
-      _isTodayDue: dueInfo.today,
-      _isOverdue: dueInfo.overdue,
-      _isRecent: isRecent,
-      _nextReviewAt: dueInfo.date ? dueInfo.date.toISOString() : "",
-      _taskStatusLabel: statusInfo.label,
-      _statusTone: statusInfo.tone,
-    }
-  },
+return buildDecoratedItem(item, ctx, buildItemViewCapabilities(this))
+},
 _reviewDueInfo(item, isMastered) {
-if (isMastered) return { today: false, overdue: false, date: null }
-const raw = item.next_review_at || item.review_due_at || item.scheduled_at || item.due_at
-const dueMs = raw ? parseServerUtc(raw) : NaN
-const date = isFinite(dueMs) ? new Date(dueMs) : null
-const explicitToday = item.is_today_due === true || item.today_due === true || item.is_due === true
-if (!date && explicitToday) return { today: true, overdue: false, date: null }
-if (!date) return { today: false, overdue: false, date: null }
-const range = getChinaDayRangeUtcMs()
-return {
-today: dueMs < range.end,
-overdue: dueMs < range.start,
-date,
-}
+return reviewDueInfo(item, isMastered, parseServerUtc, getChinaDayRangeUtcMs)
 },
 _isRecentDate(raw, days) {
-if (!raw) return false
-const ms = parseServerUtc(raw)
-if (!isFinite(ms)) return false
-const diff = Date.now() - ms
-return diff >= 0 && diff <= days * 86400000
+return isRecentDate(raw, days, parseServerUtc)
 },
 _shortDateLabel(date) {
-if (!date || Number.isNaN(date.getTime())) return ''
-return formatChinaMonthDayCn(date.getTime())
+return shortDateLabel(date, formatChinaMonthDayCn)
 },
 _buildTaskGroups(list = []) {
-const used = new Set()
-const take = predicate => {
-const rows = list.filter(item => !used.has(String(item.id)) && predicate(item))
-rows.forEach(item => used.add(String(item.id)))
-return rows
-}
-const today = take(item => !item._isMastered && item._isTodayDue)
-.sort((a, b) => Number(b._isOverdue) - Number(a._isOverdue) || b._wrongCount - a._wrongCount)
-const high = take(item => !item._isMastered && item._wrongCount >= 3)
-.sort((a, b) => b._wrongCount - a._wrongCount)
-const recent = take(item => !item._isMastered && item._isRecent)
-.sort((a, b) => (parseServerUtc(b.created_at) || 0) - (parseServerUtc(a.created_at) || 0))
-const waiting = take(item => !item._isMastered)
-.sort((a, b) => a._masteryPercent - b._masteryPercent || b._wrongCount - a._wrongCount)
-const mastered = take(item => item._isMastered)
-.sort((a, b) => (parseServerUtc(b.updated_at || b.created_at) || 0) - (parseServerUtc(a.updated_at || a.created_at) || 0))
-const maxPreview = 3
-const configs = [
-{ key: 'today', title: '今日应复习', desc: '基于复习计划，今天最值得先做的题', icon: '今', tone: 'lime', rows: today },
-{ key: 'high', title: '高频错题', desc: '重复出错次数较多，建议集中攻克', icon: '频', tone: 'orange', rows: high },
-{ key: 'recent', title: '最近新增', desc: '近 14 天新加入错题本的题目', icon: '新', tone: 'blue', rows: recent },
-{ key: 'waiting', title: '待巩固', desc: '尚未到复习日，但仍未完全掌握', icon: '固', tone: 'neutral', rows: waiting },
-{ key: 'mastered', title: '已经掌握', desc: '已达到掌握标准，不再进入正常复习；再次答错会重新加入', icon: '✓', tone: 'green', rows: mastered },
-]
-const groups = configs
-.filter(group => group.rows.length > 0)
-.map(group => ({
-key: group.key,
-title: group.title,
-desc: group.desc,
-icon: group.icon,
-tone: group.tone,
-total: group.rows.length,
-items: group.rows.slice(0, maxPreview),
-}))
-const visibleCount = groups.reduce((sum, group) => sum + group.items.length, 0)
-return {
-groups,
-ungroupedCount: Math.max(0, list.length - visibleCount),
-}
+return buildTaskGroups(list, parseServerUtc)
 },
 _oneLineInsight(text) {
-const cleaned = String(text || '').replace(/\s+/g, ' ').trim()
-if (!cleaned) return '错题数据积累后，AI 会自动发现最需要优先复盘的错误模式。'
-return cleaned.length > 70 ? `${cleaned.slice(0, 70)}…` : cleaned
+return oneLineInsight(text)
 },
 _buildAnalysis(stats = {}, list = []) {
-stats = stats || {}
-const errorRows = this._rowsFromStats(stats, ['by_error_type', 'error_types', 'errors'])
-const subjectRows = this._rowsFromStats(stats, ['by_subject', 'subjects'])
-const errorCounts = errorRows.length ? errorRows : this._countsFromList(list, 'error_type')
-const subjectCounts = subjectRows.length ? subjectRows : this._countsFromList(list, 'subject_id')
-const sourceLabel = errorRows.length || subjectRows.length ? '按错因统计' : (list.length ? '按当前列表统计' : '待积累')
-const weaknessTags = this._topItems(errorCounts, 5).map(row => ({
-key: row.key,
-label: this._errorTypeLabel(row.key),
-count: row.count,
-}))
-const radarItems = this._toPercentItems(this._topItems(errorCounts, 4), this._errorTypeLabel.bind(this))
-const subjectItems = this._toPercentItems(this._topItems(subjectCounts, 4), this._subjectLabel.bind(this))
-return {
-sourceLabel,
-weaknessTags,
-radarItems,
-subjectItems,
-summaryCards: this._buildSummaryCards(stats, list, weaknessTags),
-actionPlan: this._buildActionPlan(weaknessTags, subjectItems, list),
-radarPolygonStyle: this._radarPolygonStyle(radarItems),
-radarAxisText: this._radarAxisText(radarItems),
-focusInsight: this._focusInsight(weaknessTags, subjectItems, list),
-}
+return buildAnalysis(stats, list, buildAnalysisViewCapabilities(this))
 },
 _buildSummaryCards(stats = {}, list = [], weaknessTags = []) {
-stats = stats || {}
-const hasStats = Object.keys(stats).length > 0
-const unmastered = hasStats
-? this._positiveNumber(stats.unmastered, stats.total || list.length || 0)
-: list.length
-const reviewed = list.filter(item => this._positiveNumber(item._reviewCount, 0) > 0).length
-const avgMastery = list.length
-? Math.round(list.reduce((sum, item) => sum + this._positiveNumber(item._masteryPercent, 0), 0) / list.length)
-: 0
-const topWeakness = weaknessTags[0] ? weaknessTags[0].label : '待积累'
-return [
-{ key: 'unmastered', value: unmastered, label: '待攻克', tone: 'danger' },
-{ key: 'weakness', value: topWeakness, label: '首要弱项', tone: 'blue' },
-{ key: 'reviewed', value: `${reviewed}/${list.length || 0}`, label: '已复盘', tone: 'success' },
-{ key: 'mastery', value: `${avgMastery}%`, label: '平均掌握', tone: 'gold' },
-]
+return buildSummaryCards(stats, list, weaknessTags, buildAnalysisViewCapabilities(this))
 },
 _buildActionPlan(weaknessTags = [], subjectItems = [], list = []) {
-if (!list.length && !weaknessTags.length && !subjectItems.length) return []
-const firstWeakness = weaknessTags[0]
-const firstSubject = subjectItems[0]
-const lowMasteryCount = list.filter(item => this._positiveNumber(item._masteryPercent, 0) < 40).length
-return [
-{
-key: 'weakness',
-title: firstWeakness ? `优先复盘「${firstWeakness.label}」` : '先完成一组错题复盘',
-desc: firstWeakness ? `${firstWeakness.count} 道题集中暴露该问题` : '积累数据后会生成更明确的弱项计划',
-},
-{
-key: 'subject',
-title: firstSubject ? `重点看 ${firstSubject.label}` : '按学科建立错题节奏',
-desc: firstSubject ? `${firstSubject.count} 道错题集中在该方向` : '筛选学科后可缩小复盘范围',
-},
-{
-key: 'mastery',
-title: lowMasteryCount > 0 ? `先攻克 ${lowMasteryCount} 道低掌握题` : '保持复盘节奏',
-desc: lowMasteryCount > 0 ? '掌握进度低于 40% 的题建议优先重做' : '当前列表掌握度较稳定，适合做限时巩固',
-},
-]
+return buildActionPlan(weaknessTags, subjectItems, list, buildAnalysisViewCapabilities(this))
 },
 _rowsFromStats(stats, keys) {
-for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
-const key = keys[keyIndex]
-const value = stats && stats[key]
-if (Array.isArray(value)) {
-return value.map(row => ({
-key: row.key || row.type || row.error_type || (row.subject_id != null ? row.subject_id : (row.name || row.label || '')),
-label: row.subject_name || row.name || row.label || '',
-count: this._positiveNumber(row.count || row.total || row.value, 0),
-})).filter(row => row.key !== '' && row.key != null && row.count > 0)
-}
-if (value && typeof value === 'object') {
-return Object.keys(value).map(k => ({ key: k, label: '', count: this._positiveNumber(value[k], 0) }))
-.filter(row => row.key !== '' && row.key != null && row.count > 0)
-}
-}
-return []
+return rowsFromStats(stats, keys, buildAnalysisViewCapabilities(this))
 },
 _countsFromList(list, field) {
-const counts = {}
-list.forEach(item => {
-const key = item[field] != null ? item[field] : 'unknown'
-if (!counts[key]) counts[key] = { key, label: item.subject_name || '', count: 0 }
-counts[key].count += 1
-})
-return Object.keys(counts).map(key => counts[key]).filter(row => row.key !== 'unknown')
+return countsFromList(list, field)
 },
 _topItems(rows, limit) {
-return rows
-.filter(row => row.key && row.count > 0)
-.sort((a, b) => b.count - a.count)
-.slice(0, limit)
+return topItems(rows, limit)
 },
 _toPercentItems(rows, labelFn) {
-const max = rows.reduce((m, row) => Math.max(m, row.count), 0) || 1
-return rows.map(row => ({
-key: row.key,
-label: row.label || labelFn(row.key),
-count: row.count,
-percent: Math.max(12, Math.round((row.count / max) * 100)),
-height: Math.max(46, Math.round((row.count / max) * 100) + 34),
-}))
+return toPercentItems(rows, labelFn)
 },
 _radarPolygonStyle(items = []) {
-if (!items.length) return ''
-const points = [
-[50, 50 - items[0].percent * 0.42],
-[50 + (items[1] ? items[1].percent : items[0].percent) * 0.42, 50],
-[50, 50 + (items[2] ? items[2].percent : items[0].percent) * 0.42],
-[50 - (items[3] ? items[3].percent : items[0].percent) * 0.42, 50],
-]
-return `clip-path: polygon(${points.map(point => `${Math.round(point[0])}% ${Math.round(point[1])}%`).join(', ')});`
+return radarPolygonStyle(items)
 },
 _radarAxisText(items = []) {
-if (!items.length) return '暂无能力图谱数据'
-return items.map(item => `${item.label}${item.count}题`).join('，')
+return radarAxisText(items)
 },
 _focusInsight(weaknessTags = [], subjectItems = [], list = []) {
-const weakness = weaknessTags[0]
-const subject = subjectItems[0]
-if (weakness && subject) return `${subject.label}的「${weakness.label}」最需要优先攻克`
-if (weakness) return `优先攻克「${weakness.label}」相关错题`
-if (list.length) return '当前错题已形成复盘样本，建议先完成一轮筛选复盘'
-return '错题数据积累后，将生成知识漏洞诊断。'
+return focusInsight(weaknessTags, subjectItems, list)
 },
 _masteryProgress(item, reviewCount) {
-const mastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
-if (mastered) return { percent: 100, label: '已掌握' }
-const raw = item.mastery_progress || item.mastery_percent || item.mastery
-if (raw !== undefined && raw !== null && raw !== '') {
-const percent = Math.max(0, Math.min(100, Number(raw) > 1 ? Number(raw) : Number(raw) * 100))
-return { percent: Math.round(percent), label: percent >= 40 ? '巩固中' : '待攻克' }
-}
-const percent = Math.min(90, reviewCount * 20)
-return { percent, label: reviewCount > 0 ? '按复习次数估算' : '待复习' }
+return masteryProgress(item, reviewCount)
 },
 _positiveNumber(value, fallback) {
-const n = Number(value)
-if (!Number.isFinite(n) || n < 0) return fallback
-return Math.round(n)
+return positiveNumber(value, fallback)
 },
 _subjectLabel(code, name) {
-if (name) return name
-return getSubjectName(code)
+return subjectLabel(code, name, getSubjectName)
 },
 _errorTypeLabel(t) {
-const map = { concept_mistake: '概念错误', calculation: '计算错误', careless: '粗心', method: '方法错误', other: '其他', unknown: '未分类' }
-if (!t) return '未知'
-return map[t] || errorDiagnosis.labelOf(t)
+return errorTypeLabel(t, errorDiagnosis)
 },
 _timeLabel(dateStr) {
-if (!dateStr) return ''
-const ms = parseServerUtc(dateStr)
-if (!isFinite(ms)) return ''
-const days = chinaCalendarDayDiff(ms, Date.now())
-if (days === 0) return '今天'
-if (days === 1) return '昨天'
-if (days > 1 && days <= 7) return `${days} 天前`
-return formatChinaMonthDayCn(ms)
+return timeLabel(dateStr, parseServerUtc, chinaCalendarDayDiff, formatChinaMonthDayCn)
 },
 _toCleanText(text) {
-if (!text || typeof text !== 'string') return ''
-const plain = toPlainInlineMathText(text)
-return plain !== null ? plain : String(text).replace(/\n/g, ' ')
+return toCleanText(text, toPlainInlineMathText)
 },
 })
