@@ -238,7 +238,9 @@ async def test_get_enrich_status_missing_task(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_low_risk_approval_characterizes_existing_success_undercount(monkeypatch):
+async def test_low_risk_approval_keeps_earlier_success_when_later_publish_raises(
+    monkeypatch,
+):
     from app.features import question_publish_service
 
     records = [_import_record(1), _import_record(2)]
@@ -267,8 +269,74 @@ async def test_low_risk_approval_characterizes_existing_success_undercount(monke
     assert records[1].reviewed_by is None
     assert records[1].reviewed_at is None
     assert publish.await_count == 2
-    # Existing code subtracts a prior success when a later publication raises.
-    assert result["affected_count"] == 0
+    assert result["affected_count"] == 1
     assert result["skipped_count"] == 1
     assert result["skipped_reasons"] == ["#2: 发布异常(second publication failed)"]
     db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcomes", "affected", "skipped"),
+    [
+        ([{"status": "published", "question_id": 1}] * 3, 3, 0),
+        (
+            [
+                RuntimeError("x"),
+                {"status": "published", "question_id": 2},
+                RuntimeError("y"),
+            ],
+            1,
+            2,
+        ),
+        (
+            [
+                {"status": "published", "question_id": 1},
+                {"status": "failed", "reason": "r"},
+                RuntimeError("z"),
+            ],
+            1,
+            2,
+        ),
+        (
+            [
+                RuntimeError("a"),
+                RuntimeError("b"),
+                {"status": "duplicate", "question_id": 7},
+            ],
+            1,
+            2,
+        ),
+    ],
+)
+async def test_low_risk_approval_counts_independent_of_failure_order(
+    monkeypatch, outcomes, affected, skipped
+):
+    from app.features import question_publish_service
+
+    records = [_import_record(i) for i in (1, 2, 3)]
+    db = SimpleNamespace(flush=AsyncMock())
+    monkeypatch.setattr(
+        admin_import_service, "_get_batch_records", AsyncMock(return_value=records)
+    )
+    monkeypatch.setattr(
+        admin_import_service,
+        "derive_import_risk",
+        lambda *_a, **_k: {"risk_level": "low", "risk_flags": []},
+    )
+    monkeypatch.setattr(
+        question_publish_service,
+        "publish_single_question",
+        AsyncMock(side_effect=outcomes),
+    )
+
+    result = await admin_import_service.approve_low_risk_questions(db, "batch-1", 9)
+
+    assert result["affected_count"] == affected
+    assert result["skipped_count"] == skipped
+    assert len(result["skipped_reasons"]) == skipped
+    succeeded = [r for r in records if r.status in ("approved", "published")]
+    pending = [r for r in records if r.status == "pending"]
+    assert len(succeeded) == affected
+    assert len(pending) == skipped
+    assert all(r.reviewed_by is None and r.reviewed_at is None for r in pending)

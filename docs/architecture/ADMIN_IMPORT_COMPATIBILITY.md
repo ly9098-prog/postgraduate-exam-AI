@@ -26,7 +26,11 @@
 
 ## 已确认的既有缺陷 ADM-08
 
-`approve_low_risk_questions` 在后项发布抛异常时，会扣减此前成功项的affected_count。真实服务入口刻画：第一项匹配已有正式题并置published/question_id31，第二项RuntimeError后回到pending；最终却返回affected_count0、skipped_count1。风险判定和publisher使用替身，未证明真实PG事务；此处确认的是原函数的计数逻辑。登记DEFECT，业务实现未改；修复须另行授权并覆盖成功/重复/失败返回/异常顺序及事务边界。
+`approve_low_risk_questions` 在后项发布抛异常时，会扣减此前成功项的affected_count。真实服务入口刻画：第一项匹配已有正式题并置published/question_id31，第二项RuntimeError后回到pending；最终却返回affected_count0、skipped_count1。风险判定和publisher使用替身，未证明真实PG事务；此处确认的是原函数的计数逻辑。
+
+2026-10-31 已修复计数：删除异常分支中的 `affected -= 1`，已成功项不再被后项异常扣减。`test_admin_import_service.py` 将上述刻画改为期望 `affected_count=1/skipped_count=1`，并新增 4 组顺序用例（全成功、异常在前后、成功后接 failed 返回与异常、异常后接 duplicate），旧代码上共 3 例失败（改期望的刻画用例加 2 组顺序用例；全成功与「异常在前」两组本就通过，只作为边界）。失败/异常项仍回到 pending、清空审核人与时间，状态码和响应结构不变。
+
+事务边界未改：单项异常在函数内被吞掉，函数正常返回，`admin_imports.py` 端点仅在 `ValueError` 时回滚，其余无条件提交。因此 `publish_single_question` 中途异常留在会话里的部分写入（已 add/flush 的 Question 等）会随本次提交一并落库；修复前即如此，不是回归。本次未引入 savepoint，也未用真实 PG 验证，归 ENV-02..05。
 
 ## 最终环境验收补充
 

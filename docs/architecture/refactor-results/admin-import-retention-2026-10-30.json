@@ -309,7 +309,8 @@
       "entry": "backend/app/services/admin_import_service.py::approve_low_risk_questions",
       "observed": "first item published with existing question31, second pending after RuntimeError; affected_count0/skipped_count1",
       "expectation_for_separate_fix": "preserve first success in affected_count; characterize success/duplicate/failed-return/exception ordering and transaction cases",
-      "authorization": "recorded only; runtime unchanged, business fix needs separate approval"
+      "authorization": "at registration (2026-10-30): recorded only, runtime unchanged; fix authorized later, see resolution",
+      "resolution": "Fixed 2026-10-31: removed 'affected -= 1' in the exception branch; tests backend/tests/test_services/test_admin_import_service.py (characterization now expects affected_count=1, plus 4 ordering cases). Observation above records pre-fix behavior. Transaction boundary (partial writes after publish_single_question mid-way exception) unchanged and not verified on real PG."
     }
   ],
   "environment_gap": {

@@ -1167,7 +1167,6 @@ async def approve_low_risk_questions(
                 qi.reviewed_by = None
                 qi.reviewed_at = None
                 skipped += 1
-                affected -= 1 if affected > 0 else 0
                 skipped_reasons.append(f"#{qi.id}: 发布异常({exc})")
                 continue
 
