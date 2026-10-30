@@ -1,0 +1,219 @@
+{
+  "date": "2026-10-30",
+  "round": 331,
+  "ledger_item": "ADM-07",
+  "status": "RETAIN",
+  "risk": "L2 request/cache/health chain assessed; runtime unchanged, new frontend contracts only",
+  "head_before": "adb538bdd1f367a9dcb353056b16bc49e3891adc",
+  "scope": {
+    "pages": [
+      "/dashboard"
+    ],
+    "owned_contracts": 5,
+    "shared_ADM05_contracts": 1,
+    "actual_page_requests": 6,
+    "registered_without_current_browser_shape": 3
+  },
+  "consumer_baseline": {
+    "file": "docs/architecture/refactor-results/admin-consumer-map-2026-10-30.json",
+    "sha256": "f5ffd76f28c3ebcaedbd796fc6f0c0fac201d48a65a373eff20cc343a6fd219a",
+    "commit": "9f4ba9ddc0362042ff917fee19346f16cb09ea43"
+  },
+  "consumer_source_overrides_reference": "docs/architecture/refactor-results/admin-content-refactor-2026-10-30.json#consumer_source_overrides",
+  "input_baseline": {
+    "file": "docs/architecture/refactor-results/admin-content-refactor-2026-10-30.json",
+    "commit": "adb538bdd1f367a9dcb353056b16bc49e3891adc",
+    "sha256": "c43d26f1adc4095b41944339ec7d1886505175ebbdc2349ce0d60ce71d3659f6",
+    "selector": "input_baseline; reconstruct its referenced original committed maps with explicit overrides/additions",
+    "runtime_paths": 1117,
+    "runtime_set_sha256": "9999771216b7bbd97f2392fe4a90055cea1ca705c79f96ca1a6d070de167e8f4",
+    "backend_ci_paths": 2248,
+    "backend_ci_set_sha256": "c23793c0c4e3241b8fadfd96121cbe99bb99b44444de8f05706035d4a3cba853",
+    "consumer_sources": 330,
+    "consumer_set_sha256": "064df79dab6f62f5f8d983673cb8faf4998f7d9c0f874a070654ad512e284c9f",
+    "all_current_hashes_equal": true,
+    "verification": "/tmp/admin-dashboard-assessment-2026-10-30/reuse-verification.json"
+  },
+  "contracts": [
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/dashboard/ai-stats",
+      "handler": "ai_stats"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/dashboard/daily",
+      "handler": "daily"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/dashboard/overview",
+      "handler": "overview"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/dashboard/questions-stats",
+      "handler": "questions_stats"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/health/ready",
+      "handler": "ready_health"
+    }
+  ],
+  "shared_contracts": [
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/tasks/diagnostics",
+      "ledger_item": "ADM-05",
+      "handler": "task_diagnostics"
+    }
+  ],
+  "registered_preserved": [
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/health/export",
+      "ledger_item": "ADM-07",
+      "backend_file": "backend/app/api/v1/admin_health.py",
+      "backend_function": "export_health",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/health/export/metrics",
+      "ledger_item": "ADM-07",
+      "backend_file": "backend/app/api/v1/admin_health.py",
+      "backend_function": "export_metrics",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/health/live",
+      "ledger_item": "ADM-07",
+      "backend_file": "backend/app/api/v1/admin_health.py",
+      "backend_function": "live_health",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    }
+  ],
+  "assessment": {
+    "disposition": "RETAIN",
+    "reason": "Existing cohesive191-line Admin dashboard service owns SQL aggregates/cache; page already uses pure dashboard-utils and two chart components. No concrete structural defect warrants relocation or merging learner/Admin counts.",
+    "preserved": [
+      "Shanghai inclusive daily windows and AI fixed7-day summary",
+      "six-query auth/bootstrap gating, query identity/staleTime/retry",
+      "allSettled refresh barrier and final busy reset",
+      "overview cache/lock/fallback and daily date serialization/error behavior",
+      "distinct Admin readiness and task diagnostics permission/health semantics"
+    ],
+    "limits": "Bounded contract ownership and source assessment; not all Admin behavior, no real services accepted."
+  },
+  "changed_sha256": {
+    "admin-frontend/src/app/(admin)/dashboard/dashboard-page-contracts.test.ts": "320a191727901f4be50d5ccc3ec8fb77ef3f99c76aa060f20f1e74a9a043f4bd"
+  },
+  "verification": {
+    "backend_current": {
+      "files": 3,
+      "passed": 34,
+      "pytest_seconds": 15.25,
+      "paths": [
+        "tests/test_services/test_admin_phase5_services.py",
+        "tests/test_api/test_admin_redis_plan.py",
+        "tests/test_api/test_admin_health.py"
+      ],
+      "result": "/tmp/admin-dashboard-assessment-2026-10-30/backend-targeted-result.json",
+      "environment": "isolated in-memory SQLite and test doubles; no real Redis/PostgreSQL"
+    },
+    "admin": {
+      "full_files": 149,
+      "full_passed": 1865,
+      "domain_files": 2,
+      "domain_passed": 49,
+      "new_contracts": 9,
+      "full_run_new_test_sha256": "320a191727901f4be50d5ccc3ec8fb77ef3f99c76aa060f20f1e74a9a043f4bd",
+      "typecheck": "passed",
+      "lint_errors": 0,
+      "lint_warnings": 138,
+      "build": "not run; runtime/build configuration unchanged",
+      "result": "/tmp/admin-dashboard-assessment-2026-10-30/vitest-final.json",
+      "limits": "Direct real Client function with mock hooks/query/request ports; no DOM or full React/TanStack/native-fetch execution"
+    },
+    "fixed_backend_ci": {
+      "fresh_full_run": false,
+      "reused_from": "docs/architecture/refactor-results/admin-content-refactor-2026-10-30.json",
+      "reused_commit": "adb538bdd1f367a9dcb353056b16bc49e3891adc",
+      "files": 474,
+      "passed": 8172,
+      "frozen_input_paths": 2248,
+      "current_hashes_equal": true,
+      "scope": "Reuse §330 on exact frozen inputs; prior outside-command test exceptions retain their prior narrow evidence, not included by implication"
+    },
+    "openapi": {
+      "fresh_run": false,
+      "reused_round": 330,
+      "paths": 334,
+      "result": "equal in §330; current runtime inputs unchanged"
+    },
+    "readiness": {
+      "fresh_run": false,
+      "reused_round": 330,
+      "passed": 69
+    },
+    "cloud": {
+      "fresh_run": false,
+      "reused_round": 330,
+      "passed": 30
+    },
+    "static_checks": [
+      {
+        "name": "app-ruff",
+        "command": [
+          "ruff",
+          "check",
+          "app/",
+          "--ignore",
+          "I001,F401,N818"
+        ],
+        "exit_code": 0
+      },
+      {
+        "name": "compileall",
+        "command": [
+          "/home/lmh/projects/postgraduate-ai/backend/.venv/bin/python",
+          "-m",
+          "compileall",
+          "-q",
+          "app"
+        ],
+        "exit_code": 0
+      },
+      {
+        "name": "diff",
+        "command": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "exit_code": 0
+      }
+    ],
+    "independent_review": "closed; no P0-P3 findings; independent frontend9 passed,1117runtime/2248CI/330consumer hashes and6-request ownership verified"
+  },
+  "retrieval": {
+    "tier": "Verify, bounded one-page and5-owned+1-shared consumers",
+    "project": "home-lmh-projects-postgraduate-ai",
+    "generation": "2026-10-29T17:24:11Z",
+    "signal": "best_effort",
+    "module_query": "22 rows,1 page, exhausted",
+    "sources": "Primary/secondary source pagination exhausted; relevant shared AI/task/time owners fetched separately",
+    "coverage": "21 primary/secondary,2 extra test and5 shared/new-test path results exhausted; no recorded issue, new test not_tracked verified directly; not proof of global completeness",
+    "docs": "Graphify absent; known documentation fallback"
+  },
+  "not_verified": [
+    "real browser React/TanStack/DOM scheduling and native fetch",
+    "real JWT/RBAC HTTP and persistent audit behavior",
+    "real PostgreSQL/Redis locks/cache/AI logs/queue and multiworker",
+    "all ENV01..06 remain WAITING-FINAL; production last and separately authorized"
+  ],
+  "next": "OCR-02/03 bounded consumer mapping before implementation, then SHR-01..03",
+  "evidence_directory": "/tmp/admin-dashboard-assessment-2026-10-30"
+}
