@@ -602,6 +602,7 @@ jobs:
           node --test miniprogram/tests/test-storage-facade-contract.js
           node --test miniprogram/tests/test-client-storage-boundaries.js
           node --test miniprogram/tests/test-api-client-contract.js
+          node --test miniprogram/tests/test-knowledge-map-request-contract.js
           node --test miniprogram/tests/test-api-client-boundaries.js
           node --test miniprogram/tests/test-exam-interaction-controller.js
           node --test miniprogram/tests/test-exam-question-time-controller.js
