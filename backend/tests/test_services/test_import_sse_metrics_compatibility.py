@@ -10,6 +10,7 @@ admin_imports relies on for in-place mutation.
 
 from __future__ import annotations
 
+import runpy
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -35,7 +36,9 @@ class TestCounterRegistryDefaults:
         assert len(counters) == 6
 
     def test_all_defaults_zero(self):
-        assert all(v == 0 for v in counters.values())
+        # Earlier SSE tests may have incremented the live process counters.
+        initialized = runpy.run_path(module.__file__)["counters"]
+        assert all(v == 0 for v in initialized.values())
 
     def test_all_values_are_int(self):
         assert all(isinstance(v, int) for v in counters.values())

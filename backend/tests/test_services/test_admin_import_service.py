@@ -235,3 +235,40 @@ async def test_get_enrich_status_missing_task(monkeypatch):
 
     with pytest.raises(ValueError, match="AI任务不存在"):
         await get_enrich_status("batch-1")
+
+
+@pytest.mark.asyncio
+async def test_low_risk_approval_characterizes_existing_success_undercount(monkeypatch):
+    from app.features import question_publish_service
+
+    records = [_import_record(1), _import_record(2)]
+    db = SimpleNamespace(flush=AsyncMock())
+    monkeypatch.setattr(
+        admin_import_service, "_get_batch_records", AsyncMock(return_value=records)
+    )
+    monkeypatch.setattr(
+        admin_import_service,
+        "derive_import_risk",
+        lambda *_args, **_kwargs: {"risk_level": "low", "risk_flags": []},
+    )
+    publish = AsyncMock(
+        side_effect=[
+            {"status": "duplicate", "question_id": 31},
+            RuntimeError("second publication failed"),
+        ]
+    )
+    monkeypatch.setattr(question_publish_service, "publish_single_question", publish)
+
+    result = await admin_import_service.approve_low_risk_questions(db, "batch-1", 9)
+
+    assert records[0].status == "published"
+    assert records[0].question_id == 31
+    assert records[1].status == "pending"
+    assert records[1].reviewed_by is None
+    assert records[1].reviewed_at is None
+    assert publish.await_count == 2
+    # Existing code subtracts a prior success when a later publication raises.
+    assert result["affected_count"] == 0
+    assert result["skipped_count"] == 1
+    assert result["skipped_reasons"] == ["#2: 发布异常(second publication failed)"]
+    db.flush.assert_awaited_once()

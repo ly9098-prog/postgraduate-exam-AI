@@ -1,0 +1,427 @@
+{
+  "date": "2026-10-30",
+  "batch": 326,
+  "ledger_item": "ADM-02",
+  "risk": "L2 structure assessment and tests; no runtime change",
+  "status": "RETAIN",
+  "head_before": "8310ad8ae560fc6e4b8b71c4e6538f4926488e96",
+  "scope": {
+    "owned_pages": 7,
+    "static_contracts": 31,
+    "registered_retained": 12,
+    "existing_frontend_modules": 117,
+    "existing_non_test_frontend_sources": 72,
+    "page_assessments": [
+      {
+        "route": "/imports/batch-image",
+        "decision": "RETAIN",
+        "reason": "single batch upload, SSE trace deduplication, immediate DB status +2500ms watchdog, reset/unmount resource owner; pure stats/file dedupe helpers retained"
+      },
+      {
+        "route": "/imports/tasks",
+        "decision": "RETAIN",
+        "reason": "CSV vs pipeline upload, pipeline status/quality navigation; import-utils shared projections retained"
+      },
+      {
+        "route": "/imports/text-import",
+        "decision": "RETAIN",
+        "reason": "parse/staged edits/valid-only import; latex and structure validators remain independent"
+      },
+      {
+        "route": "/imports/history",
+        "decision": "RETAIN",
+        "reason": "bounded batch list/detail and explicit publish/delete mutation retained"
+      },
+      {
+        "route": "/imports/maintenance",
+        "decision": "RETAIN",
+        "reason": "pipeline alerts and dry-run/confirmed cleanup UI retained; no real cleanup executed"
+      },
+      {
+        "route": "/imports/questions",
+        "decision": "RETAIN",
+        "reason": "review-queue read/full-detail scopes and read-only formatting retained"
+      },
+      {
+        "route": "/imports/review",
+        "decision": "RETAIN",
+        "reason": "existing query/filter/drawer/session/action/answer/complete/image hooks, reducers and display components retained; no splitting for1018-line composition"
+      }
+    ]
+  },
+  "consumer_baseline": {
+    "commit": "9f4ba9ddc0362042ff917fee19346f16cb09ea43",
+    "file": "docs/architecture/refactor-results/admin-consumer-map-2026-10-30.json",
+    "sha256": "f5ffd76f28c3ebcaedbd796fc6f0c0fac201d48a65a373eff20cc343a6fd219a",
+    "selector": "contracts and registered_without_current_static_browser_shape where ledger_item == ADM-02"
+  },
+  "contracts": [
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports",
+      "handler": "list_imports"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/batch-image/items/{}/reparse",
+      "handler": "reparse_batch_image_item"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/batch-image/upload",
+      "handler": "batch_image_upload"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/batch-image/{}",
+      "handler": "get_batch_image_job"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/batch-image/{}/stream",
+      "handler": "stream_batch_image_job"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/maintenance/cleanup",
+      "handler": "admin_maintenance_cleanup"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/pipelines",
+      "handler": "list_pipelines"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/pipelines/{}",
+      "handler": "get_admin_pipeline_status"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/questions-csv",
+      "handler": "import_questions_csv_file"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/questions/batch-complete",
+      "handler": "batch_complete_import_questions_item"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/questions/{}",
+      "handler": "get_import_question_item"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/v1/imports/questions/{}",
+      "handler": "update_import_question_item"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/questions/{}/approve",
+      "handler": "approve_import_question_item"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/questions/{}/complete",
+      "handler": "complete_import_question_item"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/questions/{}/reject",
+      "handler": "reject_import_question_item"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/review-queue",
+      "handler": "get_import_review_queue"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/segment-image/upload",
+      "handler": "upload_segment_image"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/subject-options",
+      "handler": "get_subject_options"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/text-import",
+      "handler": "import_text_questions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/text-parse",
+      "handler": "parse_text_questions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/upload",
+      "handler": "upload_import_file"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/v1/imports/{}",
+      "handler": "delete_import_batch_items"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/{}",
+      "handler": "get_import_detail"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/answers/apply",
+      "handler": "batch_answer_apply"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/answers/image/apply",
+      "handler": "batch_answer_image_apply"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/answers/image/preview",
+      "handler": "batch_answer_image_preview"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/answers/preview",
+      "handler": "batch_answer_preview"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/approve",
+      "handler": "approve_import_batch_items"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/approve-low-risk",
+      "handler": "approve_low_risk_batch_items"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/publish",
+      "handler": "publish_import_batch_items"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{}/reject",
+      "handler": "reject_import_batch_items"
+    }
+  ],
+  "registered_preserved": [
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/batches/{batch_id}/export-failure-cases"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/cleanup/expired"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/pipelines/{pipeline_id}/cleanup"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/pipelines/{pipeline_id}/resume"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/v1/imports/questions/{import_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/questions/{import_id}/export-case"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/imports/{batch_id}/enrich"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/imports/{batch_id}/status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/watermark-rules"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/watermark-rules"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/v1/watermark-rules/{rule_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/v1/watermark-rules/{rule_id}"
+    }
+  ],
+  "input_baseline": {
+    "commit": "8310ad8ae560fc6e4b8b71c4e6538f4926488e96",
+    "file": "docs/architecture/refactor-results/admin-question-retention-2026-10-30.json",
+    "sha256": "220035e22dc2d4655e04398c8fab2b280b16ce2ee45af51dca7a4af494ef807e",
+    "runtime_selector": "runtime_sha256",
+    "runtime_paths_unchanged": 1116,
+    "runtime_set_sha256": "7580261ce1dd3655411712b11189e15475f40a71061f9412202301336519b9b4",
+    "backend_ci_selector": "verification.fixed_backend_ci.frozen_input_sha256",
+    "backend_ci_paths": 2246,
+    "backend_ci_unchanged_paths": 2244,
+    "backend_ci_original_set_sha256": "86a6cb1726fd133ff5ccf21bc853b576db43acb18f7d8c4996b04730c22c8771",
+    "exceptions": [
+      {
+        "path": "backend/tests/test_services/test_admin_import_service.py",
+        "before_sha256": "0228b5c8cc937829fdeef5eb1b63c90bdc15f575cf3004bf792b0006d04b930c",
+        "after_sha256": "056eec08eda208a4671c4ac66e5c43d8a986264dcb541e1f0b1b9a3b3d472e7d",
+        "in_fixed_ci_command": false
+      },
+      {
+        "path": "backend/tests/test_services/test_import_sse_metrics_compatibility.py",
+        "before_sha256": "94ffb1ddfdaf6fccffd21585f23d95e8343b3b1e374fffc67a6a54fcb06dfc38",
+        "after_sha256": "c4841f32e9bd8b75f6590598590289d457626052a5d5622f889d60ed7f0cae30",
+        "in_fixed_ci_command": false
+      }
+    ],
+    "rule": "same frozen dictionary referenced once, every current path checked; two changed tests are outside fixed CI command and freshly checked"
+  },
+  "changed_test_sha256": {
+    "admin-frontend/src/app/(admin)/imports/import-page-contracts.test.ts": "08c643597eb54bd83e6db7ff857b685d9f12449deda1d677398d496920f0bfac",
+    "backend/tests/test_services/test_admin_import_service.py": "056eec08eda208a4671c4ac66e5c43d8a986264dcb541e1f0b1b9a3b3d472e7d",
+    "backend/tests/test_services/test_import_sse_metrics_compatibility.py": "c4841f32e9bd8b75f6590598590289d457626052a5d5622f889d60ed7f0cae30"
+  },
+  "new_contracts": {
+    "frontend": 19,
+    "backend_characterization": 1,
+    "frontend_method": "real six page functions; controlled state/ref/query/mutation/request/SSE/effect ports, fake timers; only explicit cleanup/summary effects invoked; no DOM/scheduling/native-fetch proof",
+    "first_frontend_attempt": "suite load failed (0 tests) because auth-store readStoredApiAccessToken was not isolated; auth-store mock added, then19passed",
+    "backend_method": "real approve_low_risk_questions with low-risk eligibility and publisher ports; first duplicate resolves, second publisher raises; no real DB/provider"
+  },
+  "known_defects": [
+    {
+      "id": "ADM-08",
+      "status": "DEFECT",
+      "title": "low-risk approval exception branch subtracts an earlier successful item",
+      "entry": "backend/app/services/admin_import_service.py::approve_low_risk_questions",
+      "observed": "first item published with existing question31, second pending after RuntimeError; affected_count0/skipped_count1",
+      "expectation_for_separate_fix": "preserve first success in affected_count; characterize success/duplicate/failed-return/exception ordering and transaction cases",
+      "authorization": "recorded only; runtime unchanged, business fix needs separate approval"
+    }
+  ],
+  "environment_gap": {
+    "owner": "ENV-02",
+    "scenario": "reset/start new batch while old status response is pending",
+    "local_observation": "with a port that still fulfills after AbortSignal abort, new task jobId staysjob-2 while questionCount99/jobStatusjob-1 are copied by matching seq",
+    "transport_review": "real apiRequest forwards signal to fetch; handleResponse has no post-response signal check; native fetch/body cancellation timing not exercised",
+    "disposition": "conditional page behavior only, not confirmed native-browser/production defect; final browser validation required"
+  },
+  "verification": {
+    "frontend": {
+      "files": 144,
+      "passed": 1788,
+      "domain_files": 46,
+      "domain_passed": 412,
+      "typecheck": "passed",
+      "lint_errors": 0,
+      "lint_warnings": 138,
+      "build": "not run, runtime/config unchanged",
+      "checks": [
+        {
+          "name": "admin-typecheck",
+          "command": [
+            "npm",
+            "run",
+            "typecheck"
+          ],
+          "exit_code": 0,
+          "seconds": 7.24
+        },
+        {
+          "name": "admin-lint",
+          "command": [
+            "npm",
+            "run",
+            "lint"
+          ],
+          "exit_code": 0,
+          "seconds": 37.9
+        },
+        {
+          "name": "admin-tests",
+          "command": [
+            "npm",
+            "run",
+            "test",
+            "--",
+            "--reporter=json",
+            "--outputFile=/tmp/admin-import-assessment-2026-10-30/vitest-final.json"
+          ],
+          "exit_code": 0,
+          "seconds": 13.75
+        }
+      ]
+    },
+    "backend_first": {
+      "files": 14,
+      "passed": 168,
+      "failed": 1,
+      "xfailed": 9,
+      "warning": 1,
+      "reason": "live SSE counter defaults test depended on process order; log retained"
+    },
+    "backend_original_group_final": {
+      "files": 14,
+      "passed": 169,
+      "xfailed": 9,
+      "warning": 1,
+      "pytest_seconds": 56.01,
+      "wall_seconds": 58.83,
+      "note": "before adding the one low-risk characterization; same14-file order rerun after isolated-default assertion repair"
+    },
+    "backend_changed_files_final": {
+      "files": 2,
+      "passed": 24,
+      "pytest_seconds": 1.41,
+      "note": "fresh final source includes10service tests and14metrics tests, including new low-risk characterization"
+    },
+    "backend_static": "strict Ruff two changed tests, app and changed-test compileall, git diff --check passed",
+    "legacy_scripts": "test_batch_answer_fill.py/test_batch_answer_image.py not executed or collected together: they set DATABASE_URL at import; no real JWT/image-provider acceptance claim",
+    "fixed_backend_ci": {
+      "files": 473,
+      "passed": 8155,
+      "source": "§323 reused result; no full rerun",
+      "reuse_boundary": "1116runtimepaths unchanged;2244/2246 baseline inputs unchanged;2 changed tests outside fixed command passed narrow checks"
+    },
+    "openapi": "§321334-path snapshot reused on unchanged backend app; not freshly generated",
+    "independent_review": "closed; no P0-P3 findings; independent frontend19passed1.57s/backend24passed2.28s, baseline Git blobs/selectors/digests, conditional timing scope and ADM08 characterization verified"
+  },
+  "graph": {
+    "project": "home-lmh-projects-postgraduate-ai",
+    "generation": "2026-10-29T17:24:11Z",
+    "signal": "best_effort",
+    "coverage_primary_paths": 152,
+    "coverage_supplemental_paths": 5,
+    "coverage_results_exhausted": true,
+    "new_test_not_indexed": true,
+    "test_metrics_source_changed_after_coverage": "current source inspected and verified by targeted tests/Ruff",
+    "false_edge": "approve trace resolves SQLAlchemy select to frontend ai-settings select; rejected by exact source, trace not used as authoritative callee list"
+  },
+  "not_verified": [
+    "native browser/DOM/React scheduling and real cancel race",
+    "real Admin JWT/RBAC and review session",
+    "PostgreSQL row locks/savepoints,Redis SSE/admission,multiworker",
+    "real OCR/AI/vector,filesystem/object storage cleanup and production"
+  ],
+  "deferred_structural_owners": [
+    "OCR-02",
+    "OCR-03",
+    "SHR-01",
+    "SHR-02"
+  ],
+  "next": "ADM-03 knowledge graph/coverage/subjects/syllabus finite assessment",
+  "evidence_directory": "/tmp/admin-import-assessment-2026-10-30"
+}
