@@ -4,7 +4,6 @@ Each metric function is independent and returns None when data is insufficient.
 """
 
 import asyncio
-import math
 from datetime import timedelta
 
 from sqlalchemy import Date as SQLDate
@@ -25,6 +24,11 @@ from app.models.review_scheduler import ReviewSchedule
 from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.wrong_question import WrongQuestion
+from app.services import dashboard_action_projection as actions
+from app.services import dashboard_balance_projection as balance
+from app.services import dashboard_quality_projection as quality
+from app.services import dashboard_speed_projection as speed
+from app.services import dashboard_topic_projection as topics
 
 
 async def _china_date_expr(db: AsyncSession, column):
@@ -54,40 +58,7 @@ async def compute_today_quality(db: AsyncSession, user_id: int) -> dict | None:
         )
     )
     count, correct, avg_time = row.one()
-    count = count or 0
-    if count < 5:
-        return None
-
-    accuracy = correct / count if count > 0 else 0.0
-
-    # Score components (0-100 each)
-    acc_score = accuracy * 100  # 正确率分
-    vol_score = min(100, (count / 20) * 100)  # 完成量分 (20题=满分)
-    time_score = (
-        100
-        if avg_time and 20 <= avg_time <= 120
-        else max(0, 100 - abs((avg_time or 60) - 60) * 0.5)
-    )  # 用时稳定性
-
-    total = acc_score * 0.4 + vol_score * 0.3 + time_score * 0.3
-
-    if total >= 85:
-        label = "优秀"
-    elif total >= 70:
-        label = "良好"
-    elif total >= 50:
-        label = "一般"
-    else:
-        label = "需要加油"
-
-    return {
-        "data_available": True,
-        "score": round(total),
-        "label": label,
-        "questions": count,
-        "accuracy": round(accuracy, 4),
-        "avg_time_sec": round(avg_time, 1) if avg_time else 0.0,
-    }
+    return quality.today_quality(count, correct, avg_time)
 
 
 # ──────────────────────────────────────────────
@@ -115,70 +86,7 @@ async def compute_weekly_consistency(
         )
         .group_by(day_expr)
     )
-    daily_data = {}
-    for date_str, q_count, c_count in rows.all():
-        daily_data[str(date_str)] = {
-            "questions": q_count or 0,
-            "correct": c_count or 0,
-        }
-
-    total_q = sum(d["questions"] for d in daily_data.values())
-    if total_q < 5 or not daily_data:
-        return None
-
-    active_days = len(daily_data)
-    active_ratio = active_days / max(days, 1)
-
-    # Daily question counts (with zero-fill for inactive days)
-    q_values = []
-    acc_values = []
-    breakdown = []
-    for i in range(days):
-        d = (today - timedelta(days=days - 1 - i)).isoformat()
-        dd = daily_data.get(d, {"questions": 0, "correct": 0})
-        q_count = dd["questions"]
-        acc = dd["correct"] / q_count if q_count > 0 else 0
-        q_values.append(q_count)
-        if q_count > 0:
-            acc_values.append(acc)
-        breakdown.append({"date": d, "questions": q_count, "accuracy": round(acc, 4)})
-
-    # Coefficient of variation for daily question counts
-    mean_q = sum(q_values) / max(days, 1)
-    var_q = sum((x - mean_q) ** 2 for x in q_values) / max(days, 1) if days > 0 else 0
-    cv_q = math.sqrt(var_q) / max(mean_q, 1)
-
-    # Accuracy std dev
-    mean_acc = sum(acc_values) / max(len(acc_values), 1) if acc_values else 0
-    acc_var = (
-        sum((x - mean_acc) ** 2 for x in acc_values) / max(len(acc_values), 1)
-        if acc_values
-        else 0
-    )
-    acc_std = math.sqrt(acc_var)
-
-    # Composite score (0-100)
-    active_score = active_ratio * 100
-    cv_score = max(0, 100 - min(cv_q * 60, 60))
-    acc_stability = max(0, 100 - min(acc_std * 120, 60))
-    total = active_score * 0.4 + cv_score * 0.35 + acc_stability * 0.25
-
-    if total >= 80:
-        label = "非常稳定"
-    elif total >= 60:
-        label = "较为稳定"
-    else:
-        label = "波动较大"
-
-    return {
-        "data_available": True,
-        "score": round(total),
-        "label": label,
-        "active_days": active_days,
-        "days": days,
-        "total_questions": total_q,
-        "day_breakdown": breakdown,
-    }
+    return quality.weekly_consistency(rows.all(), today, days)
 
 
 # ──────────────────────────────────────────────
@@ -225,27 +133,9 @@ async def compute_weak_topic_ranking(
         # Get due review counts per KP from ReviewSchedule
         due_counts = await _compute_kp_due_review_counts(db, user_id)
 
-        items = []
-        for row in items_data:
-            kp_id = row[0]
-            items.append(
-                {
-                    "knowledge_point_id": kp_id,
-                    "name": row[1],
-                    "subject_id": row[2],
-                    "subject_code": row[3] or "",
-                    "subject_name": row[4] or "",
-                    "mastery_score": round(row[5], 1),
-                    "attempt_count": row[6] or 0,
-                    "wrong_count": row[7] or 0,
-                    "recent_wrong_count": row[8] or 0,
-                    "due_review_count": due_counts.get(kp_id, 0),
-                    "last_practiced_at": (
-                        serialize_utc_datetime(row[9]) if row[9] else None
-                    ),
-                }
-            )
-        return {"data_available": True, "items": items}
+        return topics.weak_topic_items(
+            items_data, due_counts, lambda value: serialize_utc_datetime(value)
+        )
 
     # Fallback: derive from the immutable revision attached to each wrong row.
     # Historical weak-topic attribution must not move when the mutable Question
@@ -283,26 +173,7 @@ async def compute_weak_topic_ranking(
         .order_by(func.count(WrongQuestion.id).desc(), KnowledgePoint.id.asc())
         .limit(limit)
     )
-    sorted_kps = [(str(name), int(count or 0)) for name, count in kp_rows.all()]
-    if not sorted_kps:
-        return None
-    items = [
-        {
-            "knowledge_point_id": 0,
-            "name": name,
-            "subject_id": None,
-            "subject_code": "",
-            "subject_name": "",
-            "mastery_score": max(0, 100 - count * 15),
-            "attempt_count": count,
-            "wrong_count": count,
-            "recent_wrong_count": count,
-            "due_review_count": 0,
-            "last_practiced_at": None,
-        }
-        for name, count in sorted_kps
-    ]
-    return {"data_available": True, "items": items}
+    return topics.fallback_weak_topics(kp_rows.all())
 
 
 async def _compute_kp_due_review_counts(
@@ -395,23 +266,7 @@ async def compute_repeat_wrong_analysis(db: AsyncSession, user_id: int) -> dict 
         for name, count in topic_rows.all()
     ]
 
-    is_high = rate > 0.3
-    if is_high:
-        status_label = "偏高"
-    elif rate > 0.15:
-        status_label = "中等"
-    else:
-        status_label = "较低"
-
-    return {
-        "data_available": True,
-        "repeat_wrong_count": repeat_count,
-        "total_wrong_count": total_wq,
-        "repeat_rate": round(rate, 4),
-        "is_high": is_high,
-        "status_label": status_label,
-        "top_repeat_topics": top_topics,
-    }
+    return topics.repeat_wrong_analysis(total_wq, repeat_count, rate, top_topics)
 
 
 # ──────────────────────────────────────────────
@@ -469,19 +324,9 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
     fast_wrong = int(fast_wrong or 0)
     slow_wrong = int(slow_wrong or 0)
 
-    # Determine status
-    if avg_wrong > avg_correct * 1.3 and avg_wrong > 20:
-        overall_status = "knowledge_gap"
-        overall_label = "知识点不熟"
-    elif fast_wrong > wrong_count * 0.3 and wrong_count > 5:
-        overall_status = "hasty"
-        overall_label = "审题不稳"
-    elif slow_wrong > wrong_count * 0.3 and wrong_count > 5:
-        overall_status = "unfamiliar"
-        overall_label = "解法不熟"
-    else:
-        overall_status = "normal"
-        overall_label = "速度正常"
+    status = speed.classify_speed(
+        avg_correct, avg_wrong, wrong_count, fast_wrong, slow_wrong
+    )
 
     # Per-subject breakdown
     subj_rows = await db.execute(
@@ -511,39 +356,9 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
         )
         .group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
     )
-    by_subject = []
-    for subj_id, subj_code, subj_name, ac, aw, cnt in subj_rows.all():
-        ac = float(ac or 0)
-        aw = float(aw or 0)
-        cnt = cnt or 0
-        if cnt < 3:
-            continue
-        if aw > ac * 1.3 and aw > 15:
-            sl = "知识点不熟"
-        else:
-            sl = "速度正常"
-        by_subject.append(
-            {
-                "subject_id": subj_id,
-                "subject_code": subj_code or "",
-                "subject_name": subj_name or "",
-                "avg_time_correct_sec": round(ac, 1),
-                "avg_time_wrong_sec": round(aw, 1),
-                "questions": cnt,
-                "status_label": sl,
-            }
-        )
-
-    return {
-        "data_available": True,
-        "overall_status": overall_status,
-        "overall_label": overall_label,
-        "avg_time_correct_sec": round(avg_correct, 1),
-        "avg_time_wrong_sec": round(avg_wrong, 1),
-        "fast_wrong_count": fast_wrong,
-        "slow_wrong_count": slow_wrong,
-        "by_subject": by_subject,
-    }
+    return speed.speed_accuracy(
+        avg_correct, avg_wrong, fast_wrong, slow_wrong, status, subj_rows.all()
+    )
 
 
 # ──────────────────────────────────────────────
@@ -585,60 +400,7 @@ async def compute_new_vs_review(db: AsyncSession, user_id: int) -> dict | None:
         .where(PracticeRecord.user_id == user_id)
         .group_by("ptype")
     )
-    new_count = 0
-    new_correct = 0
-    review_count = 0
-    review_correct = 0
-    for ptype, cnt, corr in rows.all():
-        if ptype == "new":
-            new_count = cnt or 0
-            new_correct = corr or 0
-        else:
-            review_count = cnt or 0
-            review_correct = corr or 0
-
-    total = new_count + review_count
-    if total < 5:
-        return None
-
-    new_acc = new_correct / max(new_count, 1)
-    review_acc = review_correct / max(review_count, 1)
-
-    if review_count >= 5 and new_count >= 5:
-        if review_acc > new_acc + 0.1:
-            label = "复习效果较好"
-        elif new_acc > review_acc + 0.1:
-            label = "新题表现更佳"
-        else:
-            label = "表现均衡"
-    elif review_count < 5 and new_count >= 5:
-        label = "侧重刷题"
-    elif review_count >= 5 and new_count < 5:
-        label = "侧重复习"
-    else:
-        label = "数据不足"
-
-    summary = ""
-    if review_count >= 3 and new_count >= 3:
-        diff = review_acc - new_acc
-        if diff > 0.15:
-            summary = f"复习题正确率高出{round(diff * 100)}%，复习效果明显"
-        elif diff < -0.15:
-            summary = "新题正确率更高，可以适当增加新题练习"
-        else:
-            summary = "新题和复习题表现接近，节奏均衡"
-    elif new_count >= 5:
-        summary = "新题练习较多，建议增加复习巩固"
-
-    return {
-        "data_available": True,
-        "new_count": new_count,
-        "new_accuracy": round(new_acc, 4),
-        "review_count": review_count,
-        "review_accuracy": round(review_acc, 4),
-        "label": label,
-        "summary": summary,
-    }
+    return balance.new_vs_review(rows.all())
 
 
 # ──────────────────────────────────────────────
@@ -675,73 +437,7 @@ async def compute_input_output(
         )
         .group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
     )
-    subject_data = {}
-    total_q = 0
-    total_time = 0
-    for subj_id, subj_code, subj_name, cnt, corr, tm in rows.all():
-        cnt = cnt or 0
-        if cnt < 3:
-            continue
-        subject_data[subj_id] = {
-            "subject_code": subj_code or "",
-            "subject_name": subj_name or "",
-            "questions": cnt,
-            "correct": corr or 0,
-            "time": tm or 0,
-        }
-        total_q += cnt
-        total_time += tm or 0
-
-    if not subject_data or total_q < 5:
-        return None
-
-    global_avg = total_time / max(total_q, 1)
-
-    items = []
-    for subj_id, sd in subject_data.items():
-        accuracy = sd["correct"] / max(sd["questions"], 1)
-        time_per_q = sd["time"] / max(sd["questions"], 1)
-        efficiency = accuracy / max(time_per_q / max(global_avg, 1), 0.1)
-
-        if efficiency >= 1.2:
-            eff_label = "高"
-            suggestion = "继续保持当前学习方法"
-        elif efficiency >= 0.8:
-            eff_label = "中"
-            suggestion = "提升空间较大，建议侧重薄弱知识点"
-        else:
-            eff_label = "低"
-            suggestion = "投入时间多但收益偏低，建议先复盘错题"
-
-        # Accuracy overrides — only when they don't mask efficiency concerns
-        if accuracy < 0.6 and sd["questions"] >= 10:
-            suggestion = "正确率偏低，建议减少盲目刷题，优先复盘错题"
-        elif accuracy >= 0.85 and efficiency >= 1.0:
-            suggestion = "掌握良好，可以保持节奏"
-        elif accuracy >= 0.85 and efficiency < 0.8:
-            suggestion = "耗时较长但正确率尚可，建议优化做题速度"
-
-        items.append(
-            {
-                "subject_id": subj_id,
-                "subject_code": sd["subject_code"],
-                "subject_name": sd["subject_name"],
-                "total_questions": sd["questions"],
-                "total_duration_sec": sd["time"],
-                "accuracy": round(accuracy, 4),
-                "time_per_question_sec": round(time_per_q, 1),
-                "efficiency_score": round(efficiency, 2),
-                "efficiency_label": eff_label,
-                "suggestion": suggestion,
-            }
-        )
-
-    items.sort(key=lambda x: x["efficiency_score"])
-    return {
-        "data_available": True,
-        "items": items,
-        "global_avg_time_sec": round(global_avg, 1),
-    }
+    return balance.input_output(rows.all())
 
 
 # ──────────────────────────────────────────────
@@ -758,91 +454,7 @@ async def compute_action_plan(
     new_vs_review: dict | None = None,
 ) -> dict:
     """Rule-based action plan based on all available metrics."""
-    items = []
-    priority = 0
-
-    # 1. Overdue reviews
-    if overview:
-        due = overview.get("due_review_count", 0)
-        if due > 0:
-            priority += 1
-            items.append(
-                {
-                    "type": "review",
-                    "priority": priority,
-                    "title": f"完成 {due} 道到期复习",
-                    "desc": f"有 {due} 道复习题已到期，建议优先完成",
-                    "action_data": {},
-                }
-            )
-
-    # 2. Repeat wrong rate high
-    if repeat_wrong and repeat_wrong.get("is_high"):
-        priority += 1
-        count = repeat_wrong.get("repeat_wrong_count", 0)
-        items.append(
-            {
-                "type": "wrong",
-                "priority": priority,
-                "title": f"复盘 {count} 道复发错题",
-                "desc": f"错题复发率 {round(repeat_wrong['repeat_rate'] * 100)}%，建议集中复盘",
-                "action_data": {},
-            }
-        )
-
-    # 3. Weak topics exist
-    if weak_topics and weak_topics.get("items"):
-        top = weak_topics["items"][0]
-        priority += 1
-        items.append(
-            {
-                "type": "wrong",
-                "priority": priority,
-                "title": f"巩固「{top['name']}」知识点",
-                "desc": f"该知识点掌握度 {top['mastery_score']} 分，错误 {top['wrong_count']} 次",
-                "action_data": {"topic": top["name"]},
-            }
-        )
-
-    # 4. New vs review imbalance
-    if new_vs_review:
-        nr_label = new_vs_review.get("label", "")
-        if "复习效果较好" in nr_label:
-            priority += 1
-            items.append(
-                {
-                    "type": "practice",
-                    "priority": priority,
-                    "title": "适当增加新题练习",
-                    "desc": "复习效果较好，可以适当推进新题",
-                    "action_data": {},
-                }
-            )
-        elif "新题表现更佳" in nr_label:
-            priority += 1
-            items.append(
-                {
-                    "type": "review",
-                    "priority": priority,
-                    "title": "增加复习巩固",
-                    "desc": "新题表现好但复习不足，建议平衡练习结构",
-                    "action_data": {},
-                }
-            )
-
-    # 5. Default: keep practicing
-    if not items:
-        items.append(
-            {
-                "type": "practice",
-                "priority": 1,
-                "title": "保持练习节奏",
-                "desc": "当前状态良好，继续每日练习",
-                "action_data": {},
-            }
-        )
-
-    return {"data_available": True, "items": items}
+    return actions.action_plan(overview, repeat_wrong, weak_topics, new_vs_review)
 
 
 # ──────────────────────────────────────────────
