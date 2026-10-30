@@ -248,3 +248,18 @@ Layer 4 规则（`repair_questions` 内）：
   新契约已加入 `.github/workflows/ci.yml` 静态清单。
 - 本批为本地替身契约与 AST 门禁验证，不调用真实外部模型、Redis 或生产服务；第 5
   节的外部 AI、生产 PostgreSQL/Redis、完整 worker 和真实多模态验收仍保留。
+
+## 16. MP-16 小程序 AI 消费链保留评估（2026-10-30）
+
+本项范围是当前小程序五条消费契约：`POST /ai/error-analysis`、`GET /ai/error-analysis/status/{id}`、`POST /ai/error-analysis/recover`、`POST /ai/408-teacher`及`POST /ai/feedback`。调用站点、可能所属页面和精确路由归属来自既有消费者映射；可能可达不等于每页实际执行。
+
+保留既有分析准备/lease/执行/结果复核/两次持久化与发布职责。教师service拥有固定动作、考试防泄题、用户历史版本事实、知识上下文、模型调用及动作降级；已有文本清洗、结构化解析、生成题校验和响应规范化辅助函数可独立调用。1234行service及213行入口本身不构成新的结构缺陷，现阶段保留同域查询所有者和安全/调用顺序，不为历史长度继续拆分。反馈路由仅负责构造日志并提交，保持原样；没有修改业务、schema、数据库结构、客户端、helper查找或事务语义。
+
+本轮补充两份持久化测试文件：
+
+- `test_ai_teacher_request_contracts.py`在固定准备替身上调用真实教师入口及规范化函数，核对服务端事实、答案来源优先级、模型参数、额度拒绝、成功provider先调用用量记录再解析、格式异常/无效生成题仍计用量，以及provider取消和用量回调失败的原传播。用量证据针对回调时序，不冒称真实模型或用量数据库写入验收。
+- `test_ai_consumer_contracts.py`使用专属FastAPI应用和临时SQLite；仅复用既有隔离建库工厂，自行种植canonical408科目。核对历史版本必须有当前用户练习事实（他人历史不放行）、四个答案型入口的进行中考试409、三类错题入口所有权404、缓存状态、恢复revision/force/baseline及重试参数、生成协议与反馈持久提交。provider/分析生成/队列默认失败替身，只有对应协议测试局部替换；不调用外部模型、真实Redis或开发数据库。
+
+两份测试均加入固定CI清单。既有`test-408-ai-teacher.js`修复旧练习结果页内联API位置假设，改查现有适配层及固定版本controller；原整体展开断言改为当前复盘卡片三类手势绑定和更多动作默认收起检查，未修改UI。原`test-408-feature-integration.js`在本轮前即因storage中的旧studyStrategy源码位置失败，原文件/运行时均未改，记录至SHR-03门禁治理；不据本轮测试声称所有小程序脚本均通过。
+
+精确测试、源码冻结、独立审查与提交状态见[结果清单](refactor-results/miniprogram-ai-retention-2026-10-30.json)。本项结论仅用于当前消费者结构处置；真实JWT/微信、多模态/外部模型、PostgreSQL/Redis并发、完整worker与生产仍在最终环境验收阶段，不由本地HTTP/SQLite/替身结果替代。

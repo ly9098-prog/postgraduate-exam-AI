@@ -73,6 +73,8 @@ const surfaces = [
     wxml: 'subpackages/study/practice-result/index.wxml',
     handler: 'open408TeacherFromReview',
     extra: 'question_version_id',
+    apiSource: 'subpackages/study/practice-result/utils/practice-result-teacher-page-adapter.js',
+    contextSource: 'subpackages/study/practice-result/utils/review-408-teacher-controller.js',
   },
   {
     js: 'subpackages/exam/result/index.js',
@@ -104,12 +106,16 @@ assert(wrongDetailWxml.includes('AI 复盘'), '错题详情必须将 AI 能力�
 assert(wrongDetailWxml.includes('teacherPrimaryActions'), 'AI 复盘必须展示精简后的首屏专项动作')
 assert(wrongDetailWxml.includes('teacherMoreActions'), 'AI 复盘必须保留完整动作的更多入口')
 assert(!wrongDetailWxml.includes('class="teacher-card"'), '错题详情不得继续渲染重复的独立 AI 老师卡片')
-assert(wrongDetailJs.includes('toggleAiReview()'), '长复盘内容必须支持展开与收起')
+for (const handler of ['onAiSwipeStart', 'onAiSwipeEnd', 'onAiSwipeCancel']) {
+  assert(wrongDetailJs.includes(`${handler}(`), `复盘卡片缺少 ${handler} 处理`)
+  assert(wrongDetailWxml.includes(`="${handler}"`), `复盘卡片未绑定 ${handler}`)
+}
 assert(wrongDetailJs.includes('teacherLastAction'), '专项讲解失败后必须保留可重试动作')
 assert(wrongDetailWxml.includes('class="diagnosis-summary"'), '我的错因必须使用轻量摘要布局')
 assert(!wrongDetailWxml.includes('error-cause-paper.png'), '我的错因不应继续使用抢占空间的大幅插图')
 assert(wrongDetailWxml.includes('class="ai-brand-icon"'), 'AI 复盘必须具备独立但克制的视觉标识')
-assert(wrongDetailWxml.includes("'is-collapsed'"), 'AI 复盘默认态必须采用紧凑摘要布局')
+assert(wrongDetailJs.includes('teacherActionsExpanded: false'), '更多专项动作默认必须收起')
+assert(wrongDetailWxml.includes("teacherActionsExpanded ? 'is-expanded' : 'is-collapsed'"), '更多专项动作必须按当前状态显示')
 assert(wrongDetailWxss.includes('.ai-deep-actions'), '专项追问必须保留动作布局样式')
 assert(!/min-height:\s*(?:620|650|660|686|704|820|860)rpx/.test(wrongDetailWxss), '我的错因不得残留历史大卡片固定高度')
 assert(!/\/\*\s*v(?:8|9|10|11|22|23)\b/.test(wrongDetailWxss), '错因样式不得继续依赖多版本级联覆盖')
