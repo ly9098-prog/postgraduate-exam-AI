@@ -1,17 +1,20 @@
 """Focused Pomodoro state-machine regression checks.
 
-This script stubs only the database module's Base class so it can import the real
-pomodoro service without requiring an async SQLite driver. It exercises the actual
-pure timeline helpers used by the API service.
+This script exercises the real timeline helpers and service entry points with
+an in-memory session double, without connecting to a database.
 
-Usage: python -m app.cli.test_pomodoro_state_machine
+Usage: python -m tests.cli.test_pomodoro_state_machine
 """
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
 
-from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession  # noqa: E402
+from app.models.pomodoro import (  # noqa: E402
+    PomodoroPauseInterval,
+    PomodoroSession,
+    PomodoroSubjectAllocation,
+)
 from app.services import pomodoro_service as svc  # noqa: E402
 
 PASSED = 0
@@ -44,11 +47,18 @@ def session_at(start: datetime, *, preset: str = "free", work_minutes: int = 0) 
 
 
 class _Result:
-    def __init__(self, session):
+    def __init__(self, session, rows=()):
         self.session = session
+        self.rows = rows
 
     def scalar_one_or_none(self):
         return self.session
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self.rows)
 
 
 class _Nested:
@@ -64,6 +74,10 @@ class _FakeAsyncSession:
         self.session = session
 
     async def execute(self, _query):
+        entity = _query.column_descriptions[0]["entity"]
+        if entity is PomodoroSubjectAllocation:
+            return _Result(None, self.session.subject_allocations)
+        assert entity is PomodoroSession, f"Unsupported test query: {entity}"
         return _Result(self.session)
 
     async def flush(self):

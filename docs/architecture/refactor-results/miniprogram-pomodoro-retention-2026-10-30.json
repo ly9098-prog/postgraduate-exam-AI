@@ -1,0 +1,420 @@
+{
+  "date": "2026-10-30",
+  "ledger_item": "MP-15",
+  "risk": "L1 retention assessment",
+  "disposition": "RETAIN existing Pomodoro request, state, statistics and page controls; only test-double repair and documentation",
+  "scope": {
+    "contracts": 13,
+    "pages": 2,
+    "contracts_detail": [
+      {
+        "method": "GET",
+        "path": "/pomodoro/active"
+      },
+      {
+        "method": "GET",
+        "path": "/pomodoro/daily-summary"
+      },
+      {
+        "method": "GET",
+        "path": "/pomodoro/history"
+      },
+      {
+        "method": "GET",
+        "path": "/pomodoro/range-summary"
+      },
+      {
+        "method": "GET",
+        "path": "/pomodoro/settings"
+      },
+      {
+        "method": "PUT",
+        "path": "/pomodoro/settings"
+      },
+      {
+        "method": "POST",
+        "path": "/pomodoro/start"
+      },
+      {
+        "method": "GET",
+        "path": "/pomodoro/statistics-overview"
+      },
+      {
+        "method": "GET",
+        "path": "/pomodoro/stats"
+      },
+      {
+        "method": "POST",
+        "path": "/pomodoro/{}/complete"
+      },
+      {
+        "method": "POST",
+        "path": "/pomodoro/{}/interrupt"
+      },
+      {
+        "method": "POST",
+        "path": "/pomodoro/{}/pause"
+      },
+      {
+        "method": "POST",
+        "path": "/pomodoro/{}/resume"
+      }
+    ]
+  },
+  "module_budget": [
+    {
+      "path": "backend/app/api/v1/pomodoro.py",
+      "lines": 297,
+      "functions": 14,
+      "max_function_lines": 29,
+      "sha256": "5ab7623f1470d61f593e9b452f6aaa0b622205864f22f212f4c92de8563c8070"
+    },
+    {
+      "path": "backend/app/services/pomodoro_service.py",
+      "lines": 2035,
+      "functions": 87,
+      "max_function_lines": 49,
+      "sha256": "c4d846f817022126099a703d010a447692161b542a8f795207b5a65cef2ae52b"
+    },
+    {
+      "path": "backend/app/services/pomodoro_attribution.py",
+      "lines": 298,
+      "functions": 7,
+      "max_function_lines": 64,
+      "sha256": "8ca90bdfddc348d64bdb99dc9d79e4be142f15443df111b33ef8a491d6f25b12"
+    },
+    {
+      "path": "backend/app/services/pomodoro_history_projection.py",
+      "lines": 68,
+      "functions": 2,
+      "max_function_lines": 41,
+      "sha256": "cf60b58259686b43bce2400cf56a58d4fca7f1ee73e69210197276ed32f7a9d4"
+    },
+    {
+      "path": "backend/app/services/pomodoro_normalization.py",
+      "lines": 133,
+      "functions": 3,
+      "max_function_lines": 44,
+      "sha256": "877b27b167db148a7d79a0157d29684d261fa417673cf21f01b1892e5cc055d1"
+    },
+    {
+      "path": "backend/app/services/pomodoro_start_request.py",
+      "lines": 13,
+      "functions": 0,
+      "max_function_lines": 0,
+      "sha256": "24c562d31331cc1d80e6aa8c5ac5d297055c0e4b1a1cce4405bb7989ec813abd"
+    },
+    {
+      "path": "backend/app/services/pomodoro_statistics_accumulation.py",
+      "lines": 241,
+      "functions": 9,
+      "max_function_lines": 41,
+      "sha256": "0df9faef21f7e94286b5fabcfb3f09d0e5984f6447018e3dcc62b904f3f7dd70"
+    },
+    {
+      "path": "backend/app/services/pomodoro_statistics_response.py",
+      "lines": 99,
+      "functions": 4,
+      "max_function_lines": 47,
+      "sha256": "1681bb17bac65c6ecdd71be3fb907ca2a6002b56626965ca36bcc481297063d6"
+    },
+    {
+      "path": "backend/app/services/pomodoro_statistics_window.py",
+      "lines": 55,
+      "functions": 1,
+      "max_function_lines": 32,
+      "sha256": "169a2791de8ed0e8dd13ab50027c4dc889ae93fce910ccaf678ecfed8dbb9dbb"
+    },
+    {
+      "path": "backend/app/services/pomodoro_subject_projection.py",
+      "lines": 75,
+      "functions": 6,
+      "max_function_lines": 29,
+      "sha256": "046cdc32415ad9db33f9947803966b8b4bca74399b64d08ad00e32d9b62d5071"
+    }
+  ],
+  "source_sha256": {
+    "backend/app/api/v1/pomodoro.py": "5ab7623f1470d61f593e9b452f6aaa0b622205864f22f212f4c92de8563c8070",
+    "backend/app/services/pomodoro_attribution.py": "8ca90bdfddc348d64bdb99dc9d79e4be142f15443df111b33ef8a491d6f25b12",
+    "backend/app/services/pomodoro_history_projection.py": "cf60b58259686b43bce2400cf56a58d4fca7f1ee73e69210197276ed32f7a9d4",
+    "backend/app/services/pomodoro_normalization.py": "877b27b167db148a7d79a0157d29684d261fa417673cf21f01b1892e5cc055d1",
+    "backend/app/services/pomodoro_service.py": "c4d846f817022126099a703d010a447692161b542a8f795207b5a65cef2ae52b",
+    "backend/app/services/pomodoro_start_request.py": "24c562d31331cc1d80e6aa8c5ac5d297055c0e4b1a1cce4405bb7989ec813abd",
+    "backend/app/services/pomodoro_statistics_accumulation.py": "0df9faef21f7e94286b5fabcfb3f09d0e5984f6447018e3dcc62b904f3f7dd70",
+    "backend/app/services/pomodoro_statistics_response.py": "1681bb17bac65c6ecdd71be3fb907ca2a6002b56626965ca36bcc481297063d6",
+    "backend/app/services/pomodoro_statistics_window.py": "169a2791de8ed0e8dd13ab50027c4dc889ae93fce910ccaf678ecfed8dbb9dbb",
+    "backend/app/services/pomodoro_subject_projection.py": "046cdc32415ad9db33f9947803966b8b4bca74399b64d08ad00e32d9b62d5071",
+    "miniprogram/pages/pomodoro/pomodoro.js": "8009acafe0d8340d965059a96690a408bf38115b4ffa05d4e631d88831a0b471",
+    "miniprogram/pages/pomodoro/utils/active-session-reconciler.js": "39c5add058c17cd878671aec750bd12ff8ffb7636b9d8e96e98cf82422bd23ab",
+    "miniprogram/pages/pomodoro/utils/pending-sync-controller.js": "9d20b4d18c3d89b04620d13233a101a723cc8356bbe6c20c512898c77b11812b",
+    "miniprogram/pages/pomodoro/utils/pomodoro-recovery-page-adapter.js": "16cb779fc92d0beb143a1ffd3cae2f88968e55ebfb09ec564d3ccbfe30817636",
+    "miniprogram/pages/pomodoro/utils/resume-error-controller.js": "d7a806af0b80bbe47fd1f51c6275f55463ae029f1a3b53ff5b8ac084a87359c3",
+    "miniprogram/pages/pomodoro/utils/stats-controller.js": "a2135b4750e675b194eff034af567cab1da7dfafaa5fc5fc9d08d32e3db9b506",
+    "miniprogram/pages/pomodoro/utils/unknown-start-controller.js": "d9beca5e13f12cb04ae377c66e20edc73003368b916d08aa51ce01437dbc22d7",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-request-page-adapter.js": "23d7a391908f68fbaa88a31d01113a002ff301d8c59f802a77fa5d39e433f7a6",
+    "miniprogram/subpackages/productivity/pomodoro-stats/index.js": "c43fc807fa85c57e1375bce55d8c65d36f991afefe2a1335e44e703ed8af8c91",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-request-page-adapter.js": "bd57cb8c89602981e2481a7f5b5088d26d90c8ffad4d7e3e4da448d97b165d83",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-date-page-adapter.js": "f8b87fae0b27efdb26f09f002155279a5d4743806b9f9b5f537711716010a6c5",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-distribution-page-adapter.js": "927a627accf141a7389b7712db589b7a951ef1d8dc5f84fdb13437f9d6df9146",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-lifecycle-page-adapter.js": "af89a591a1a02943cce95018cf9d99a3adc93d6a59b1578a3054bf5c4c822559",
+    "backend/app/schemas/pomodoro.py": "6f845deeea6b844c435ac62df70bac7dc9e95d67822880dc77a82648eecce3dd"
+  },
+  "runtime_changes": "none",
+  "test_changes": [
+    "backend/tests/cli/test_pomodoro_state_machine.py: entity-aware query double implements scalars/all; usage docstring corrected"
+  ],
+  "verification": {
+    "backend_targeted": 331,
+    "state_machine": 23,
+    "node_tests": 775,
+    "node_stability_scripts": {
+      "stability_runtime": 46,
+      "resilience": 106,
+      "resume_latency": 12,
+      "free_timer_limit": 39
+    },
+    "ruff_state_machine": "passed",
+    "git_diff_check": "passed",
+    "ci_reuse": {
+      "source": "§321 /tmp/miniprogram-exam-assessment-2026-10-30",
+      "files": 471,
+      "passed": 8125,
+      "basis": "at assessment start only the state-machine test input changed; no runtime page source, CI file or other tracked backend/miniprogram input changed",
+      "frozen_backend_test_ci_inputs": 2244,
+      "unchanged_inputs": 2243,
+      "changed_inputs": [
+        "backend/tests/cli/test_pomodoro_state_machine.py"
+      ],
+      "changed_cli_not_in_fixed_command": true,
+      "fresh_full_ci_run": false,
+      "readiness_reused": 69,
+      "cloud_reused": 30,
+      "openapi_paths_reused": 334
+    },
+    "node_commands": [
+      {
+        "command": [
+          "node",
+          "--test",
+          "miniprogram/tests/test-pomodoro-active-session-reconciler.js",
+          "miniprogram/tests/test-pomodoro-active-session-recovery.js",
+          "miniprogram/tests/test-pomodoro-active-sync-controller.js",
+          "miniprogram/tests/test-pomodoro-apply-subjects-controller.js",
+          "miniprogram/tests/test-pomodoro-begin-countdown-controller.js",
+          "miniprogram/tests/test-pomodoro-break-restore-controller.js",
+          "miniprogram/tests/test-pomodoro-cached-session-builder.js",
+          "miniprogram/tests/test-pomodoro-cancel-confirm-state.js",
+          "miniprogram/tests/test-pomodoro-cancel-end-confirm-controller.js",
+          "miniprogram/tests/test-pomodoro-canvas-init-controller.js",
+          "miniprogram/tests/test-pomodoro-canvas-layout.js",
+          "miniprogram/tests/test-pomodoro-celebration-dismiss-controller.js",
+          "miniprogram/tests/test-pomodoro-celebration-dismiss.js",
+          "miniprogram/tests/test-pomodoro-completion-celebration-controller.js",
+          "miniprogram/tests/test-pomodoro-completion-celebration.js",
+          "miniprogram/tests/test-pomodoro-completion-recovery.js",
+          "miniprogram/tests/test-pomodoro-confirm-end-free-timer-controller.js",
+          "miniprogram/tests/test-pomodoro-confirm-end-timer-controller.js",
+          "miniprogram/tests/test-pomodoro-confirm-interrupt-countdown-controller.js",
+          "miniprogram/tests/test-pomodoro-confirm-recovery.js",
+          "miniprogram/tests/test-pomodoro-countdown-controller.js",
+          "miniprogram/tests/test-pomodoro-countdown-session-restore-controller.js",
+          "miniprogram/tests/test-pomodoro-draw-ring-controller.js",
+          "miniprogram/tests/test-pomodoro-effective-paused-ms.js",
+          "miniprogram/tests/test-pomodoro-end-confirm-snapshot.js",
+          "miniprogram/tests/test-pomodoro-end-confirm-view-model.js",
+          "miniprogram/tests/test-pomodoro-end-session-controller.js",
+          "miniprogram/tests/test-pomodoro-free-elapsed-controller.js",
+          "miniprogram/tests/test-pomodoro-free-session-restore-controller.js",
+          "miniprogram/tests/test-pomodoro-free-timer-begin-controller.js",
+          "miniprogram/tests/test-pomodoro-free-timer-controller.js",
+          "miniprogram/tests/test-pomodoro-free-timer-limit-controller.js",
+          "miniprogram/tests/test-pomodoro-hide-storage.js",
+          "miniprogram/tests/test-pomodoro-interrupt-session-controller.js",
+          "miniprogram/tests/test-pomodoro-module-boundaries.js",
+          "miniprogram/tests/test-pomodoro-page-adapter-contracts.js",
+          "miniprogram/tests/test-pomodoro-pause-adjustment.js",
+          "miniprogram/tests/test-pomodoro-pause-countdown-end-confirm-controller.js",
+          "miniprogram/tests/test-pomodoro-pause-free-timer-controller.js",
+          "miniprogram/tests/test-pomodoro-pause-session-controller.js",
+          "miniprogram/tests/test-pomodoro-pause-sync-controller.js",
+          "miniprogram/tests/test-pomodoro-pause-toggle-controller.js",
+          "miniprogram/tests/test-pomodoro-pending-sync-controller.js",
+          "miniprogram/tests/test-pomodoro-pending-sync.js",
+          "miniprogram/tests/test-pomodoro-reset-to-idle-controller.js",
+          "miniprogram/tests/test-pomodoro-resume-error-controller.js",
+          "miniprogram/tests/test-pomodoro-resume-free-timer-controller.js",
+          "miniprogram/tests/test-pomodoro-resume-session-controller.js",
+          "miniprogram/tests/test-pomodoro-ring-geometry.js",
+          "miniprogram/tests/test-pomodoro-running-state-migrator.js",
+          "miniprogram/tests/test-pomodoro-session-action-dropper.js",
+          "miniprogram/tests/test-pomodoro-session-restore.js",
+          "miniprogram/tests/test-pomodoro-show-countdown-interrupt-confirm-controller.js",
+          "miniprogram/tests/test-pomodoro-show-end-free-confirm-controller.js",
+          "miniprogram/tests/test-pomodoro-show-recovery.js",
+          "miniprogram/tests/test-pomodoro-start-break-controller.js",
+          "miniprogram/tests/test-pomodoro-start-session-controller.js",
+          "miniprogram/tests/test-pomodoro-start-timer-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-cancel-work-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-canvas-init-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-canvas-palette.js",
+          "miniprogram/tests/test-pomodoro-stats-chart-mode-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-close-detail-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-cumulative-refresh-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-cumulative-start-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-cumulative-summary-patch.js",
+          "miniprogram/tests/test-pomodoro-stats-date-commit-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-date-failure-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-date-navigation-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-date-request-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-date-utils.js",
+          "miniprogram/tests/test-pomodoro-stats-date-view-state.js",
+          "miniprogram/tests/test-pomodoro-stats-day-start-entry-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-deferred-history-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-detail.js",
+          "miniprogram/tests/test-pomodoro-stats-distribution-commit-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-distribution-entry-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-distribution-load-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-duration-animation-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-duration-formatter.js",
+          "miniprogram/tests/test-pomodoro-stats-dynamic-refresh-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-lifecycle-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-load-commit-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-load-failure-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-load-request-controller-capabilities.js",
+          "miniprogram/tests/test-pomodoro-stats-load-request-controller-factory.js",
+          "miniprogram/tests/test-pomodoro-stats-load-request-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-load-request-page-adapter.js",
+          "miniprogram/tests/test-pomodoro-stats-load-view-state.js",
+          "miniprogram/tests/test-pomodoro-stats-module-boundaries.js",
+          "miniprogram/tests/test-pomodoro-stats-overview-mapping.js",
+          "miniprogram/tests/test-pomodoro-stats-page-adapter-contracts.js",
+          "miniprogram/tests/test-pomodoro-stats-page-contracts.js",
+          "miniprogram/tests/test-pomodoro-stats-page-init-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-animation-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-geometry.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-label-layout.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-label-renderer.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-label-reveal-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-render-capabilities.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-renderer.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-sector-builder.js",
+          "miniprogram/tests/test-pomodoro-stats-pie-tap-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-reconcile-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-save-day-start-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-select-date-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-session-view-model.js",
+          "miniprogram/tests/test-pomodoro-stats-settings-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-shade-color-cache.js",
+          "miniprogram/tests/test-pomodoro-stats-start-animations-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-study-day-range-text.js",
+          "miniprogram/tests/test-pomodoro-stats-subject-distribution.js",
+          "miniprogram/tests/test-pomodoro-stats-subject-items.js",
+          "miniprogram/tests/test-pomodoro-stats-subject-meta-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-theme-sync-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-trend-animation-controller.js",
+          "miniprogram/tests/test-pomodoro-stats-trend-chart.js",
+          "miniprogram/tests/test-pomodoro-stats-view-helpers.js",
+          "miniprogram/tests/test-pomodoro-subject-cache.js",
+          "miniprogram/tests/test-pomodoro-subject-options.js",
+          "miniprogram/tests/test-pomodoro-subject-selection.js",
+          "miniprogram/tests/test-pomodoro-sync-reconciliation.js",
+          "miniprogram/tests/test-pomodoro-sync-retry-controller.js",
+          "miniprogram/tests/test-pomodoro-terminal-conflict-controller.js",
+          "miniprogram/tests/test-pomodoro-terminal-conflict-handler.js",
+          "miniprogram/tests/test-pomodoro-terminal-conflict-state.js",
+          "miniprogram/tests/test-pomodoro-theme-controller.js",
+          "miniprogram/tests/test-pomodoro-timer-math.js",
+          "miniprogram/tests/test-pomodoro-timer-shimmer.js",
+          "miniprogram/tests/test-pomodoro-unknown-start-controller.js",
+          "miniprogram/tests/test-pomodoro-unknown-start-helpers.js",
+          "miniprogram/tests/test-pomodoro-update-free-elapsed-controller.js",
+          "miniprogram/tests/test-pomodoro-view-controllers.js",
+          "miniprogram/tests/test-pomodoro-work-complete-controller.js"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 3.69,
+        "log": "/tmp/miniprogram-pomodoro-assessment-2026-10-30/node-0.log"
+      },
+      {
+        "command": [
+          "node",
+          "miniprogram/scripts/test-pomodoro-stability-runtime.js"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.08,
+        "log": "/tmp/miniprogram-pomodoro-assessment-2026-10-30/node-1.log"
+      },
+      {
+        "command": [
+          "node",
+          "miniprogram/scripts/test-pomodoro-resilience.js"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.05,
+        "log": "/tmp/miniprogram-pomodoro-assessment-2026-10-30/node-2.log"
+      },
+      {
+        "command": [
+          "node",
+          "miniprogram/scripts/test-pomodoro-resume-latency.js"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.03,
+        "log": "/tmp/miniprogram-pomodoro-assessment-2026-10-30/node-3.log"
+      },
+      {
+        "command": [
+          "node",
+          "miniprogram/scripts/test-pomodoro-free-timer-limit.js"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.04,
+        "log": "/tmp/miniprogram-pomodoro-assessment-2026-10-30/node-4.log"
+      }
+    ],
+    "backend_command": [
+      "/usr/bin/python3.12",
+      "-m",
+      "pytest",
+      "tests/test_services/test_pomodoro_study_day_stats.py",
+      "tests/test_services/test_pomodoro_subject_projection.py",
+      "tests/test_services/test_pomodoro_snapshot_contract.py",
+      "tests/test_services/test_pomodoro_subject_allocation.py",
+      "tests/test_services/test_pomodoro_scheduler.py",
+      "tests/test_services/test_pomodoro_history_projection.py",
+      "tests/test_services/test_practice_session_stats.py",
+      "tests/test_services/test_review_session_stats.py",
+      "tests/architecture/test_pomodoro_subject_projection_boundaries.py",
+      "tests/architecture/test_pomodoro_statistics_window_boundaries.py",
+      "-q",
+      "--tb=short"
+    ],
+    "state_machine_command": {
+      "exit_code": 0,
+      "wall_seconds": 0.98,
+      "command": [
+        "/home/lmh/projects/postgraduate-ai/backend/.venv/bin/python",
+        "-m",
+        "tests.cli.test_pomodoro_state_machine"
+      ]
+    },
+    "original_cli_failure": "AttributeError: _Result has no scalars; original execution stopped after14checks, not accepted as a pass"
+  },
+  "not_run": [
+    "real WeChat compile/simulator/device",
+    "PostgreSQL/Redis concurrency",
+    "production"
+  ],
+  "status": "RETAIN",
+  "independent_review": "one independent read-only review complete; no remaining P0-P3; reviewer independently ran original-assertion CLI23/23 and verified13contracts, currentruntimehashes, budgets, logs and2243unchanged/1targeted CI reuse",
+  "evidence_directory": "/tmp/miniprogram-pomodoro-assessment-2026-10-30",
+  "module_budget_note": "existing attribution module max64, retained under existing coherent-module rule; normalization is historical migration helper, not current request work",
+  "test_sha256": {
+    "backend/tests/cli/test_pomodoro_state_machine.py": "f7f0fa2172222566082461155099637e90b47ad939c1e99e46f80c7ae7e1721c"
+  },
+  "commit_scope": [
+    "backend/tests/cli/test_pomodoro_state_machine.py",
+    "docs/architecture/refactor-results/miniprogram-pomodoro-retention-2026-10-30.json"
+  ]
+}
