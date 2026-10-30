@@ -251,7 +251,7 @@ test('request maps errors, toasts and auth redirect only once', async () => {
   assert.equal(calls.relaunches.length, 2)
 })
 
-test('proactive refresh keeps its threshold, retry and dedup rules', async () => {
+test('proactive refresh keeps its threshold, dedup and login bypass rules', async () => {
   reset(authed({ token_expires_at: Math.floor(Date.now() / 1000) + 60 }), {
     routes: { 'POST /auth/refresh': { statusCode: 200, data: {
       access_token: 'token-2', expires_at: Math.floor(Date.now() / 1000) + 86400,
@@ -277,7 +277,7 @@ test('proactive refresh keeps its threshold, retry and dedup rules', async () =>
   assert.equal(memory.get('token'), 'token-1')
 })
 
-test('uploadFile keeps multipart headers and 401 retry without JSON content type', async () => {
+test('uploadFile keeps multipart headers and maps HTTP/network errors', async () => {
   reset(authed(), {
     routes: {
       'UPLOAD /import/ocr': { statusCode: 200, data: '{"task":7}', header: {} },
@@ -310,7 +310,76 @@ test('uploadFile keeps multipart headers and 401 retry without JSON content type
   assert.equal('Content-Type' in calls.uploads[0].header, false)
 })
 
-test('server clock offset applies to now() from body and header samples', async () => {
+test('upload 401 retries once with the same trace and a fresh request id', async () => {
+  reset(authed(), {
+    routes: { 'POST /auth/refresh': { statusCode: 200, data: {
+      access_token: 'token-2',
+    }, header: {} } },
+    queues: { 'UPLOAD /users/me/avatar': [
+      { statusCode: 401, data: '{"code":"TOKEN_EXPIRED"}', header: {} },
+      { statusCode: 401, data: '{"code":"STILL_UNAUTHORIZED"}', header: {} },
+    ] },
+  })
+  await assert.rejects(api.uploadFile('/users/me/avatar', '/tmp/avatar.png', {
+    traceId: 'tr_avatar', name: 'image', formData: { kind: 'avatar' }, timeout: 4567,
+  }), error => error.statusCode === 401 && error.code === 'STILL_UNAUTHORIZED')
+  assert.equal(calls.uploads.length, 2)
+  assert.equal(calls.requests.filter(call => call.url === '/auth/refresh').length, 1)
+  const [first, second] = calls.uploads
+  assert.equal(first.header.Authorization, 'Bearer token-1')
+  assert.equal(second.header.Authorization, 'Bearer token-2')
+  assert.equal(first.header['X-Trace-ID'], 'tr_avatar')
+  assert.equal(second.header['X-Trace-ID'], 'tr_avatar')
+  assert.notEqual(first.header['X-Request-ID'], second.header['X-Request-ID'])
+  for (const attempt of calls.uploads) {
+    assert.equal('Content-Type' in attempt.header, false)
+    assert.equal(attempt.filePath, '/tmp/avatar.png')
+    assert.equal(attempt.name, 'image')
+    assert.deepEqual(attempt.formData, { kind: 'avatar' })
+    assert.equal(attempt.timeout, 4567)
+  }
+})
+
+test('HTTP second 401 is returned as an error without another refresh', async () => {
+  reset(authed(), {
+    routes: { 'POST /auth/refresh': { statusCode: 200, data: {
+      access_token: 'token-2',
+    }, header: {} } },
+    queues: { 'GET /protected': [
+      { statusCode: 401, data: { code: 'TOKEN_EXPIRED' }, header: {} },
+      { statusCode: 401, data: { code: 'STILL_UNAUTHORIZED' }, header: {} },
+    ] },
+  })
+  await assert.rejects(api.get('/protected'), error =>
+    error.statusCode === 401 && error.code === 'STILL_UNAUTHORIZED')
+  assert.deepEqual(calls.requests.map(call => call.url), [
+    '/protected', '/auth/refresh', '/protected',
+  ])
+})
+
+test('proactive refresh retries one network failure then blocks the HTTP request', async () => {
+  reset(authed({ token_expires_at: Math.floor(Date.now() / 1000) + 60 }), {
+    offline: ['POST /auth/refresh'],
+  })
+  const originalSetTimeout = global.setTimeout
+  const delays = []
+  global.setTimeout = (callback, delay, ...args) => {
+    if (delay !== 1500) return originalSetTimeout(callback, delay, ...args)
+    delays.push(delay)
+    callback(...args)
+    return 0
+  }
+  try {
+    await assert.rejects(api.get('/blocked'), error => error.code === 'AUTH_REQUIRED')
+    assert.deepEqual(delays, [1500])
+    assert.deepEqual(calls.requests.map(call => call.url), ['/auth/refresh', '/auth/refresh'])
+    assert.equal(calls.relaunches.length, 0)
+  } finally {
+    global.setTimeout = originalSetTimeout
+  }
+})
+
+test('server clock offset applies to now() from body samples', async () => {
   reset(authed(), {
     routes: { 'GET /clock': { statusCode: 200, data: {
       ok: 1, server_now: new Date(Date.now() + 60 * 60 * 1000).toISOString().replace('Z', '+00:00'),
@@ -323,4 +392,21 @@ test('server clock offset applies to now() from body and header samples', async 
   assert.ok(offset > 55 * 60 * 1000, `offset ${offset} should track the server body sample`)
   assert.ok(offset < 65 * 60 * 1000, `offset ${offset} should stay close to one hour`)
   assert.ok(Math.abs(after - Date.now()) > 55 * 60 * 1000)
+})
+
+test('expired clock sample accepts Date header fallback without server_now', async () => {
+  const originalNow = Date.now
+  const clientNow = originalNow() + 11 * 60 * 1000
+  Date.now = () => clientNow
+  try {
+    const serverNow = clientNow + 2 * 60 * 60 * 1000
+    reset(authed(), {
+      routes: { 'GET /clock-header': { statusCode: 200, data: { ok: 1 },
+        header: { Date: new Date(serverNow).toUTCString() } } },
+    })
+    await api.get('/clock-header')
+    assert.ok(Math.abs(api.now() - serverNow) < 1000)
+  } finally {
+    Date.now = originalNow
+  }
 })
