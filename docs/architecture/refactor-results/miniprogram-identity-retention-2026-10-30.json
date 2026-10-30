@@ -1,0 +1,481 @@
+{
+  "date": "2026-10-30",
+  "ledger_item": "MP-12",
+  "status": "RETAIN",
+  "head_before_commit": "8b6e3f91ba1b355b65e2ad6a0c1f3f549539a4b2",
+  "scope": "six current static identity contracts; WeChat/code exchange, refresh/logout, current-user/profile/avatar composition and user-vs-admin JWT boundaries",
+  "contracts": [
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "login",
+        "line": 34,
+        "dependencies": [
+          {
+            "symbol": "token_service.create_refresh_token",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "user_service.wechat_login",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          },
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 79,
+          "url": "/auth/login"
+        },
+        {
+          "file": "miniprogram/pages/login/login.js",
+          "line": 216,
+          "url": "/auth/login"
+        },
+        {
+          "file": "miniprogram/pages/login/login.js",
+          "line": 295,
+          "url": "/auth/login"
+        }
+      ],
+      "current_backend_line": 34
+    },
+    {
+      "method": "POST",
+      "path": "/auth/logout",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/auth/logout",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "logout",
+        "line": 170,
+        "dependencies": [
+          {
+            "symbol": "token_service.revoke_all_user_tokens",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 89,
+          "url": "/auth/logout"
+        }
+      ],
+      "current_backend_line": 170
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/auth/refresh",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "refresh",
+        "line": 83,
+        "dependencies": [
+          {
+            "symbol": "token_service.verify_refresh_token",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "token_service.revoke_all_user_tokens",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "token_service.revoke_all_user_tokens",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "token_service.rotate_refresh_token",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/api-auth.js",
+          "line": 56,
+          "url": "/auth/refresh"
+        }
+      ],
+      "current_backend_line": 83
+    },
+    {
+      "method": "GET",
+      "path": "/users/me",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/users/me",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "get_me",
+        "line": 117,
+        "dependencies": [
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 25,
+          "url": "/users/me"
+        }
+      ],
+      "current_backend_line": 117
+    },
+    {
+      "method": "PUT",
+      "path": "/users/me",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "PUT",
+        "path": "/api/v1/users/me",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "update_me",
+        "line": 125,
+        "dependencies": [
+          {
+            "symbol": "user_service.update_user",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          },
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 46,
+          "url": "/users/me"
+        }
+      ],
+      "current_backend_line": 125
+    },
+    {
+      "method": "POST",
+      "path": "/users/me/avatar",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/users/me/avatar",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "upload_my_avatar",
+        "line": 137,
+        "dependencies": [
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          },
+          {
+            "symbol": "user_service.replace_user_avatar",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 43,
+          "url": "/users/me/avatar"
+        }
+      ],
+      "current_backend_line": 137
+    }
+  ],
+  "decision": "Retain existing route/user/token/security and client/page responsibilities; add semantic contracts without runtime changes or speculative extraction",
+  "runtime_unchanged_paths": [
+    "backend/app/api/v1/auth.py",
+    "backend/app/services/user_service.py",
+    "backend/app/services/token_service.py",
+    "backend/app/core/security.py",
+    "backend/app/core/admin_security.py",
+    "backend/app/schemas/user.py",
+    "miniprogram/utils/auth.js",
+    "miniprogram/utils/api-auth.js",
+    "miniprogram/utils/privacy.js",
+    "miniprogram/pages/login/login.js",
+    "miniprogram/pages/home/home.js"
+  ],
+  "test_changes": {
+    "backend": "14 new isolated route/service port cases in existing token/user compatibility file; file now24cases and added to static CI list",
+    "client": "7 new cases for WeChat session, four-key rollback, avatar-before-nickname/new URL preservation, avatar failure, logout await/cleanup, consent rollback, late-login lifecycle completion",
+    "test_auth_session_not_executed": "not used as acceptance evidence: module itself has no DB overrides; full fixture provenance not evaluated; old grace-window comment is not authoritative"
+  },
+  "verification": {
+    "existing_backend_baseline": "17 passed in5.04s (pure token/user10+identitymatrix4+devpermission3)",
+    "backend_targeted": "31 passed in5.07s",
+    "selected_security": "4 passed in0.71s (JWT domain, logout nbf issue, refresh revocation and consumed-token rejection)",
+    "client_targeted": "43 passed (client19/boundaries14/storage10)",
+    "node_reliability_coverage": "185command final composed evidence:184 reused from §318, changed command112 rechecked19passed; no fresh full-step claim",
+    "full_fixed_static": {
+      "exit_code": 0,
+      "files": 466,
+      "elapsed_seconds": 565.84,
+      "passed": 8073,
+      "warnings": 64,
+      "pytest_seconds": 560.47,
+      "log": "/tmp/miniprogram-identity-assessment-2026-10-30/ci-static.log",
+      "command_file": "/tmp/miniprogram-identity-assessment-2026-10-30/ci-static-command.json",
+      "scope": "current Static architecture & non-GPU fixed list; not all GitHub Actions jobs"
+    },
+    "strict_ruff": "passed modified backend test",
+    "node_syntax": "passed",
+    "compileall": "passed app",
+    "frozen_backend_test_ci_paths": 2238,
+    "auxiliary_reuse": "§317 readiness69/cloud30/OpenAPI334 reused only for unchanged app/route/schema inputs, not newly rerun"
+  },
+  "source_sha256": {
+    "backend/app/api/v1/auth.py": "5b2b0f508c7c4046fa77d1e89f53c4b2aae0b2f837fb55430a7714b12787f43b",
+    "backend/app/services/user_service.py": "50d733007d067c72ba4eb36c88356a2d08274b2c0568fe307893abaeb2988018",
+    "backend/app/services/token_service.py": "7bbc373bfc7b07c91cf4c253e721487f66f5c880000645d4b5a4b488a8a45056",
+    "backend/app/core/security.py": "d405168a5cd0fafa3dd2b9664508be33c46585776696368fd819014374a3832b",
+    "backend/app/core/admin_security.py": "2d19479e2fe2d425ec95112e13d846f4a42d6d2e6ffe94b19f0c8139cde69e0d",
+    "backend/app/schemas/user.py": "8a85e2011424dc9ebe9ce71da88d06ade1249e22d6cb5e92147dcd77b4518f9f",
+    "backend/tests/test_services/test_token_user_service_compatibility.py": "bb287f6424900a75fd79534f8aec9d788eceaa4bb526d9be4709da528d44788e",
+    "backend/tests/test_api/test_identity_boundary_matrix.py": "e2dd90b3b7e7191ab92451e63cd17db383318f09fa1b922f85904309ad4f66df",
+    "backend/tests/core/test_security_regressions.py": "5f2e3805e60e7863b72bf4d5707970ed0b07755d24bdd1c9bee2b68cc53217cc",
+    "backend/tests/test_services/test_dev_permissions.py": "fecc821fb726383d7555c0667f8f1b34ebd49c02c4568f5905c1656a6e0ea3f3",
+    "miniprogram/utils/auth.js": "b3ee4f2452f43931af99583dbcae324addc3a88878d8d055fc065576c2175599",
+    "miniprogram/utils/api-auth.js": "1a379b6b85b8780a4bcb95ee11432589bf547d39023c85f2b53eb03bc9a0a3d2",
+    "miniprogram/utils/privacy.js": "549979de55179cc6efce4f9807b2409d1aebf1f2eb2f5c920c544d504ca19ccc",
+    "miniprogram/pages/login/login.js": "c039759f25d0295487e223559445ac65e7b05d78a16a731af56f3b1cc30aa96f",
+    "miniprogram/pages/home/home.js": "6cfa24e3c08efb14bb94ce6c5a30f08aa4bd2e80abab5f4eb56b3da43fee194c",
+    "miniprogram/tests/test-api-client-contract.js": "e38b40e17c5d13e9ccc146a53a539983c6e7807eefd8d6a50b2753a11e65505e",
+    "miniprogram/tests/test-api-client-boundaries.js": "2b7d7d85a7ed8dd90f70f031584cb4044b70dc16777b26983ca6bcb55271f830",
+    "miniprogram/tests/test-storage-facade-contract.js": "9dd6b27f8ec665f212e73117d4871d22150cbd7fec53ae20a2869c56b928efd4",
+    ".github/workflows/ci.yml": "0890ad2288606dbc7e3c9f443f4ffcfcbe8ce7925beb61d6f1ff493c8bb06afa",
+    ".github/workflows/reliability.yml": "554a7056bfbcb6d74955efab266dae8b4cf4c53bdeb03fb2b1a18b68c6e335bc"
+  },
+  "index_generation": "2026-10-29T17:24:11Z",
+  "coverage": "20 paths checked best_effort; current edited tests/CI read directly",
+  "independent_review": "completed 2026-10-30; one independent implementation/test review and final documentation/limited-claim narrow check; stale context status P3 fixed and narrowly verified closed; no remaining P0-P3; reviewer reran backend compatibility file24 passed in1.18s and client/boundary/storage43 passed; no repeated full CI",
+  "environment_acceptance": "ENV01..06 WAITING-FINAL. No real WeChat/device/JWT credentials, real PostgreSQL/Redis atomic rotation or production acceptance. Production last.",
+  "evidence_dir": "/tmp/miniprogram-identity-assessment-2026-10-30",
+  "commit": "five explicit paths are included in this local test/compatibility/result commit; exact hash is recorded in the current handoff,history and Git history rather than in this self-referential manifest"
+}

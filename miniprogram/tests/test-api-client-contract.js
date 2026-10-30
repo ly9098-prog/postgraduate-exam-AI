@@ -101,6 +101,7 @@ global.wx = {
 
 const storage = require('../utils/storage')
 const api = require('../utils/api')
+const auth = require('../utils/auth')
 
 function reset(entries = {}, options = {}) {
   memory.clear()
@@ -408,5 +409,176 @@ test('expired clock sample accepts Date header fallback without server_now', asy
     assert.ok(Math.abs(api.now() - serverNow) < 1000)
   } finally {
     Date.now = originalNow
+  }
+})
+
+test('WeChat login persists the complete session after the code exchange', async () => {
+  reset({}, { routes: { 'POST /auth/login': { statusCode: 200, data: {
+    access_token: 'login-access', refresh_token: 'login-refresh',
+    expires_at: 1900000000, user: { id: 17, nickname: 'Learner' },
+  }, header: {} } } })
+  const originalLogin = wx.login
+  wx.login = async () => ({ code: 'test-wechat-code' })
+  try {
+    const user = await auth.wechatLogin()
+    assert.deepEqual(calls.requests.map(call => call.url), ['/auth/login'])
+    assert.deepEqual(calls.requests[0].data, { code: 'test-wechat-code' })
+    assert.equal(user.id, 17)
+    assert.equal(memory.get('token'), 'login-access')
+    assert.equal(memory.get('refresh_token'), 'login-refresh')
+    assert.equal(memory.get('token_expires_at'), 1900000000)
+    assert.equal(memory.get('user').id, 17)
+  } finally {
+    wx.login = originalLogin
+  }
+})
+
+test('failed session persistence rolls back all four auth keys', () => {
+  reset({ privacy_acceptance: 'keep' })
+  const originalWrite = wx.setStorageSync
+  wx.setStorageSync = (key, value) => {
+    if (key === 'user') throw new Error('synthetic quota failure')
+    originalWrite(key, value)
+  }
+  try {
+    assert.throws(() => auth.loginDirect('access', { id: 17 }, 1900000000, 'refresh'),
+      /登录信息保存失败/)
+    for (const key of ['token', 'refresh_token', 'token_expires_at', 'user']) {
+      assert.equal(memory.has(key), false, key)
+    }
+    assert.equal(memory.get('privacy_acceptance'), 'keep')
+  } finally {
+    wx.setStorageSync = originalWrite
+  }
+})
+
+test('profile uploads avatar before nickname and retains the uploaded URL', async () => {
+  reset(authed(), { routes: {
+    'UPLOAD /users/me/avatar': { statusCode: 200,
+      data: '{"id":17,"avatar_url":"new-avatar"}', header: {} },
+    'PUT /users/me': { statusCode: 200,
+      data: { id: 17, nickname: 'Learner', avatar_url: 'stale-avatar' }, header: {} },
+  } })
+  const events = []
+  const originalUpload = wx.uploadFile
+  const originalRequest = wx.request
+  wx.uploadFile = options => { events.push('upload'); originalUpload(options) }
+  wx.request = options => { events.push(options.method); originalRequest(options) }
+  try {
+    const user = await auth.updateProfile({ nickname: '  New   Name ', avatarPath: '/tmp/avatar.png' })
+    assert.deepEqual(events, ['upload', 'PUT'])
+    assert.equal(calls.uploads[0].name, 'file')
+    assert.equal(calls.uploads[0].timeout, 30000)
+    assert.deepEqual(calls.requests[0].data, { nickname: 'New Name' })
+    assert.equal(user.avatar_url, 'new-avatar')
+    assert.equal(memory.get('user').avatar_url, 'new-avatar')
+  } finally {
+    wx.uploadFile = originalUpload
+    wx.request = originalRequest
+  }
+})
+
+test('avatar failure stops profile update and keeps the cached user', async () => {
+  const old = { id: 17, nickname: 'Old', avatar_url: 'old-avatar' }
+  reset(authed({ user: old }), { routes: {
+    'UPLOAD /users/me/avatar': { statusCode: 503, data: '{}', header: {} },
+  } })
+  await assert.rejects(auth.updateProfile({ nickname: 'New', avatarPath: '/tmp/avatar.png' }),
+    error => error.statusCode === 503)
+  assert.equal(calls.uploads.length, 1)
+  assert.equal(calls.requests.length, 0)
+  assert.equal(memory.get('user'), old)
+})
+
+test('logout waits for the revoke attempt then clears session even on network failure', async () => {
+  reset(authed({ user: { id: 17 }, privacy_acceptance: 'accepted', unrelated: 'keep' }))
+  const originalRequest = wx.request
+  let pending
+  wx.request = options => { pending = options }
+  try {
+    const completion = auth.logout()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.ok(pending)
+    assert.equal(memory.get('token'), 'token-1')
+    assert.equal(memory.get('privacy_acceptance'), 'accepted')
+    pending.fail({ errMsg: 'synthetic offline' })
+    await completion
+    for (const key of ['token', 'refresh_token', 'token_expires_at', 'user', 'privacy_acceptance']) {
+      assert.equal(memory.has(key), false, key)
+    }
+    assert.equal(memory.get('unrelated'), 'keep')
+  } finally {
+    wx.request = originalRequest
+  }
+})
+
+function loginPage() {
+  const modulePath = require.resolve('../pages/login/login')
+  const originalPage = global.Page
+  let definition
+  delete require.cache[modulePath]
+  global.Page = value => { definition = value }
+  try {
+    require(modulePath)
+  } finally {
+    if (originalPage === undefined) delete global.Page
+    else global.Page = originalPage
+  }
+  return {
+    ...definition,
+    data: { ...definition.data, agreed: true },
+    setData(values) { Object.assign(this.data, values) },
+  }
+}
+
+test('login page rolls authentication back when consent persistence fails', async () => {
+  reset({}, { routes: { 'POST /auth/login': { statusCode: 200, data: {
+    access_token: 'login-access', refresh_token: 'login-refresh',
+    expires_at: 1900000000, user: { id: 17 },
+  }, header: {} } } })
+  const originalLogin = wx.login
+  const originalWrite = wx.setStorageSync
+  wx.login = async () => ({ code: 'test-wechat-code' })
+  wx.setStorageSync = (key, value) => {
+    if (key === 'privacy_acceptance') throw new Error('synthetic consent write failure')
+    originalWrite(key, value)
+  }
+  try {
+    const page = loginPage()
+    await page.onWechatLogin()
+    assert.match(page.data.error, /协议确认记录保存失败/)
+    assert.equal(page.data.loading, false)
+    for (const key of ['token', 'refresh_token', 'token_expires_at', 'user']) {
+      assert.equal(memory.has(key), false, key)
+    }
+    assert.equal(calls.relaunches.length, 0)
+  } finally {
+    wx.login = originalLogin
+    wx.setStorageSync = originalWrite
+  }
+})
+
+test('late login completion commits consent before the destroyed page returns', async () => {
+  reset({}, { routes: { 'POST /auth/login': { statusCode: 200, data: {
+    access_token: 'login-access', refresh_token: 'login-refresh',
+    expires_at: 1900000000, user: { id: 17 },
+  }, header: {} } } })
+  const originalLogin = wx.login
+  let completeLogin
+  wx.login = () => new Promise(resolve => { completeLogin = resolve })
+  try {
+    const page = loginPage()
+    const completion = page.onWechatLogin()
+    assert.ok(completeLogin)
+    page.onUnload()
+    completeLogin({ code: 'test-wechat-code' })
+    await completion
+    assert.equal(memory.get('token'), 'login-access')
+    assert.equal(memory.get('privacy_acceptance').privacy_version, '1.1')
+    assert.equal(memory.get('privacy_acceptance').accepted_items.length, 3)
+    assert.equal(calls.relaunches.length, 0)
+    assert.equal(page._homeRedirectTimer, null)
+  } finally {
+    wx.login = originalLogin
   }
 })
