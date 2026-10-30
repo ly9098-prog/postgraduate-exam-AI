@@ -31,7 +31,7 @@
 
 另登记 `ADM-09 DEFECT`：真实 `admin_tasks.cancel_task` 获取 pooled client 后，在 `hgetall` 抛出异常时，执行不到后面的显式 `aclose`。隔离探针令 `_get_redis_client` 返回 `hgetall` 抛 `RuntimeError` 的 AsyncMock，调用真实入口后观察到 `aclose.await_count == 0`。复现脚本与结果位于本轮证据目录；结果清单保留可重建步骤。
 
-这是原有异常路径清理缺口，运行时未改。尚未测量真实 Redis 连接泄漏数量、连接池耗尽或线上影响。修复须另行确认，并覆盖读取失败/取消、任务不存在、正常取消及客户端关闭时序。
+2026-10-31 已修复：`cancel_task` 改为在 `try/finally` 中读取任务 hash，任何路径都恰好关闭一次 client，且在调用 `cancel_v2` 之前关闭；状态码、错误码和 `cancel_v2` 调用语义不变。`backend/tests/test_api/test_admin_tasks_cancel.py`（已加入 CI 固定清单）覆盖读取异常、任务不存在和正常取消时的关闭次数与顺序。真实 Redis 连接池行为仍未测量，归最终环境验收。
 
 ## 4. 验证和证据复用
 

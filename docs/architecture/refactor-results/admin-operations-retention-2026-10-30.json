@@ -385,6 +385,7 @@
     {
       "id": "ADM-09",
       "status": "DEFECT",
+      "resolution": "Fixed 2026-10-31: hgetall wrapped in try/finally; regression tests backend/tests/test_api/test_admin_tasks_cancel.py. Observation below records pre-fix behavior.",
       "entry": "admin_tasks.cancel_task",
       "trigger": "pooled client acquired; hgetall raises before explicit aclose",
       "observed": "fake client aclose awaited 0 times; exception propagated",

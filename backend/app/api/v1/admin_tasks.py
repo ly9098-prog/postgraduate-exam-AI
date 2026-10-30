@@ -722,17 +722,15 @@ async def cancel_task(
     )
 
     client = await _get_redis_client()
-    hash_key = _v2_task_hash_key(task_id)
-    data = await client.hgetall(hash_key)
+    try:
+        data = await client.hgetall(_v2_task_hash_key(task_id))
+    finally:
+        await client.aclose()
 
     if not data:
-        await client.aclose()
         raise task_not_found(task_id)
 
-    parsed = _parse_task_data(data)
-    task_type = parsed.get("task_type", "")
-    await client.aclose()
-
+    task_type = _parse_task_data(data).get("task_type", "")
     if not task_type:
         raise HTTPException(
             status_code=400, detail=f"Cannot determine task_type for {task_id}"
