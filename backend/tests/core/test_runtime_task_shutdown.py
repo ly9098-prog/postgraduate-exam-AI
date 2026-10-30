@@ -100,7 +100,8 @@ async def test_outcome_logging_and_pending_second_cancel(shutdown, kind):
     assert events.count(("cancel", "token-cleanup")) == (2 if kind == "pending" else 1)
     if kind in {"pending", "error"}:
         log.warning.assert_called_once()
-        assert ("shared 30s" in log.warning.call_args.args[0]) is (kind == "pending")
+        fmt, *args = log.warning.call_args.args
+        assert ("shared 30s" in fmt % tuple(args)) is (kind == "pending")
     else:
         log.info.assert_called_once()
         assert ("completed" in log.info.call_args.args[0]) is (kind == "completed")
@@ -173,3 +174,23 @@ async def test_real_tasks_finish_cancel_or_fail_with_one_wait_and_no_leak(monkey
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_grace_seconds_overrides_the_default_wait_and_warning(monkeypatch):
+    events, waited = [], []
+    task = Task("token-cleanup", events)
+    log = SimpleNamespace(info=Mock(), warning=Mock())
+
+    async def wait(tasks, *, timeout):
+        waited.append(timeout)
+        return set(), {task}
+
+    monkeypatch.setattr(runtime_task_shutdown.asyncio, "wait", wait)
+    monkeypatch.setattr(runtime_task_shutdown, "logger", log)
+    await runtime_task_shutdown.cancel_and_wait_runtime_tasks(
+        [("token-cleanup", task)], grace_seconds=75
+    )
+    assert waited == [75]
+    fmt, *args = log.warning.call_args.args
+    assert fmt % tuple(args) == "Task token-cleanup: did not stop within shared 75s grace period"

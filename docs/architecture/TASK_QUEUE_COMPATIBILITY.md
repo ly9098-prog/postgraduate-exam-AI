@@ -458,3 +458,22 @@
   regression 423 个路径 7371 passed / 0 failed（607.19 秒，64 条既有 DeprecationWarning）、
   Mocked readiness boundary regression 69 passed、Cloud OCR profile boundary regression
   30 passed；这是本地清单重放，不代表远端 CI 或生产验收。
+
+## HTTP scheduler 与独立 scheduler 生命周期对齐（SHR-02，2026-10-31）
+
+`PROCESS_ROLE=scheduler/all` 经 `start_http_scheduler_tasks` 运行时，此前与独立入口（`bootstrap._init_scheduler_dependencies`）有两处差异：不启动答案投影对账（`answer-projection-reconciler`）与调度健康监控（`async-task-health-monitor`），且关停宽限固定 30 秒而独立入口读取 `WORKER_SHUTDOWN_GRACE_SEC`。已修复：
+
+- `runtime_http_scheduler_startup` 在 outbox 之后追加两个监控任务，失败只记警告，生产环境同样不致命，与独立入口一致；任务引用存于 `HttpSchedulerTasks.answer_projection_task` / `health_monitor_task`，并加入 `main.py` 的统一取消清单。
+- `cancel_and_wait_runtime_tasks` 新增关键字参数 `grace_seconds`（默认 30），`main.py` 传入 `settings.WORKER_SHUTDOWN_GRACE_SEC`，超时告警文案随之带实际秒数。该清单同时覆盖 worker 任务，默认值不变时行为与之前一致。
+- outbox 启动失败两条路径本就都是非致命警告，两者一致，未改动。
+
+新增契约：HTTP 启动的任务名集合与独立 scheduler 的 `TASKS` 相同且无重复（只比较任务名，不约束启动顺序）；监控任务两种失败阶段（工厂/创建）在 dev 与 production 均只警告且不影响另一个监控；`grace_seconds` 自定义值进入等待与告警；AST 钉住 `grace_seconds=settings.WORKER_SHUTDOWN_GRACE_SEC` 和两个新标签。受影响的钉住测试同步更新（依赖图增加两个懒加载模块，`main.py` 行数预算 471→474，lifespan 178→180）。`tests/core/http_lifespan_ports.py` 与 scheduler 端口夹具补了两个模块的替身。
+
+剩余差异与注意事项：
+
+- 审计清理与推荐指标两个调度器两边调用同一启动函数，但失败策略不同：HTTP 路径经 `report_failure(..., production_mode)`，生产下致命；独立入口经 `_report`。本修复未改动。
+- 启动阶段的 `try/except` 只覆盖导入与 `create_task` 失败；任务运行后崩溃不会被发现（独立入口的 `TaskRegistry` 同样如此）。两个监控各自捕获单轮异常，取消时重新抛出 `CancelledError`。
+- `WORKER_SHUTDOWN_GRACE_SEC` 调大会延长整个关停；部署的 `stop_grace_period` 或 gunicorn/uvicorn 优雅超时需不小于该值加 `drain_queue_for_role` 耗时，否则进程可能在清理中被 SIGKILL（部署值待确认）。
+- 若同时运行 HTTP `all` 角色和独立 scheduler，两个监控会重复运行：投影对账有 `DistributedLock` 保护，健康监控没有，会重复记录健康事件。
+
+限制：生产 `scheduler` 服务运行 `python -m app.scheduler_main`，不经 HTTP 路径，本修复只让 dev/`all` 角色与之对齐；真实多角色、多 worker 行为及 Redis/PostgreSQL 下的对账锁归 ENV-05。全量 `tests/core` + `tests/architecture` 仅剩两项既有 SHR-03 旧源码门禁失败（`pipeline_split_*` 中的 `normalized_blocks`）。

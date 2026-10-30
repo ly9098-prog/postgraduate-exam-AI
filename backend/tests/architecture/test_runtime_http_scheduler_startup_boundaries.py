@@ -16,6 +16,8 @@ def test_http_scheduler_startup_dependencies_and_budgets():
         "app.services.outbox_queue_adapter", "app.services.runtime_periodic_tasks",
         "app.services.runtime_scheduler_startup", "app.services.system_task_service",
         "app.services.outbox_service", "app.services.task_queue_service",
+        "app.services.practice.projection_reconciliation_service",
+        "app.services.task_observability_service",
     }
     assert "app.services.runtime_http_scheduler_startup" in graph["app.main"]
     source = (APP / "services/runtime_http_scheduler_startup.py").read_text()
@@ -24,9 +26,9 @@ def test_http_scheduler_startup_dependencies_and_budgets():
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             assert node.end_lineno - node.lineno + 1 <= 50
     main = (APP / "main.py").read_text()
-    assert len(main.splitlines()) <= 471
+    assert len(main.splitlines()) <= 474
     life = next(node for node in ast.parse(main).body if getattr(node, "name", None) == "lifespan")
-    assert life.end_lineno - life.lineno + 1 <= 178
+    assert life.end_lineno - life.lineno + 1 <= 180
 
 
 def test_lifespan_uses_real_state_and_helper_with_original_ports_and_position():
@@ -61,6 +63,11 @@ def test_lifespan_uses_real_state_and_helper_with_original_ports_and_position():
     assert values["scheduler-heartbeat"] == "scheduler_tasks.scheduler_heartbeat_task"
     assert values["outbox-dispatcher"] == "scheduler_tasks.outbox_dispatcher_task"
     assert values["outbox-reconciler"] == "scheduler_tasks.outbox_reconciler_task"
+    assert values["answer-projection-reconciler"] == "scheduler_tasks.answer_projection_task"
+    assert values["async-task-health-monitor"] == "scheduler_tasks.health_monitor_task"
+    assert [ast.unparse(k.value) for k in shutdown.keywords if k.arg == "grace_seconds"] == [
+        "settings.WORKER_SHUTDOWN_GRACE_SEC"
+    ]
     assert not any(
         isinstance(node, ast.ImportFrom)
         and node.module in {"app.services.system_task_service", "app.services.outbox_service",

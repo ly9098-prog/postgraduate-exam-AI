@@ -12,11 +12,13 @@ from tests.core.runtime_http_scheduler_probe import http_scheduler_operations
 TASK_NAMES = [
     "scheduler-heartbeat", "token-cleanup", "staging-cleanup",
     "export-processor", "export-cleanup", "outbox-dispatcher", "outbox-reconciler",
+    "answer-projection-reconciler", "async-task-health-monitor",
 ]
 TASK_FIELDS = [
     "scheduler_heartbeat_task", "cleanup_task", "staging_cleanup_task",
     "export_processor_task", "export_cleanup_task",
     "outbox_dispatcher_task", "outbox_reconciler_task",
+    "answer_projection_task", "health_monitor_task",
 ]
 FATAL_COMPONENTS = [
     ("create:scheduler-heartbeat", "Scheduler heartbeat"),
@@ -33,12 +35,7 @@ async def test_scheduler_tasks_are_real_named_owned_and_feed_existing_shutdown(s
     assert all(getattr(state.tasks, field) is None for field in TASK_FIELDS)
     assert await state.operations.start(state.tasks, production, state.logger, state.report) is None
     assert [task.get_name() for task in state.created] == TASK_NAMES
-    assert [
-        state.tasks.scheduler_heartbeat_task, state.tasks.cleanup_task,
-        state.tasks.staging_cleanup_task, state.tasks.export_processor_task,
-        state.tasks.export_cleanup_task, state.tasks.outbox_dispatcher_task,
-        state.tasks.outbox_reconciler_task,
-    ] == state.created
+    assert [getattr(state.tasks, field) for field in TASK_FIELDS] == state.created
     assert state.events[:3] == ["factory:heartbeat", "create:scheduler-heartbeat", "audit.start"]
     assert state.events.index("metrics.start") < state.events.index("factory:token")
     assert "log" in state.events and "warn" not in state.events
@@ -151,3 +148,38 @@ def test_scheduler_task_states_are_independent_and_have_no_task_management_metho
     first.cleanup_task = object()
     assert first is not second and second.cleanup_task is None
     assert not any(hasattr(first, method) for method in ["create", "cancel", "wait_all", "register"])
+
+
+@pytest.mark.asyncio
+async def test_http_scheduler_starts_the_same_tasks_as_the_standalone_scheduler(scheduler_ports):
+    from tests.core.test_standalone_scheduler_startup import TASKS as STANDALONE_TASKS
+
+    state = scheduler_ports
+    await state.operations.start(state.tasks, False, state.logger, state.report)
+    created = [task.get_name() for task in state.created]
+    assert len(created) == len(set(created))
+    assert set(created) == set(STANDALONE_TASKS)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("production", [False, True])
+@pytest.mark.parametrize(
+    ("failed", "missing", "present"),
+    [
+        ("factory:answer_projection", "answer-projection-reconciler", "async-task-health-monitor"),
+        ("create:answer-projection-reconciler", "answer-projection-reconciler", "async-task-health-monitor"),
+        ("factory:health_monitor", "async-task-health-monitor", "answer-projection-reconciler"),
+        ("create:async-task-health-monitor", "async-task-health-monitor", "answer-projection-reconciler"),
+    ],
+)
+async def test_monitor_start_failure_is_a_warning_even_in_production(
+    scheduler_ports, production, failed, missing, present,
+):
+    state = scheduler_ports
+    state.failed, state.error = failed, RuntimeError("synthetic monitor failure")
+    assert await state.operations.start(state.tasks, production, state.logger, state.report) is None
+    state.report.assert_not_called()
+    assert "warn" in state.events
+    created = [task.get_name() for task in state.created]
+    assert missing not in created and present in created
+    assert all(name in created for name in TASK_NAMES[:7])

@@ -12,6 +12,7 @@ TASK_NAMES = [
     "token-cleanup", "pipeline-dispatcher-v2", "task-reaper-v2", "staging-cleanup",
     "export-processor", "export-cleanup", "scheduler-heartbeat",
     "outbox-dispatcher", "outbox-reconciler",
+    "answer-projection-reconciler", "async-task-health-monitor",
 ]
 
 

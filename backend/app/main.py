@@ -250,7 +250,9 @@ async def lifespan(app: FastAPI):
                 ("scheduler-heartbeat", scheduler_tasks.scheduler_heartbeat_task),
                 ("outbox-dispatcher", scheduler_tasks.outbox_dispatcher_task),
                 ("outbox-reconciler", scheduler_tasks.outbox_reconciler_task),
-            ])
+                ("answer-projection-reconciler", scheduler_tasks.answer_projection_task),
+                ("async-task-health-monitor", scheduler_tasks.health_monitor_task),
+            ], grace_seconds=settings.WORKER_SHUTDOWN_GRACE_SEC)
         except Exception as e:
             shutdown_error = shutdown_error or e
 

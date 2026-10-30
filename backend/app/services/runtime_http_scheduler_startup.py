@@ -19,6 +19,8 @@ class HttpSchedulerTasks:
     export_cleanup_task: asyncio.Task | None = None
     outbox_dispatcher_task: asyncio.Task | None = None
     outbox_reconciler_task: asyncio.Task | None = None
+    answer_projection_task: asyncio.Task | None = None
+    health_monitor_task: asyncio.Task | None = None
 
 
 def _create_periodic_tasks(tasks: HttpSchedulerTasks, logger: logging.Logger) -> None:
@@ -46,6 +48,29 @@ async def _create_outbox_tasks(tasks: HttpSchedulerTasks, logger: logging.Logger
     tasks.outbox_reconciler_task = asyncio.create_task(
         run_outbox_reconciler(), name="outbox-reconciler")
     logger.info("Outbox dispatcher + reconciler started")
+
+
+def _create_monitor_tasks(tasks: HttpSchedulerTasks, logger: logging.Logger) -> None:
+    """Same non-fatal safety nets the standalone scheduler starts."""
+    try:
+        from app.services.practice.projection_reconciliation_service import (
+            run_answer_projection_reconciler,
+        )
+
+        tasks.answer_projection_task = asyncio.create_task(
+            run_answer_projection_reconciler(), name="answer-projection-reconciler")
+        logger.info("Answer projection business reconciler started")
+    except Exception as e:
+        logger.warning("Answer projection reconciler init failed (non-fatal): %s", e)
+
+    try:
+        from app.services.task_observability_service import run_task_health_monitor
+
+        tasks.health_monitor_task = asyncio.create_task(
+            run_task_health_monitor(), name="async-task-health-monitor")
+        logger.info("Async task health monitor started")
+    except Exception as e:
+        logger.warning("Async task health monitor init failed (non-fatal): %s", e)
 
 
 async def start_http_scheduler_tasks(
@@ -83,3 +108,5 @@ async def start_http_scheduler_tasks(
         await _create_outbox_tasks(tasks, logger)
     except Exception as e:
         logger.warning("Outbox dispatcher start failed (non-fatal): %s", e)
+
+    _create_monitor_tasks(tasks, logger)

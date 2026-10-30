@@ -84,6 +84,14 @@ async def scheduler_ports(monkeypatch):
         run_outbox_dispatcher=lambda cb: factory("outbox_dispatcher"),
         run_outbox_reconciler=lambda: factory("outbox_reconciler"),
     ))
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.practice.projection_reconciliation_service",
+        SimpleNamespace(run_answer_projection_reconciler=lambda: factory("answer_projection")),
+    )
+    monkeypatch.setitem(sys.modules, "app.services.task_observability_service", SimpleNamespace(
+        run_task_health_monitor=lambda: factory("health_monitor"),
+    ))
     monkeypatch.setitem(sys.modules, "app.services.task_queue_service", SimpleNamespace(
         task_queue=SimpleNamespace(),
     ))

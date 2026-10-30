@@ -182,6 +182,8 @@ async def runtime(monkeypatch, tmp_path):
         "app.services.audit_cleanup_scheduler": SimpleNamespace(audit_log_cleanup_scheduler=SimpleNamespace(start=asynchronous("audit.start"), stop=asynchronous("audit.stop"))),
         "app.services.recommendation_metrics_scheduler": SimpleNamespace(recommendation_metrics_scheduler=SimpleNamespace(start=asynchronous("metrics.start"), stop=asynchronous("metrics.stop"))),
         "app.services.outbox_service": SimpleNamespace(run_outbox_dispatcher=outbox, run_outbox_reconciler=lambda: loop("outbox_reconciler")),
+        "app.services.practice.projection_reconciliation_service": SimpleNamespace(run_answer_projection_reconciler=lambda: loop("answer_projection")),
+        "app.services.task_observability_service": SimpleNamespace(run_task_health_monitor=lambda: loop("health_monitor")),
         "app.services.task_queue_service": SimpleNamespace(task_queue=SimpleNamespace(close=asynchronous("queue.close"), enqueue_v2=asynchronous("queue.enqueue", "synthetic-task"))),
         "app.core.resource_guard": SimpleNamespace(resource_guard=SimpleNamespace(start_orphan_reconciler=asynchronous("orphans.start"), stop_orphan_reconciler=asynchronous("orphans.stop"))),
         "app.services.formula_graph_spec_renderer": SimpleNamespace(shutdown_formula_render_pool=sync("formula.stop")),
