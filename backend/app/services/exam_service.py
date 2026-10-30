@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 from decimal import Decimal
@@ -10,12 +11,13 @@ from sqlalchemy import Float, case, cast, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.subject_scope import EXAM408_CORE_CODES
+from app.core.subject_scope import EXAM408_CORE_CODES as EXAM408_CORE_CODES
 from app.core.time_utils import normalize_to_naive_utc, utcnow
 from app.features.question_type import QT_SINGLE_CHOICE
 from app.models.admin import QuestionVersion, Subject
 from app.models.exam import ExamAnswer, ExamAttempt, ExamPaper, ExamPaperQuestion
 from app.models.practice_record import PracticeRecord
+from app.services import exam_read_projection, exam_result_projection
 from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
 )
@@ -132,46 +134,9 @@ async def list_published_papers(db: AsyncSession, user_id: int) -> list[dict]:
         for attempt in attempts.scalars().all():
             attempts_by_paper[int(attempt.paper_id)].append(attempt)
 
-    result: list[dict] = []
-    for paper, question_count, total_score in papers:
-        attempts = attempts_by_paper.get(int(paper.id), [])
-        # An abandoned attempt is a dead draft: it must not surface as the
-        # latest attempt, otherwise the list would offer "resume" on a stale
-        # in-progress-looking row instead of a fresh start.
-        latest = next(
-            (a for a in attempts if a.status != "abandoned"),
-            None,
-        )
-        latest_status = latest.status if latest else None
-        if (
-            latest is not None
-            and latest_status == "in_progress"
-            and paper.duration_sec
-            and _elapsed_seconds(latest.started_at) >= int(paper.duration_sec)
-        ):
-            # Present an elapsed attempt as expired without mutating state in a
-            # read-only list request. Starting a new attempt will finalize it.
-            latest_status = "expired"
-        terminal_scores = [
-            _money(a.score) for a in attempts if a.status in TERMINAL_ATTEMPT_STATUSES
-        ]
-        result.append(
-            {
-                "id": int(paper.id),
-                "title": paper.title,
-                "paper_type": paper.paper_type,
-                "year": paper.year,
-                "source": paper.source,
-                "duration_sec": paper.duration_sec,
-                "version": int(paper.version),
-                "question_count": int(question_count),
-                "total_choice_score": _money(total_score),
-                "latest_attempt_id": int(latest.id) if latest else None,
-                "latest_attempt_status": latest_status,
-                "best_choice_score": max(terminal_scores) if terminal_scores else None,
-            }
-        )
-    return result
+    return exam_read_projection.paper_list(
+        papers, attempts_by_paper, sys.modules[__name__]
+    )
 
 
 async def get_published_paper_detail(
@@ -216,30 +181,16 @@ async def get_published_paper_detail(
         .group_by(Subject.id, Subject.code, Subject.name)
         .order_by(Subject.sort_order.asc(), Subject.id.asc())
     )
-    return {
-        "id": int(paper.id),
-        "title": paper.title,
-        "paper_type": paper.paper_type,
-        "year": paper.year,
-        "source": paper.source,
-        "duration_sec": paper.duration_sec,
-        "version": int(paper.version),
-        "question_count": question_count,
-        "total_choice_score": total_score,
-        "latest_attempt_id": int(latest.id) if latest else None,
-        "latest_attempt_status": latest_status,
-        "best_choice_score": max(terminal_scores) if terminal_scores else None,
-        "subject_distribution": [
-            {
-                "subject_id": int(sid),
-                "subject_code": code,
-                "subject_name": name,
-                "question_count": int(count),
-                "total_score": _money(score),
-            }
-            for sid, code, name, count, score in dist_rows.all()
-        ],
-    }
+    return exam_read_projection.paper_detail(
+        paper,
+        question_count,
+        total_score,
+        latest,
+        latest_status,
+        terminal_scores,
+        dist_rows,
+        sys.modules[__name__],
+    )
 
 
 async def _get_attempt_for_user(
@@ -436,46 +387,21 @@ async def get_attempt_view(db: AsyncSession, attempt_id: int, user_id: int) -> d
         if str(revision.question_type or "") != QT_SINGLE_CHOICE:
             raise ExamStateError("考试包含非 single_choice 历史版本")
         questions.append(
-            {
-                "item_id": int(item.id),
-                "question_id": int(answer.question_id),
-                "question_version_id": int(answer.question_version_id),
-                "position": int(item.position),
-                "score": _money(item.score),
-                "subject_id": int(item.section_subject_id),
-                "subject_code": subject.code,
-                "subject_name": subject.name,
-                "question_type": QT_SINGLE_CHOICE,
-                "content": _student_content(revision.content),
-                "options": _student_options(revision.options),
-                "image_url": revision.image_url,
-            }
+            exam_read_projection.attempt_question(
+                answer, item, revision, subject, sys.modules[__name__]
+            )
         )
-        answers.append(
-            {
-                "item_id": int(item.id),
-                "selected_answer": answer.selected_answer,
-                "marked_for_review": bool(answer.marked_for_review),
-                "used_time": int(answer.used_time or 0),
-                "answered_at": answer.answered_at,
-            }
-        )
-    return {
-        "id": int(attempt.id),
-        "paper_id": int(paper.id),
-        "paper_title": paper.title,
-        "paper_type": paper.paper_type,
-        "year": paper.year,
-        "status": attempt.status,
-        "started_at": attempt.started_at,
-        "duration_limit_sec": paper.duration_sec,
-        "elapsed_sec": elapsed,
-        "remaining_sec": remaining,
-        "question_count": question_count,
-        "total_choice_score": total_score,
-        "questions": questions,
-        "answers": answers,
-    }
+        answers.append(exam_read_projection.attempt_answer(answer, item))
+    return exam_read_projection.attempt_view(
+        attempt,
+        paper,
+        elapsed,
+        remaining,
+        question_count,
+        total_score,
+        questions,
+        answers,
+    )
 
 
 async def _apply_final_submit_answers(
@@ -640,17 +566,7 @@ async def save_attempt_answer(
     if changed:
         answer.answer_revision = int(answer.answer_revision or 0) + 1
     await db.commit()
-    return {
-        "attempt_id": int(attempt.id),
-        "status": attempt.status,
-        "answer": {
-            "item_id": int(item_id),
-            "selected_answer": answer.selected_answer,
-            "marked_for_review": bool(answer.marked_for_review),
-            "used_time": int(answer.used_time or 0),
-            "answered_at": answer.answered_at,
-        },
-    }
+    return exam_read_projection.saved_answer(attempt, answer, item_id)
 
 
 async def _create_projection_event(
@@ -819,86 +735,50 @@ async def _finalize_attempt(
             )
 
         result_questions.append(
-            {
-                "item_id": int(item.id),
-                "question_id": int(answer.question_id),
-                "question_version_id": int(answer.question_version_id),
-                "position": int(item.position),
-                "subject_id": int(subject.id),
-                "subject_code": subject.code,
-                "subject_name": subject.name,
-                "score": _money(item_score),
-                "earned_score": _money(earned),
-                "selected_answer": selected,
-                "correct_answer": str(revision.answer or ""),
-                "is_correct": is_correct,
-                "status": status,
-                "marked_for_review": bool(answer.marked_for_review),
-                "used_time": int(answer.used_time or 0),
-                "content": _student_content(revision.content),
-                "options": _student_options(revision.options),
-                "analysis": revision.analysis,
-                "image_url": revision.image_url,
-                "knowledge_points": list(names),
-                "wrong_question_id": wrong_question_id,
-                "error_diagnosis": error_diagnosis_payload,
-            }
+            exam_result_projection.question_result(
+                answer,
+                item,
+                revision,
+                subject,
+                item_score,
+                earned,
+                selected,
+                is_correct,
+                status,
+                names,
+                wrong_question_id,
+                error_diagnosis_payload,
+                sys.modules[__name__],
+            )
         )
 
-    subject_breakdown = []
-    for stats in subject_stats.values():
-        answered = int(stats["answered_count"])
-        correct = int(stats["correct_count"])
-        subject_breakdown.append(
-            {
-                "subject_id": stats["subject_id"],
-                "subject_code": stats["subject_code"],
-                "subject_name": stats["subject_name"],
-                "question_count": int(stats["question_count"]),
-                "answered_count": answered,
-                "correct_count": correct,
-                "score": _money(stats["score"]),
-                "total_score": _money(stats["total_score"]),
-                "accuracy": round(correct / int(stats["question_count"]), 4)
-                if int(stats["question_count"])
-                else 0.0,
-            }
-        )
-    subject_order = {code: idx for idx, code in enumerate(EXAM408_CORE_CODES)}
-    subject_breakdown.sort(key=lambda x: subject_order.get(x["subject_code"], 99))
+    subject_breakdown = exam_result_projection.subject_breakdown(
+        subject_stats, sys.modules[__name__]
+    )
 
-    weak_kps = [
-        {
-            "name": name,
-            "miss_count": int(count),
-            "lost_score": round(kp_lost_score[name], 2),
-        }
-        for name, count in kp_losses.most_common(8)
-    ]
+    weak_kps = exam_result_projection.weak_knowledge_points(kp_losses, kp_lost_score)
     wrong_count = answered_count - total_correct
     unanswered_count = question_count - answered_count
-    result = {
-        "attempt_id": int(attempt.id),
-        "paper_id": int(paper.id),
-        "paper_title": paper.title,
-        "paper_type": paper.paper_type,
-        "year": paper.year,
-        "attempt_status": terminal_status,
-        "started_at": normalize_to_naive_utc(attempt.started_at).isoformat(),
-        "submitted_at": normalize_to_naive_utc(now).isoformat(),
-        "duration_sec": int(duration),
-        "question_count": int(question_count),
-        "answered_count": int(answered_count),
-        "correct_count": int(total_correct),
-        "wrong_count": int(wrong_count),
-        "unanswered_count": int(unanswered_count),
-        "choice_score": _money(earned_total),
-        "total_choice_score": _money(total_score),
-        "accuracy": round(total_correct / question_count, 4) if question_count else 0.0,
-        "subject_breakdown": subject_breakdown,
-        "weak_knowledge_points": weak_kps,
-        "questions": result_questions,
-    }
+    result = exam_result_projection.result_snapshot(
+        attempt,
+        paper,
+        terminal_status,
+        now,
+        duration,
+        {
+            "question_count": question_count,
+            "answered_count": answered_count,
+            "total_correct": total_correct,
+            "wrong_count": wrong_count,
+            "unanswered_count": unanswered_count,
+            "earned_total": earned_total,
+            "total_score": total_score,
+        },
+        subject_breakdown,
+        weak_kps,
+        result_questions,
+        sys.modules[__name__],
+    )
     attempt.status = terminal_status
     attempt.submitted_at = now
     attempt.duration_sec = int(duration)
@@ -1061,31 +941,7 @@ def _exam_history_filters(user_id: int):
 
 
 def _history_row_to_item(row) -> dict:
-    question_count = max(0, int(row.question_count or 0))
-    answered_count = max(0, min(question_count, int(row.answered_count or 0)))
-    correct_count = max(0, min(answered_count, int(row.correct_count or 0)))
-    wrong_count = max(0, answered_count - correct_count)
-    unanswered_count = max(0, question_count - answered_count)
-    accuracy = round(correct_count / question_count, 4) if question_count else 0.0
-    return {
-        "attempt_id": int(row.attempt_id),
-        "paper_id": int(row.paper_id),
-        "paper_title": row.paper_title or f"试卷 #{row.paper_id}",
-        "paper_type": row.paper_type or "mock_choice",
-        "year": row.year,
-        "status": row.status,
-        "started_at": row.started_at,
-        "submitted_at": row.submitted_at,
-        "duration_sec": int(row.duration_sec or 0),
-        "question_count": question_count,
-        "answered_count": answered_count,
-        "correct_count": correct_count,
-        "wrong_count": wrong_count,
-        "unanswered_count": unanswered_count,
-        "choice_score": _money(row.choice_score),
-        "total_choice_score": _money(row.total_choice_score),
-        "accuracy": accuracy,
-    }
+    return exam_read_projection.history_item(row, sys.modules[__name__])
 
 
 async def get_exam_history_overview(
@@ -1112,8 +968,7 @@ async def get_exam_history_overview(
     accuracy_expr = case(
         (
             question_count_expr > 0,
-            cast(ExamAttempt.correct_count, Float)
-            / cast(question_count_expr, Float),
+            cast(ExamAttempt.correct_count, Float) / cast(question_count_expr, Float),
         ),
         else_=0.0,
     )
@@ -1140,16 +995,7 @@ async def get_exam_history_overview(
     ).one()
 
     completed_count = int(summary_row.completed_count or 0)
-    summary = {
-        "completed_count": completed_count,
-        "average_choice_score": round(float(summary_row.average_choice_score or 0), 2),
-        "average_total_choice_score": round(
-            float(summary_row.average_total_choice_score or 0), 2
-        ),
-        "average_accuracy": round(float(summary_row.average_accuracy or 0), 4),
-        "best_choice_score": round(float(summary_row.best_choice_score or 0), 2),
-        "best_accuracy": round(float(summary_row.best_accuracy or 0), 4),
-    }
+    summary = exam_read_projection.history_summary(summary_row, completed_count)
 
     page_rows = (
         await db.execute(

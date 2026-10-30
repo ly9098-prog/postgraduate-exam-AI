@@ -1,0 +1,407 @@
+{
+  "date": "2026-10-30",
+  "ledger_item": "MP-14",
+  "risk": "L3",
+  "status": "DONE",
+  "head_before_commit": "fb654637c4d38869acfd1f9313dc3abab2499e58",
+  "scope": "nine current static contracts across paper-list,runner,result andhistory; adjacent unconsumed paper-detail retains route and is covered because its projection moved",
+  "contracts": [
+    {
+      "method": "GET",
+      "path": "/exams/attempts/{}",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/attempts/{attempt_id}",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "get_attempt",
+        "line": 73,
+        "dependencies": [
+          {
+            "symbol": "exam_service.get_attempt_view",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/utils/exam-runner-answer-page-adapter.js",
+          "line": 63,
+          "url": "/exams/attempts/${page.data.attemptId}"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 214,
+          "url": "/exams/attempts/${attemptId}"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/exam-runner/index.js",
+          "line": 263,
+          "url": "/exams/attempts/${this.data.attemptId}"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exams/attempts/{}/abandon",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exams/attempts/{attempt_id}/abandon",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "abandon_attempt",
+        "line": 117,
+        "dependencies": [
+          {
+            "symbol": "exam_service.abandon_attempt",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 256,
+          "url": "/exams/attempts/${attemptId}/abandon"
+        }
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/exams/attempts/{}/answers/{}",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "PATCH",
+        "path": "/api/v1/exams/attempts/{attempt_id}/answers/{item_id}",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "save_answer",
+        "line": 88,
+        "dependencies": [
+          {
+            "symbol": "exam_service.save_attempt_answer",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/exam-runner/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/utils/exam-runner-answer-page-adapter.js",
+          "line": 46,
+          "url": "/exams/attempts/${page.data.attemptId}/answers/${itemId}"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/attempts/{}/result",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/attempts/{attempt_id}/result",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "get_result",
+        "line": 147,
+        "dependencies": [
+          {
+            "symbol": "exam_service.get_attempt_result",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/result/index.js",
+          "line": 122,
+          "url": "/exams/attempts/${this.data.attemptId}/result"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exams/attempts/{}/submit",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exams/attempts/{attempt_id}/submit",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "submit_attempt",
+        "line": 129,
+        "dependencies": [
+          {
+            "symbol": "exam_service.submit_attempt",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/exam-runner/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/utils/exam-runner-submit-page-adapter.js",
+          "line": 12,
+          "url": "/exams/attempts/${page.data.attemptId}/submit"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/history",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/history",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "history",
+        "line": 171,
+        "dependencies": [
+          {
+            "symbol": "exam_service.list_exam_history",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/history/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/history/index.js",
+          "line": 146,
+          "url": "/exams/history"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/history/index.js",
+          "line": 160,
+          "url": "/exams/history"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/history/overview",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/history/overview",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "history_overview",
+        "line": 159,
+        "dependencies": [
+          {
+            "symbol": "exam_service.get_exam_history_overview",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/history/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/history/index.js",
+          "line": 151,
+          "url": "/exams/history/overview"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/papers",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/papers",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "list_papers",
+        "line": 36,
+        "dependencies": [
+          {
+            "symbol": "exam_service.list_published_papers",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 66,
+          "url": "/exams/papers"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exams/papers/{}/attempts",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exams/papers/{paper_id}/attempts",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "start_attempt",
+        "line": 58,
+        "dependencies": [
+          {
+            "symbol": "exam_service.start_attempt",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 183,
+          "url": "/exams/papers/${id}/attempts"
+        }
+      ]
+    }
+  ],
+  "change": "Two cohesive pure response modules for published/read views and finalized results; service preserves read/write ownership, SQL and per-row grading/side effects",
+  "budgets": {
+    "exam_result_projection": {
+      "lines": 116,
+      "functions": 4,
+      "max_function": 39
+    },
+    "exam_read_projection": {
+      "lines": 177,
+      "functions": 8,
+      "max_function": 35
+    }
+  },
+  "service_lines": {
+    "before": 1200,
+    "after": 1045,
+    "rule": "existing coherent transaction/query orchestration is retained;300/50 applies to new projection modules, not a trigger for further extraction"
+  },
+  "source_verification": {
+    "original_functions_fully_expanded": 24,
+    "projection_functions_matched": 12,
+    "original_db_calls_unchanged": 32,
+    "modules": {
+      "exam_result_projection": {
+        "lines": 116,
+        "functions": 4,
+        "max_function": 39
+      },
+      "exam_read_projection": {
+        "lines": 177,
+        "functions": 8,
+        "max_function": 35
+      }
+    },
+    "service_lines": 1045
+  },
+  "compatibility": [
+    "all24original service function signatures and expanded function ASTs match;12helpers checked against original source plus exact argument bindings",
+    "32ordered DB call ASTs unchanged;locking, flush/add/commit, wrong/diagnosis/outbox/prewarm order remain",
+    "service helper and constant lookup is resolved through the original service namespace at each original use point, including a content helper replacing options during the same row",
+    "Counter.most_common(8) and tie occurrence order preserved;lost_score is displayed,not the sort key",
+    "API/schema/userJWT/route and allminiprogram runtime/test inputs unchanged"
+  ],
+  "verification": {
+    "original_entry_baseline": "32passed5.56s before extraction",
+    "original_final": "34passed7.83s,1pytest preimport warning; original service source loaded into same service namespace in a separate subprocess",
+    "current_targeted": "49passed7.27s, no warnings (34entry/contracts+15architecture)",
+    "new_tests": "four service contracts:read projection/helper replacement;display expiry;wrong/KP links+ordering;encodingfailure rollsback;one isolated HTTP lifecycle covers all9consumed paths plus adjacentpaperdetail",
+    "client": "407passed in1.09s via node --test miniprogram/tests/test-exam-*.js;not a fullmini-shell or realWeChat claim",
+    "readiness": "69passed, current isolated command;wall6.83s",
+    "cloud": "30passed,current isolated command;wall8.3s",
+    "openapi": "equal,334paths;two cold original/current application processes",
+    "full_fixed_static": {
+      "exit_code": 0,
+      "files": 471,
+      "passed": 8125,
+      "warnings": 64,
+      "pytest_seconds": 694.04,
+      "elapsed_seconds": 699.7,
+      "frozen_backend_test_ci_paths": 2244,
+      "scope": "Static architecture & non-GPU fixed list only;not all GitHub Actions jobs;current business/tests/CI unchanged after launch"
+    },
+    "strict_ruff": "passed3business+3newtestfiles",
+    "compileall": "passedapp",
+    "git_diff_check": "passed"
+  },
+  "source_sha256": {
+    "backend/app/api/v1/exams.py": "4150367c87e21c82ef006e7cd71d92e0257847fe23b4659542310dadcc6bdeeb",
+    "backend/app/services/exam_service.py": "ed0ae22f57459de9e694c54c589bf809f3c81131dfddca8f8301af6d7293fe3f",
+    "backend/app/schemas/exam.py": "0d887ea76241f9690c0dcca4c82f0870010a52e1db2d3e4c7eb8e4e7aba7160a",
+    "backend/tests/test_services/test_exam_service_compatibility.py": "9eb9912cb256dfdbd4e22da5a68d4cb715601dd62f3ae3d7c1d520808d3fec2b",
+    "backend/tests/test_services/test_exam_attempt_semantics.py": "8d43166d97fbb381960d34b22279337f6b0ecffa1715ccb4274b6bd4abe6018c",
+    "backend/tests/architecture/test_ai_prewarm_boundaries.py": "2959f063ada7f3b298f47802038feefd4a1b4f37a3265db970324da6fab4b847",
+    "miniprogram/subpackages/exam/paper-list/index.js": "02e3c4bc4ddbd38fc9195f32aa25ab3a710503fb568dfeaf9d0e73315e6e896c",
+    "miniprogram/subpackages/exam/history/index.js": "5d49caac36e1efcc9413a554ff88d8fe6b7f7d2652057e2dda7e78e1d0f2260d",
+    "miniprogram/subpackages/exam/exam-runner/index.js": "53650bb21e96b835e60a4b2849fb6f87138948a86ce9977afbbec7aeb7bf2e09",
+    "miniprogram/subpackages/exam/result/index.js": "3a2f4ce6cbf3141452a7466f6c05a506d5d09031a98e03eca395eadac0dbc6e9",
+    "miniprogram/subpackages/exam/utils/exam-runner-answer-page-adapter.js": "f13f1554dde2124aec1193e027ddcdc472f71b588d69cdde38dd1eaca2ee7269",
+    "miniprogram/subpackages/exam/utils/exam-runner-submit-page-adapter.js": "4dd76deb70544fdcf7c404ce46ca4ad95bcbeb0610788cbb5831b5d3ac980a8a",
+    "miniprogram/tests/test-exam-terminal-navigation.js": "39da2b7051bf2de01d8072f80b88fd027fceb916f2852880390fc8ad6b070207",
+    "miniprogram/tests/test-exam-runner-page-adapter-contracts.js": "b6234e4e4b201ccef5247edcec0ce58546f55f1ce03da5b83dee52e7fcc46778",
+    "miniprogram/tests/test-exam-answer-sync-controller.js": "6dccef0de41e3747c38d8b4f11170474b5944733698afad13b42797c5105fbc6",
+    "miniprogram/tests/test-exam-submit-entry-controller.js": "700ec70c50f7bfb9515d859cca380ac792039d138712a58ae053c0b8b77647d7",
+    "miniprogram/tests/test-exam-submit-outcome-controller.js": "ef955407746043558ea793bee55798dc28562976831cd1d372e1532fbab3c6b4",
+    "miniprogram/tests/test-exam-submit-retry-controller.js": "e3bbc42e8a838919a2fd1c3732e77cedeab48078e3c51890c7b60196d2f5dbff",
+    "miniprogram/tests/test-exam-attempt-reconcile-controller.js": "182dd1fedeba5f1e76a319738fd4abbeda9cc907a17ba1000a0917e4736dd474",
+    "miniprogram/tests/test-exam-result-load-controller.js": "4fb9491e63bef16cfb8bc35311dcb6a0665ae42fd7e2ea310cd20ae14d5c0fc9",
+    "miniprogram/tests/test-exam-pending-cache-controller.js": "1ea62eea937c55c7639d1106379feaa41b377ef3eb78ce1b66266fb6dfe38e4a",
+    "backend/app/services/exam_read_projection.py": "f6b6f14fd03fe9f87ba8d38fae24c3abc159af25029b612264760c45fca9653f",
+    "backend/app/services/exam_result_projection.py": "d580d4ba9f8c8b0847483573d0b1aad1f60518c2eba4569920b22a276c4daf79",
+    "backend/tests/test_api/test_exam_consumer_contracts.py": "c789a400ee8e8df7765a132687c029cabf662c811d8485c5c3200a1afe163da0",
+    "backend/tests/test_services/test_exam_read_contracts.py": "838ffc90c105f9380f879fd99e59fdbadf481d07dafa2dcd359c549c24259842",
+    "backend/tests/architecture/test_exam_projection_boundaries.py": "2335b281ffef3b6bc804271ecb1c4065862e42697bb328d554de6f3476595d7d",
+    ".github/workflows/ci.yml": "2a7f16cd06f5cc9e35e956115b874f92556acf04b6794d52a826df8e7e02f93f"
+  },
+  "index_generation": "2026-10-29T17:24:11Z",
+  "coverage": "21initial evidencepaths metadata_match/best_effort;newmodules/tests verified directly/currentAST",
+  "independent_review": "completed one independent implementation/test/CI/docs review, no remaining P0-P3; independent newservice/HTTP/gates20passed6.50s,source equivalence and27hashes checked; no repeated fullCI",
+  "environment_acceptance": "ENV01..06 WAITING-FINAL;isolatedSQLite/HTTP/Node/mock evidence is not realPG rowlocks/partialunique concurrency,WeChat,Redis,externalAI or production acceptance. Production last.",
+  "evidence_dir": "/tmp/miniprogram-exam-assessment-2026-10-30",
+  "source_writer_prohibition": "NEVER replay extract_once.py;only verify_source.py/verify_openapi.py/read-only validators are replays",
+  "commit": "nine explicit business/test/CI/compatibility/result paths included in this local atomic commit;exact hash in handoff/history/Git rather than this self-referential manifest"
+}

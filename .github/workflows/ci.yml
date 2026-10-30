@@ -593,6 +593,10 @@ jobs:
             tests/test_services/test_pomodoro_scheduler.py \
             tests/test_services/test_practice_session_stats.py \
             tests/test_services/test_exam_attempt_semantics.py \
+            tests/test_services/test_exam_service_compatibility.py \
+            tests/test_services/test_exam_read_contracts.py \
+            tests/test_api/test_exam_consumer_contracts.py \
+            tests/architecture/test_exam_projection_boundaries.py \
             tests/test_services/test_adaptive_learning_service.py \
             tests/test_services/test_adaptive_learning_concurrency.py \
             tests/test_services/test_adaptive_learning_projection_contract.py \

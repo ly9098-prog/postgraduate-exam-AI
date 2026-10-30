@@ -41,7 +41,7 @@
 - 试卷题目绑定不可变 revision；作答、结果和历史统计始终按该 revision，不回读当前 `questions`。GET attempt 校验 revision 与 `ExamPaperQuestion.question_version_id` 一致且为 `single_choice`，否则返回 409。
 - 判题用 `is_answer_correct(selected, revision.answer, single_choice)`，选项校验来自 revision 投影；答案归一化为大写。选择题计分按 `item.score`，未答不计分但不报错。
 - 错题写入复用 `wrong_question_service.record_wrong`，会重置 mastered 并调度；错因诊断 source_context=`exam`，`exam_answer_id` 唯一，`queue_ai=false`。
-- 结果按 `EXAM408_CORE_CODES` 固定科目顺序排序；弱知识点来自错题 revision 知识点名，按丢失分数排序前 8。
+- 结果按 `EXAM408_CORE_CODES` 固定科目顺序排序；弱知识点来自错题 revision 知识点名，按 `Counter.most_common(8)` 的错误次数和同次数出现顺序取前 8，`lost_score` 为累计展示字段，不参与排序（§321 按原实现核实并修正文档）。
 - `result_snapshot` 通过 `jsonable_encoder` 归一化后存入 JSON 列，兼容嵌套 datetime/Decimal；GET result 直接返回该快照，不重建。
 
 ## 5. 历史与统计
@@ -151,3 +151,17 @@ node miniprogram/tests/test-storage-session-cleanup.js
 - 按当前 `reliability.yml` 的小程序步骤（265 行命令，含新增一项）本机精确重放：退出码 0、
   0 个 `not ok`、14,258 行输出、22.9 秒；本机重放不等于远端 CI。仍未执行真实微信开发者
   工具、模拟器或真机验收，也未验证结果页雷达图在真机上的渲染与点击。
+
+## 13. MP-14 完整考试消费链响应投影（2026-10-30，§321）
+
+当前消费者映射精确覆盖四个页面的九条静态契约：试卷列表、开始、作答视图、PATCH 草稿、取消、提交、结果、历史概览及旧历史回退。旧文档中试卷详情的客户端归属不作为当前静态消费证据；该路由保留，并因本轮投影迁移而纳入相邻 HTTP 契约。客户端已有恢复、pending、答案同步、交卷、终态导航和结果控制器，维持原实现。
+
+`exam_service` 从 1200→1045 行：列表/详情/题目/保存响应/历史行与汇总归 `exam_read_projection`（177 行，8 函数，最长 35）；结果题目、科目汇总、弱知识点和快照 envelope 归 `exam_result_projection`（116 行，4 函数，最长 39）。两个模块均满足 300/50，无 import/异步/数据库操作；原服务仍拥有 SQL、时钟、状态检查、行锁、答案判定、模型写入和事务。原有较长的查询与事务函数不按长度继续拆分。
+
+保留原入口及错误类型、每行动态 `_money`/内容/选项处理与常量读取；服务命名空间作为有界端口传入投影，避免提前冻结 helper。原始 24 个服务函数的签名与展开后的完整 AST 一致，12 个投影函数正文及每个实参绑定与原代码核对，32 处按源序数据库调用 AST 不变。开始幂等、8 秒 grace、revision 绑定、PATCH 元数据、最终答案/判题/错题/诊断/outbox 原子提交、JSON 编码及提交后 prewarm 顺序均保持。
+
+原入口首轮 32 项通过；扩展后的同一组契约在原实现上 34 项通过，当前加 15 项门禁共 49 项通过。新服务契约覆盖读取时 helper 改绑顺序、列表仅显示过时但不改状态、弱知识点按次数而非丢分排序及错题/诊断链接、快照编码失败后关闭会话回滚；专用 FastAPI app/临时 SQLite 的一次生命周期覆盖九个消费者与相邻试卷详情、结果读取/重复交卷及两种历史响应。新增错题投影用例只把提交后的 prewarm 入队替换为 `AsyncMock` 并核对两次调用，不执行外部预热；不能由此声称真实外部服务已验收。
+
+当前客户端考试 Node 测试 407 项通过；不是新一次完整 reliability shell，也不是微信编译/设备证据。本轮 readiness/cloud 门禁、冷进程全 OpenAPI、固定静态 CI、源码哈希及一次独立审查/提交状态集中在 [结果清单](refactor-results/miniprogram-exam-request-2026-10-30.json)。此前第 8–9 节的历史“尚未覆盖”描述以本次新增局部证据为补充，真实 PostgreSQL 行锁/部分唯一索引并发、Redis、微信、外部 AI 与生产环境仍未验收。
+
+本条完成消费者所需的响应职责治理后停止继续按文件长度拆分。完整真实环境及生产验收仍是全部结构重构之后的最后阶段；本轮不授权部署、迁移、生产重启或用户数据操作。临时 `extract_once.py` 是源代码写入器，禁止作为验证命令重跑。
