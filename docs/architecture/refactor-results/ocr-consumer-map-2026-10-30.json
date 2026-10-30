@@ -1,0 +1,177 @@
+{
+  "date": "2026-10-30",
+  "status": "MAPPING_COMPLETE",
+  "ledger_items": [
+    "OCR-02",
+    "OCR-03"
+  ],
+  "head_before": "38a5474f4d898a0311c643bb846aef1fb8a665c9",
+  "scope": {
+    "admin_import_routes": 39,
+    "admin_browser_owned_contracts_reused": 31,
+    "public_import_routes": 7,
+    "internal_ocr_worker_routes": 8,
+    "registered_api_operations_total": 376,
+    "backend_sources_mapped": 39,
+    "v2_dispatcher_task_types": 6,
+    "client_runtime_sources_checked_for_direct_public_import": 538
+  },
+  "entry_groups": {
+    "admin_upload": [
+      "POST /api/admin/v1/imports/upload",
+      "POST /api/admin/v1/imports/questions-csv",
+      "POST /api/admin/v1/imports/segment-image/upload",
+      "POST /api/admin/v1/imports/batch-image/upload"
+    ],
+    "admin_resume_and_artifacts": [
+      "POST /api/admin/v1/imports/pipelines/{pipeline_id}/resume",
+      "POST /api/admin/v1/imports/pipelines/{pipeline_id}/cleanup",
+      "POST /api/admin/v1/imports/cleanup/expired",
+      "GET /api/admin/v1/imports/pipelines",
+      "POST /api/admin/v1/imports/maintenance/cleanup"
+    ],
+    "public_import": [
+      "POST /api/v1/import/pipeline/upload",
+      "GET /api/v1/import/pipelines/{pipeline_id}",
+      "POST /api/v1/import/pipelines/{pipeline_id}/resume"
+    ],
+    "internal_ocr_worker": [
+      "POST /api/internal/ocr-worker/jobs/claim",
+      "POST /api/internal/ocr-worker/jobs/{job_id}/heartbeat",
+      "POST /api/internal/ocr-worker/jobs/{job_id}/start",
+      "POST /api/internal/ocr-worker/jobs/{job_id}/complete",
+      "POST /api/internal/ocr-worker/jobs/{job_id}/fail",
+      "POST /api/internal/ocr-worker/jobs/{job_id}/release",
+      "GET /api/internal/ocr-worker/jobs/{job_id}",
+      "GET /api/internal/ocr-worker/jobs"
+    ]
+  },
+  "call_chain": {
+    "upload": "admin/public route -> start_import_pipeline -> document/image/excel upload owner -> staging/admission -> v2 enqueue",
+    "worker": "v2 dispatcher -> task handler -> resolve staging -> fence check -> pipeline/image/excel/resume/batch owner",
+    "admin_resume": "admin route -> stage checkpoint + artifacts -> re-upload staging -> enqueue_admin_resume -> run_pipeline with checkpoint",
+    "public_resume": "public route -> resume validation -> enqueue_resume_pipeline -> resume_pipeline_background -> chunk replay",
+    "ocr_execution": "OCRGateway -> create_ocr_worker_client -> local_process/paddlex_http/disabled",
+    "internal_ocr_worker": "daemon WorkerAPIClient -> internal job claim/lease/heartbeat/start/complete/fail/release API",
+    "coordinator": "run_pipeline mode shadow/legacy/coordinator; shadow plans then runs legacy; coordinator remains partial"
+  },
+  "ownership": [
+    {
+      "ledger_item": "OCR-02",
+      "domain": "diagnostics, artifacts/checkpoints and background orchestration",
+      "next": "Assess existing documented owners; close as DONE/RETAIN/DEFECT/ENV-BLOCKED without length-only splitting"
+    },
+    {
+      "ledger_item": "OCR-03",
+      "domain": "dedicated upload, Public/Admin resume and task interfaces",
+      "next": "Separate upload admission, chunk resume, Admin stage resume, batch image and worker protocol entries; OCR-04 stays DEFECT"
+    },
+    {
+      "ledger_item": "OCR-04",
+      "domain": "internal OCR worker artifact upload contract",
+      "status": "DEFECT",
+      "evidence": {
+        "caller": "backend/app/ocr_worker/daemon.py::_upload_artifact",
+        "expected_path": "POST /api/internal/ocr-worker/artifacts/upload",
+        "registered": false,
+        "isolated_asgi_status_code": 404,
+        "scope": "no main/lifespan/external network/DB/Redis; deployment impact unverified"
+      }
+    }
+  ],
+  "boundaries": {
+    "admin_vs_public_resume": "Admin reads stage checkpoint/artifacts and re-enters unified pipeline; Public replays chunks and preserves shared hash/watermark semantics.",
+    "ocr_execution_vs_internal_worker_api": "OCRGateway backend client is config-selected local/PaddleX; internal worker API is a separate leased job protocol.",
+    "coordinator_mode": "default shadow keeps legacy execution; coordinator Correction/Validation/Persistence are NOT_IMPLEMENTED and DocumentStructure/DomainParsing/Review partial."
+  },
+  "source_sha256": {
+    "backend/app/api/v1/admin_imports.py": "53f8549343a9917bdf98a0b94a7fa22fabb37ae3c50f4f66d893f17d0f4bb4d5",
+    "backend/app/api/v1/imports.py": "da3f81de1dad40b4225ca37403d101295a6a71fe9aa2255fda3b002e8903e25b",
+    "backend/app/api/internal/ocr_worker.py": "8988a61229760a62cf2e642cc0f208413fde7cd8f851da5c830740547a0cdedc",
+    "backend/app/api/router.py": "101e11caa1dbeb32d0a5f7656f04d7eeb9d5846632a83a024d6ea74229e55f93",
+    "backend/app/api/admin/router.py": "613ed305e24d15dc8496927981787abaa1ad02df7223203fc7b4d5cd9c962033",
+    "backend/app/api/v1/router.py": "35ca60bc1d9fca29451e51402a33af7601f183ace0d5a8a3d5ba3882a554382d",
+    "backend/app/services/import_pipeline_service.py": "a91ebb8eacf75ed02f361614cc8502ae997263d24cc7ced7de4a958335d2daed",
+    "backend/app/services/import_upload_service.py": "57bcb55d218056a9c2cfff085047dbfdbbd6f0a3d6f367816ed8b097c444bbc7",
+    "backend/app/services/import_document_upload.py": "d8a4bd6944c29907dd2d7c88be92b906d79517125345491bc23d52ac8aae0f34",
+    "backend/app/services/import_image_upload.py": "1a65f4961ccfc0cb2b86dadb10fdfe3b1867d51557f30d939c6c9636888b54f2",
+    "backend/app/services/import_excel_upload.py": "9ca824e781573e4cfdbc271a9eb8290d4b5688cc432b3d6655de4f9396f06219",
+    "backend/app/services/task_queue_worker.py": "4c19937901884791f3471e338e4c12da64062971148f137ad2aebf374cbd5fc5",
+    "backend/app/services/worker_v2_pipeline_handlers.py": "7bb931b7b3fc4aba492afebd17474ded6b8f79000028c2d87112c99607dda5ea",
+    "backend/app/services/worker_v2_aux_handlers.py": "25283032b3caf9f673c6a0c4e6de5b7949c81d6480a1f829b4a07ca7db646ea4",
+    "backend/app/services/worker_v2_dispatch.py": "e35dd46a3205bd58e0a78dac0ff38285f38c9e8ebde46e345ade61157b5d9763",
+    "backend/app/services/worker_legacy_handlers.py": "ee4529eef43c8bd892a2f54f31648f92d0394138bef06b47a592d27b942b02ea",
+    "backend/app/services/worker_task_types.py": "c39aab67cc8c01e47dd57fd03dc4fe5dfea210a03abca6b766a94a66fa05842c",
+    "backend/app/features/pipeline_definition.py": "8e4d401890eb692b96c19da5d881e5ee3739e4c070d36ea90d387f626ffc479d",
+    "backend/app/features/pipeline_coordinator_entry.py": "bd6bce4ad150ad03c795fc3cf34f3648420b33ef0bb05b30a48acd8cc31633fc",
+    "backend/app/features/coordinator_orchestrator.py": "833ce564cff77025d0ff3148c515df8504ce4856a36bf39200ec9772542cdd9d",
+    "backend/app/features/pipeline_orchestrator.py": "ef01f909a3dc1e86eaaa6f08a9505fba1e50472fabe98b9f7baebac7d472144a",
+    "backend/app/features/batch_image_import_service.py": "54d8c930c483874ad23468c5508039590c78d5c96040faac2c961e036646363d",
+    "backend/app/features/ocr_gateway.py": "b4e3401650115c029031f90467127b0fa715a6d336406f4ebe560153b5bf718d",
+    "backend/app/services/ocr_worker_client.py": "51633de6bd0a41ff04218293729cb322500300f332eac3fb08b1186b8fc4e674",
+    "backend/app/services/ocr_local_worker_client.py": "f181cca90b4b1589404a1ba17e3af6122cde9c1d60ca8e28632fbc2a6efb500c",
+    "backend/app/services/ocr_job_service.py": "2420db0803ad5ad368ce17339aa408a341fc5d0d1bcf066e2e79f936bbd35c76",
+    "backend/app/ocr_worker/daemon.py": "16b3d73eeb0f6af0b86dfd42ade1892f2c91dda10aae9ad8b48b22b4e2cd88cb",
+    "backend/app/ocr_worker/client.py": "c67cf75b1c75404ff57eaebd7b3123c9111480a5c9c8e842863a4110b95378f4",
+    "backend/app/ocr_worker/executor.py": "c45775cf3c6911a6724d7cae64f774d48c82718f9bc596a6a760cd2646f06fe4",
+    "backend/app/ocr_worker/config.py": "644775bcc2ccb7b84b5e7c8457e9e267e6800fc29319a86378d47615382c5972",
+    "backend/app/features/pipeline_artifacts.py": "5d1a7373f6dbe512b82f1c0241debe817045d12106483cd92b46b1ef289af260",
+    "backend/app/features/pipeline_checkpoint.py": "76642d649ee2d58abc6d5749d6b4a92510e660d77c3fad1ec2052a042c250171",
+    "backend/app/features/ocr_adapter.py": "c636ae0f9cdc5072c0427fc8537037ee236cd4ede54f0da9b1eb32e0f842493f",
+    "backend/app/api/v1/ai_import.py": "a62136dc918b7b5d499e716f0e6ab277e97884e1efba372b3d7511cf3fb25925",
+    "backend/app/main.py": "e67a2ccb3485f34b5623fcf23fde61d64947ac24d5504e6901df55c0da7c66ab",
+    "backend/app/core/ocr_runtime_config.py": "4a8b9fc8e41668d5278b2264ee2bf101ebb7526a298cc0749ecb54721246ec16",
+    "backend/app/services/ocr_paddlex_http_client.py": "f3d6b12e0220456a78ae39e10270d3ae6e6c0d0b2d7b4837873a608f0335209a",
+    "backend/app/features/coordinators.py": "02668c0339ac7b53a12845f255b57d7b72e5093926b810583763adcc052ef9fb",
+    "backend/app/ocr_worker/workspace.py": "c6dfceb14afcbda5daf13b7795a5d86ea8ca0242a6a0acfd7630dba9c1245e45"
+  },
+  "source_set_sha256": "825bff1868ebe36526fcf6bbeac6ab8e9d010546214e8f8572ee7c5becce4c07",
+  "graph": {
+    "project": "home-lmh-projects-postgraduate-ai",
+    "generation": "2026-10-29T17:24:11Z",
+    "signal": "best_effort",
+    "module_query_rows": {
+      "api": 55,
+      "pipeline/import/worker": 198,
+      "tests_metadata": 370
+    },
+    "coverage": {
+      "primary_paths": 35,
+      "extra_paths": 4,
+      "primary_path_pages": "first20 plus second page attempted; page2 tool result repeated first20 due pagination parameter mismatch",
+      "flags": "no path issue; scopes only excluded __pycache__ directories"
+    },
+    "source_retrieval": "all mapped source snippets paginated to source_truncated=false; cold router probe and isolated ASGI gap probe executed directly",
+    "limits": "best-effort graph coverage does not prove global completeness; no broad caller-absence claim outside bounded entries"
+  },
+  "verification": {
+    "source_unchanged": true,
+    "cold_router": {
+      "exit_code": 0,
+      "operations": 376,
+      "seconds": 6.04,
+      "mode": "local_import/development; APIRouter only, synthetic memory DB, no Redis/main/lifespan/request"
+    },
+    "artifact_upload_gap": {
+      "method": "POST",
+      "path": "/api/internal/ocr-worker/artifacts/upload",
+      "status_code": 404,
+      "detail": {
+        "detail": "Not Found"
+      },
+      "scope": "isolated ASGI router registration only, no main/lifespan/external network/DB/Redis request"
+    },
+    "admin_browser_map": "31 admin_imports contracts from committed §324 map; no regeneration or live browser claim",
+    "mini_program_map": "538 first-party client source hashes checked unchanged; no direct static import contract found, not external-caller absence",
+    "runtime_tests": "not rerun; documentation-only mapping and no source/test/CI change",
+    "fixed_ci": "not rerun and no fresh full-CI claim",
+    "independent_review": "closed; reviewer reported no P0-P3 findings and supported the two-path mapping commit"
+  },
+  "not_verified": [
+    "actual Admin/Public request execution, credentials, RBAC or browser behavior",
+    "real external OCR/PaddleOCR/PaddleOCR-VL, object storage and artifact upload deployment",
+    "real PostgreSQL/Redis, multiworker fencing/recovery or backup restore",
+    "all ENV-01..06 remain WAITING-FINAL; production last and separately authorized"
+  ],
+  "evidence_directory": "/home/lmh/.cache/postgraduate-ai/refactor/2026-10-30-ocr-map"
+}
