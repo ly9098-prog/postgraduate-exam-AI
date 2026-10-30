@@ -54,6 +54,7 @@ from app.services.formula_graph_spec_service import (
 from app.services.formula_graph_spec_service import (
     delete_generated_asset as delete_spec_generated_asset,
 )
+from app.services.formula_review_rules import apply_formula_action
 from app.services.formula_study_card_service import default_template_for
 from app.services.streaming_upload_handler import stream_to_temp
 
@@ -873,27 +874,6 @@ async def soft_delete_formula_card(
 # State Machine
 # ════════════════════════════════════════════════════════════
 
-_VALID_TRANSITIONS = {
-    "draft": ["restore", "approve"],
-    "pending_review": ["approve", "reject"],
-    "rejected": ["restore"],
-    "approved": ["publish"],  # compat for legacy data
-    "published": ["offline"],
-    "offline": ["publish"],
-}
-
-# Normal business transitions (not exhaustive — compat paths exist)
-_NEW_STATUS_MAP = {
-    ("draft", "approve"): "pending_review",  # submit for review
-    ("pending_review", "approve"): "published",  # approve → auto-publish
-    ("pending_review", "reject"): "rejected",
-    ("rejected", "restore"): "draft",
-    ("published", "offline"): "offline",
-    ("offline", "publish"): "published",
-    ("approved", "publish"): "published",  # legacy compat
-}
-
-
 def _apply_formula_action(
     card: FormulaCard,
     action: str,
@@ -901,79 +881,15 @@ def _apply_formula_action(
     now: datetime | None = None,
     rejection_reason: str | None = None,
 ) -> str:
-    """Apply a state-machine action to a formula card in-place.
-
-    Returns the new status.
-    Raises HTTPException on invalid transition or missing rejection reason.
-    """
-    allowed = _VALID_TRANSITIONS.get(card.status, [])
-    if action not in allowed:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Cannot transition from {card.status} with action {action}. Allowed: {allowed}",
-        )
-
-    if now is None:
-        now = utcnow()
-
-    # ── Resolve new status ──
-    key = (card.status, action)
-    new_status = _NEW_STATUS_MAP.get(key)
-    if new_status is None:
-        # fallback: direct action→status mapping (legacy)
-        fallback = {
-            "approve": "approved",
-            "reject": "rejected",
-            "publish": "published",
-            "offline": "offline",
-            "restore": "draft",
-        }
-        new_status = fallback[action]
-
-    # ── Rejection reason validation ──
-    if action == "reject":
-        trimmed = (rejection_reason or "").strip()
-        if not trimmed:
-            raise HTTPException(status_code=422, detail="Rejection reason required")
-        rejection_reason = trimmed
-
-    # ── Field updates per action ──
-    card.status = new_status
-    card.updated_by = admin_id
-    card.version += 1
-
-    if action == "approve" and card.status == "published":
-        # approve → auto-publish (pending_review → published)
-        card.reviewed_by = admin_id
-        card.reviewed_at = now
-        card.published_at = now
-        card.rejection_reason = None
-
-    elif action == "approve" and card.status == "pending_review":
-        # draft → pending_review (submit for review, not a real review)
-        card.reviewed_by = None
-        card.reviewed_at = None
-        card.published_at = None
-        card.rejection_reason = None
-
-    elif action == "reject":
-        card.reviewed_by = admin_id
-        card.reviewed_at = now
-        card.rejection_reason = rejection_reason
-        card.published_at = None
-
-    elif action == "publish":
-        # offline→published or legacy approved→published
-        card.published_at = now
-        card.reviewed_by = admin_id
-        card.reviewed_at = now
-
-    elif action in ("offline", "restore"):
-        card.reviewed_by = None
-        card.reviewed_at = None
-        card.published_at = None
-
-    return new_status
+    """Keep the legacy route helper and its runtime clock lookup."""
+    return apply_formula_action(
+        card,
+        action,
+        admin_id,
+        now=now,
+        rejection_reason=rejection_reason,
+        clock=utcnow,
+    )
 
 
 @router.post("/{card_id}/review")

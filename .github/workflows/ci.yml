@@ -714,6 +714,7 @@ jobs:
             tests/test_api/test_formulas_api.py \
             tests/test_api/test_formula_math_subject_scope.py \
             tests/test_api/test_formula_library_contract.py \
+            tests/test_services/test_formula_review_rules.py \
             tests/architecture/test_formula_library_boundaries.py \
             tests/export/test_export_api_security.py \
             tests/export/test_export_comprehensive.py \
