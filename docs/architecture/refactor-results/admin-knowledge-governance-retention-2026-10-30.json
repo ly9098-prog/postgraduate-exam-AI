@@ -1,0 +1,366 @@
+{
+  "date": "2026-10-30",
+  "round": 327,
+  "ledger_item": "ADM-03",
+  "risk": "L2; request/state contracts; no runtime change",
+  "status": "RETAIN",
+  "head_before": "e3095f50f88cbffc83a388be1e33f132d945e9c4",
+  "scope": {
+    "pages": [
+      "/coverage",
+      "/knowledge-graph",
+      "/subjects",
+      "/syllabus"
+    ],
+    "consumer_contracts": 16,
+    "registered_without_current_browser_shape": 8,
+    "runtime_paths_unchanged": 1116
+  },
+  "consumer_baseline": {
+    "file": "docs/architecture/refactor-results/admin-consumer-map-2026-10-30.json",
+    "sha256": "f5ffd76f28c3ebcaedbd796fc6f0c0fac201d48a65a373eff20cc343a6fd219a",
+    "commit": "9f4ba9ddc0362042ff917fee19346f16cb09ea43"
+  },
+  "input_baseline": {
+    "commit": "8310ad8ae560fc6e4b8b71c4e6538f4926488e96",
+    "file": "docs/architecture/refactor-results/admin-question-retention-2026-10-30.json",
+    "sha256": "220035e22dc2d4655e04398c8fab2b280b16ce2ee45af51dca7a4af494ef807e",
+    "runtime_selector": "runtime_sha256",
+    "runtime_paths_unchanged": 1116,
+    "runtime_set_sha256": "7580261ce1dd3655411712b11189e15475f40a71061f9412202301336519b9b4",
+    "backend_ci_selector": "verification.fixed_backend_ci.frozen_input_sha256",
+    "backend_ci_paths": 2246,
+    "backend_ci_unchanged_paths": 2244,
+    "backend_ci_original_set_sha256": "86a6cb1726fd133ff5ccf21bc853b576db43acb18f7d8c4996b04730c22c8771",
+    "exceptions": [
+      {
+        "path": "backend/tests/test_services/test_admin_import_service.py",
+        "before_sha256": "0228b5c8cc937829fdeef5eb1b63c90bdc15f575cf3004bf792b0006d04b930c",
+        "after_sha256": "056eec08eda208a4671c4ac66e5c43d8a986264dcb541e1f0b1b9a3b3d472e7d",
+        "in_fixed_ci_command": false
+      },
+      {
+        "path": "backend/tests/test_services/test_import_sse_metrics_compatibility.py",
+        "before_sha256": "94ffb1ddfdaf6fccffd21585f23d95e8343b3b1e374fffc67a6a54fcb06dfc38",
+        "after_sha256": "c4841f32e9bd8b75f6590598590289d457626052a5d5622f889d60ed7f0cae30",
+        "in_fixed_ci_command": false
+      }
+    ],
+    "rule": "same frozen dictionary referenced once, every current path checked; two changed tests are outside fixed CI command and freshly checked"
+  },
+  "previous_verification": {
+    "file": "docs/architecture/refactor-results/admin-import-retention-2026-10-30.json",
+    "sha256": "ac44f5996655e767c662c94d1e54a5aff19fe338b0b3dd57d492ace040499d9c",
+    "commit": "e3095f50f88cbffc83a388be1e33f132d945e9c4",
+    "selectors": [
+      "input_baseline",
+      "verification"
+    ],
+    "reuse": "All backend/app/tests/.github inputs match final ADM-02 state; two previous test exceptions still unchanged. No new backend or fixed-command input changes."
+  },
+  "contracts": [
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/coverage/report",
+      "handler": "get_coverage_report"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/graph",
+      "handler": "get_knowledge_graph"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/subjects",
+      "handler": "list_knowledge_graph_subjects"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/knowledge/syllabus/mappings",
+      "handler": "create_mapping"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/v1/knowledge/syllabus/mappings/{}",
+      "handler": "delete_mapping"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/syllabus/versions",
+      "handler": "list_versions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/knowledge/syllabus/versions",
+      "handler": "create_version"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{}",
+      "handler": "get_version"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{}/activate",
+      "handler": "activate_version"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{}/archive",
+      "handler": "archive_version"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{}/catalog",
+      "handler": "get_catalog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{}/coverage",
+      "handler": "get_coverage"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{}/knowledge-points",
+      "handler": "replace_memberships"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{}/mappings",
+      "handler": "list_mappings"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/subjects",
+      "handler": "list_subjects"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/v1/subjects/{}",
+      "handler": "patch_subject"
+    }
+  ],
+  "registered_preserved": [
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/knowledge/edges",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_knowledge.py",
+      "backend_function": "create_knowledge_edge",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/knowledge/edges/infer",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_knowledge.py",
+      "backend_function": "infer_knowledge_edges",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/edges/status",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_knowledge.py",
+      "backend_function": "get_edge_status",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/knowledge/status",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_knowledge.py",
+      "backend_function": "get_knowledge_status",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/v1/knowledge/syllabus/versions/{version_id}",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_syllabus.py",
+      "backend_function": "update_version",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/subjects",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_subjects.py",
+      "backend_function": "create_subject_endpoint",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/v1/subjects/{subject_id}",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_subjects.py",
+      "backend_function": "delete_subject_endpoint",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/subjects/{subject_id}",
+      "ledger_item": "ADM-03",
+      "backend_file": "backend/app/api/v1/admin_subjects.py",
+      "backend_function": "get_subject_detail",
+      "disposition": "registered, no bounded current browser request shape; preserve, not proof of no external caller"
+    }
+  ],
+  "assessments": [
+    {
+      "page": "/coverage",
+      "disposition": "RETAIN",
+      "owners": [
+        "coverage/page.tsx request and filter state",
+        "coverage-utils pure filtering/count/link rules",
+        "admin_coverage protocol validation",
+        "coverage_service coverage SQL and response construction"
+      ],
+      "boundaries": [
+        "active version fallback; invalid subjects reset; committed threshold distinct from draft text",
+        "only complete year inputs reach query; local search/status not server filters",
+        "current bank approved/active rows differ from immutable historical paper snapshots",
+        "year bounds scope exam-year report, not all question-bank metrics"
+      ],
+      "reason": "Existing owner builds one bounded governance report; no new consumer-driven defect requiring another projection hierarchy."
+    },
+    {
+      "page": "/knowledge-graph",
+      "disposition": "RETAIN",
+      "owners": [
+        "KnowledgeGraphPage request scope and view state",
+        "GraphCanvas / SubjectOverview rendering",
+        "knowledge-graph-utils / geometry / layout pure helpers",
+        "admin_knowledge.get_knowledge_graph bounded read projection"
+      ],
+      "boundaries": [
+        "subject/relation/depth/search/focus in query key; draft search distinct",
+        "overview24 and focused/search36 node request budget; backend cap remains120",
+        "all-relation summary versus filtered visible edges; directed edge payload versus undirected traversal",
+        "read-only current page; registered edge creation/inference/status endpoints retained",
+        "Invalid explicit center404 only when active KP set is nonempty; empty active set returns empty graph before center validation."
+      ],
+      "reason": "Geometry/layout and request/view responsibilities already distinct; existing cohesive rendering/read algorithm length alone does not justify migration."
+    },
+    {
+      "page": "/subjects",
+      "disposition": "RETAIN",
+      "owners": [
+        "SubjectsPage optimistic request lifecycle",
+        "subject-tree-utils tree state and relations",
+        "admin_subjects commit/refresh/cache invalidation",
+        "admin_subject_service locked taxonomy changes and audit"
+      ],
+      "boundaries": [
+        "independent subject:write gate; root disable confirmation",
+        "enable ancestors; reject parent disable with active descendants",
+        "optimistic snapshot rollback by identity; invalidation onSettled",
+        "canonical product code/depth/cycle constraints; no historical record deletion"
+      ],
+      "reason": "Existing service owns one taxonomy transaction; preserve lock/audit/cache order rather than split the transaction."
+    },
+    {
+      "page": "/syllabus",
+      "disposition": "RETAIN",
+      "owners": [
+        "SyllabusPage six read scopes/six mutations",
+        "syllabus-utils membership/catalog rules",
+        "admin_syllabus protocol/audit/commit/error mapping",
+        "syllabus_service lifecycle and immutable membership mapping"
+      ],
+      "boundaries": [
+        "draft preferred over active for editing; coverage page chooses active instead",
+        "sorted membership IDs; mapping IDs are syllabus member IDs, not canonical point IDs",
+        "activate locks version/root, archives and flushes previous before activating next",
+        "automatic mapping rebuild retains manual merged/split/replaced; active version cannot archive directly"
+      ],
+      "reason": "One lifecycle service owns transactional version switch and mappings; no second state machine or abstraction needed."
+    }
+  ],
+  "changed_test_sha256": {
+    "admin-frontend/src/app/(admin)/syllabus/governance-page-contracts.test.ts": "65c6fa965d5dacf2bcbfb9ea7001051dc5f11256f0f5c2ddd03ce1ea3adfd987"
+  },
+  "verification": {
+    "new_page_contracts": {
+      "file": "admin-frontend/src/app/(admin)/syllabus/governance-page-contracts.test.ts",
+      "passed": 15,
+      "runner_result": "/tmp/admin-knowledge-assessment-2026-10-30/new-contracts-final.json",
+      "scope": "real four page functions with mocked hook/query/request/cache ports; only explicit initial version-selection effects executed; no DOM/React scheduling/native fetch or mutation-library scheduling claim",
+      "review_fix": "P3: deferred cancel barrier now asserts no snapshot read/write before cancellation completes; runtime unchanged."
+    },
+    "admin": {
+      "files": 145,
+      "passed": 1803,
+      "domain_files": 7,
+      "domain_passed": 158,
+      "typecheck": "passed",
+      "lint_errors": 0,
+      "lint_warnings": 138,
+      "build": "not run; runtime/config unchanged",
+      "result": "/tmp/admin-knowledge-assessment-2026-10-30/vitest-final.json",
+      "full_run_test_sha256_before_review_strengthening": "f5c2574c0c34b4a7c4f94236f1efb376736159ec68f0472dc1d97bb69553b1bd",
+      "final_input_note": "Full145/1803 (domain7/158) preceded one existing-case cancellation barrier strengthening; final single-file15 narrow passed. Not a fresh repeated full admin run.",
+      "final_typecheck": "passed after review test strengthening",
+      "final_new_test_eslint": "passed after review test strengthening; full lint0/138 preceded strengthening"
+    },
+    "backend": {
+      "files": 3,
+      "passed": 32,
+      "pytest_seconds": 14.26,
+      "wall_seconds": 17.72,
+      "result": "/tmp/admin-knowledge-assessment-2026-10-30/backend-targeted.log",
+      "scope": "subject API/service ports and coverage image-reference compatibility; no full graph/syllabus transaction acceptance"
+    },
+    "fixed_backend_ci": {
+      "status": "reused, not fresh",
+      "source_round": 323,
+      "files": 473,
+      "passed": 8155,
+      "original_inputs": 2246,
+      "unchanged_original_inputs": 2244,
+      "previous_changed_tests": 2,
+      "previous_exceptions_verified_unchanged": true,
+      "new_backend_or_fixed_command_changes": 0,
+      "reference": "input_baseline + committed previous_verification; the two outside-command changed tests had24 narrow passes in ADM-02"
+    },
+    "openapi": {
+      "status": "reused, not freshly generated",
+      "source_round": 321,
+      "paths": 334,
+      "condition": "backend runtime hashes unchanged"
+    },
+    "independent_review": "closed; two P3 corrected and narrow rechecked, no remaining P0-P3",
+    "diff_check": "passed",
+    "static_checks": {
+      "compileall": "passed",
+      "ruff": "app plus related tests with project CI ignore set passed; no Python changed",
+      "initial_tool_path": "venv Ruff executable unavailable; corrected to globally installed Ruff",
+      "final_new_test_eslint": "passed",
+      "final_typecheck": "passed",
+      "result": "/tmp/admin-knowledge-assessment-2026-10-30/static-checks.json"
+    }
+  },
+  "retrieval": {
+    "tier": "Verify; bounded four-page assessment, not global exhaustive proof",
+    "project": "home-lmh-projects-postgraduate-ai",
+    "generation": "2026-10-29T17:24:11Z",
+    "signal": "best_effort",
+    "module_query_rows": 170,
+    "module_pages": 3,
+    "module_pages_exhausted": true,
+    "primary_coverage_paths": 27,
+    "extra_coverage_paths": 3,
+    "source_pagination": "knowledge-graph three pages, syllabus two, admin_knowledge two, coverage_service and syllabus_service two each; final pages exhausted",
+    "fallback": "coverage/page.tsx excluded by coverage directory rule; known source read directly. New test not indexed. Graphify unavailable, known docs read directly. Narrow path-filtered text search returned0; unrestricted syllabus search was exploratory and not exhausted, no absence claim.",
+    "trace": "syllabus activate_version both depth1 reported9 callees/0 callers; spurious admin-frontend ai-settings.select edge rejected by exact source. Graph callers missing does not prove no caller; admin_syllabus route confirmed from source."
+  },
+  "not_verified": [
+    "real browser/DOM/effect scheduling, graph pointer/fullscreen/export and search timer integration",
+    "real Admin JWT/RBAC/audit persistence and real PostgreSQL version switch locking",
+    "complete coverage SQL/report and graph projection integration; backend32 is narrower, unchanged baseline CI reused within its scope",
+    "Redis cache invalidation/multi-admin concurrency/external services/worker",
+    "production acceptance; all ENV01..06 remain WAITING-FINAL"
+  ],
+  "next": "ADM-04 identity/RBAC/users/audit six-page domain; no production acceptance until all structural domains terminal",
+  "evidence_directory": "/tmp/admin-knowledge-assessment-2026-10-30"
+}
