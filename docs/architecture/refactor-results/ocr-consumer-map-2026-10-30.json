@@ -69,7 +69,8 @@
     {
       "ledger_item": "OCR-04",
       "domain": "internal OCR worker artifact upload contract",
-      "status": "DEFECT",
+      "status": "FIXED",
+      "resolution": "Fixed 2026-10-31: POST /api/internal/ocr-worker/artifacts/upload registered (api/internal/ocr_worker.py) with services/ocr_artifact_service.py; tests backend/tests/test_api/test_ocr_worker_artifact_upload.py (39 passed, added to ci.yml); lease-expiry and pre-publish re-authorization tests fail when those checks are removed (mutation check). Evidence below is the pre-fix observation. Not verified: real worker/proxy body limits/PostgreSQL; complete_job does not check the stored file; tiny window remains between the final re-check and os.replace and there is no cross-process file lock; no staging disk quota integration or cleanup of artifacts for failed/cancelled jobs.",
       "evidence": {
         "caller": "backend/app/ocr_worker/daemon.py::_upload_artifact",
         "expected_path": "POST /api/internal/ocr-worker/artifacts/upload",

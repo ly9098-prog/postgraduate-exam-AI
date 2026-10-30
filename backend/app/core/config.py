@@ -252,6 +252,9 @@ class Settings(BaseSettings):
     STAGING_STORAGE_DIR: str = "/opt/2240ai-v2/staging"
     STAGING_DISK_QUOTA: int = 2 * 1024 * 1024 * 1024  # 2 GB
     STAGING_RETENTION_SEC: int = 604800  # 7 days default retention for staging objects
+    # Internal OCR worker result artifacts; empty = <STAGING_STORAGE_DIR>/worker-artifacts
+    OCR_WORKER_ARTIFACT_DIR: str = ""
+    OCR_WORKER_ARTIFACT_MAX_BYTES: int = 64 * 1024 * 1024  # decoded bytes per upload
     SCRATCH_QUOTA_BYTES: int = 500 * 1024 * 1024  # 500 MB worker scratch space
 
     # Resource reservation for pipeline admission

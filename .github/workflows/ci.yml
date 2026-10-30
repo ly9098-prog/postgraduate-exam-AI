@@ -313,6 +313,7 @@ jobs:
             tests/test_api/test_identity_boundary_matrix.py \
             tests/test_api/test_p5_ssrf_http_lifecycle.py \
             tests/test_api/test_admin_tasks_cancel.py \
+            tests/test_api/test_ocr_worker_artifact_upload.py \
             tests/pipeline/test_coordinator_mode_e2e.py \
             tests/pipeline/test_coordinator_boundaries.py \
             tests/pipeline/test_coordinator_rollback.py \

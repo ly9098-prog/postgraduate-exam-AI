@@ -14,7 +14,7 @@ import re
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -28,6 +28,7 @@ from app.schemas.ocr_job import (
     OCRJobResponse,
     OCRStartRequest,
 )
+from app.services import ocr_artifact_service as artifacts
 from app.services import ocr_job_service as svc
 from app.services.worker_credential_service import (
     verify_credential,
@@ -112,6 +113,33 @@ def _err(detail: str, status_code: int = 400):
 
 
 # ── Endpoints ─────────────────────────────────────────────
+
+
+@router.post("/artifacts/upload")
+async def upload_artifact(
+    request: Request,
+    worker_id: WorkerAuth,
+    db: AsyncSession = Depends(get_db),
+):
+    """Receive a result artifact streamed by the worker as hex-JSON."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > artifacts.max_body_bytes():
+        _err("Artifact exceeds the size limit", 413)
+
+    async def validate(header: dict) -> None:
+        # Read-only check; rolling back releases the connection during the
+        # stream and expires the job so the next check sees fresh state.
+        try:
+            job = await svc.get_job(db, header["job_id"])
+            artifacts.authorize_upload(job, worker_id, header)
+        finally:
+            await db.rollback()
+
+    try:
+        stored = await artifacts.receive_artifact(request.stream(), validate=validate)
+    except artifacts.ArtifactUploadError as exc:
+        _err(exc.detail, exc.status_code)
+    return _ok(stored)
 
 
 @router.post("/jobs/claim")
