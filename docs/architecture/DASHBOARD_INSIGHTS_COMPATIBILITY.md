@@ -19,12 +19,14 @@
 
 ## 既有缺陷与验收限制
 
-原薄弱点回退查询在当前SQLAlchemy下编译会报 `InvalidRequestError`（多个FROM可作为隐式连接起点）。直接入口契约在原实现与当前实现均确认该结果，SQL表达式未修改；登记 `MP-18 DEFECT`，业务修复另行确认。mock提供查询结果只证明投影行为，不代表真实回退查询执行成功。
+原薄弱点回退查询在当前SQLAlchemy下编译会报 `InvalidRequestError`（多个FROM可作为隐式连接起点）。直接入口契约在原实现与当前实现均确认该结果，SQL表达式未修改；登记 `MP-18 DEFECT`。mock提供查询结果只证明投影行为，不代表真实回退查询执行成功。
+
+2026-10-31 已修复 MP-18：薄弱点回退查询和结构相同的重复错题 Top 知识点查询（`compute_repeat_wrong_analysis`，同样会报 multiple FROMS，原契约测试用 mock 未覆盖）均加 `.select_from(KnowledgePoint)`，连接、过滤、分组和排序不变。新增 `test_dashboard_fallback_topics_db.py`，用真实 sqlite 库执行两条查询（RED 时均抛 `InvalidRequestError`），覆盖冻结 syllabus 名优先于当前名（两条查询均含）、用户隔离、mastered/is_active/未复习过滤，以及计数降序加知识点 id 升序的并列排序；原契约测试从“断言编译失败”改为断言 sqlite/PostgreSQL 方言均可编译。真实 PostgreSQL 执行未验证，归 ENV。
 
 共享 AsyncSession 并发、未来数据包含在下界查询内等原行为仍保留。本批没有修复统计口径、数据库并发、鉴权、schema或客户端展示；隔离FastAPI路由测试使用用户/数据库依赖替身，不代表真实微信/JWT/PostgreSQL验收。
 
 ## 验证证据
 
-原始service载入独立模块后运行入口/API契约45项通过；当前实现的8份相关测试与架构门禁111项通过。结构核对确认13处SQL执行表达式、11个异步签名以及两个查询辅助函数/顶层聚合器完整AST保持。一次独立审查指出纯模块门禁遗漏参数传入的数据库操作，已添加execute/commit/flush/rollback/add等检查和负例，业务源码未变，定向18项通过；审查者已窄复核关闭P3，无剩余P0–P3。新测试同步固定CI清单，但本批没有重放全量固定CI，不能据此关闭 `MP-08`。
+原始service载入独立模块后运行入口/API契约45项通过；当前实现的8份相关测试与架构门禁111项通过。结构核对（MP-17 时点，早于 MP-18 修复）确认13处SQL执行表达式、11个异步签名以及两个查询辅助函数/顶层聚合器完整AST保持；MP-18 修复后其中薄弱点回退与重复错题 Top 两条查询的 AST 因 `.select_from(KnowledgePoint)` 有意变更，其余不变。一次独立审查指出纯模块门禁遗漏参数传入的数据库操作，已添加execute/commit/flush/rollback/add等检查和负例，该时点业务源码未变，定向18项通过；审查者已窄复核关闭P3，无剩余P0–P3。新测试同步固定CI清单，但本批没有重放全量固定CI，不能据此关闭 `MP-08`。
 
 精确结果、模块预算、源哈希、审查和提交状态见[结果清单](refactor-results/miniprogram-dashboard-insights-2026-10-30.json)。临时 `extract.py` 是源码写入工具，不得作为验证脚本重跑。真实客户端、PostgreSQL/Redis、外部服务和生产验收留到全栈结构重构完成后的最后阶段；本文件不授权生产操作。

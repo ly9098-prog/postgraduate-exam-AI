@@ -147,6 +147,7 @@ async def compute_weak_topic_ranking(
             ).label("frozen_name"),
             func.count(WrongQuestion.id).label("wrong_count"),
         )
+        .select_from(KnowledgePoint)
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
@@ -234,6 +235,7 @@ async def compute_repeat_wrong_analysis(db: AsyncSession, user_id: int) -> dict 
             ).label("frozen_name"),
             func.count(WrongQuestion.id).label("wrong_count"),
         )
+        .select_from(KnowledgePoint)
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,

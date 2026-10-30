@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.dialects import postgresql, sqlite
-from sqlalchemy.exc import InvalidRequestError
 
 from app.core.cache import cache
 from app.services import dashboard_insights_service as svc
@@ -113,9 +112,10 @@ async def test_weak_topics_state_and_frozen_fallback(monkeypatch):
     item = actual["items"][0]
     assert item["name"] == "frozen" and item["mastery_score"] == 0
     assert item["knowledge_point_id"] == 0 and item["due_review_count"] == 0
-    # The original fallback has ambiguous implicit FROMs; this refactor retains it.
-    with pytest.raises(InvalidRequestError, match="multiple FROMS"):
-        db.execute.await_args.args[0].compile()
+    statement = db.execute.await_args.args[0]
+    for dialect in (sqlite.dialect(), postgresql.dialect()):
+        sql = str(statement.compile(dialect=dialect))
+        assert "FROM knowledge_points JOIN question_version_knowledge_points" in sql
     due.assert_awaited_once()
 
 

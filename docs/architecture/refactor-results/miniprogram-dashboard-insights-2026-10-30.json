@@ -75,7 +75,7 @@
     }
   },
   "preserved": [
-    "13 db.execute SQL expression ASTs and original query/parameter/time-range definitions",
+    "13 db.execute SQL expression ASTs and original query/parameter/time-range definitions (MP-17 time; the two MP-18 queries changed intentionally on 2026-10-31)",
     "11 async function argument declarations",
     "_china_date_expr, _compute_kp_due_review_counts and get_dashboard_insights complete ASTs",
     "source identity for runtime serializer lookup between weak-topic rows",
@@ -87,10 +87,11 @@
   "existing_defects": [
     {
       "id": "MP-18",
-      "status": "DEFECT",
+      "status": "FIXED",
       "description": "Weak-topic fallback SQL compilation raises InvalidRequestError: multiple FROMS under current SQLAlchemy",
-      "evidence": "test_weak_topics_state_and_frozen_fallback passes against original and current implementation, original SQL AST unchanged",
-      "handling": "characterized and retained; no business fix authorization; does not block pure-rule structural separation"
+      "evidence": "pre-fix (MP-17 time): test_weak_topics_state_and_frozen_fallback passed against original and MP-17 implementation with SQL AST unchanged; superseded by resolution below",
+      "handling": "characterized and retained; no business fix authorization; does not block pure-rule structural separation",
+      "resolution": "Fixed 2026-10-31: .select_from(KnowledgePoint) added to the weak-topic fallback and the structurally identical repeat-wrong top-topics query; tests backend/tests/test_services/test_dashboard_fallback_topics_db.py (real sqlite, RED before fix) and the contract test now asserts compilation on sqlite/postgresql. Real PostgreSQL execution not verified."
     },
     {
       "description": "shared AsyncSession concurrent gather and lower-bound-only date queries",
