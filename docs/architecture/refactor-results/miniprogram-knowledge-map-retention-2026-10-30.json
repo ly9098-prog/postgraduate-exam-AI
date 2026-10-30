@@ -135,8 +135,9 @@
   "existing_defect": {
     "ledger_item": "MP-19",
     "behavior": "An earlier ordinary loadDetail request can apply point1 after relation switch has already published point2; knowledgePointId remains2 while detail.id becomes1",
-    "proof": "last current Page test resolves the ordinary response after actual openRelation transition; runtime unchanged",
-    "handling": "record original behavior; no silent semantic fix or additional splitting"
+    "proof": "pre-fix: Page test resolved the ordinary response after actual openRelation transition and observed the overwrite; see resolution",
+    "handling": "record original behavior; no silent semantic fix or additional splitting",
+    "resolution": "Fixed 2026-10-31: loadDetail captures the requested point id and drops success and failure results when the page unloaded or knowledgePointId changed. The legacy characterization test was replaced by contracts for ordinary/background/forced-refresh late responses, late failure, unload success/failure and current-id apply (17 node tests pass; 6 of the new/replaced cases failed on the old code in the RED run, the 2 later review-added cases were not run against it). Page-port evidence only; no real WeChat client. Source and test hashes at fix time: miniprogram/subpackages/knowledge/knowledge-detail/index.js=86196b67932f78aa446177037f311eb6b1782c3762432b174f327515dd21d21d, miniprogram/tests/test-knowledge-map-request-contract.js=6d76c01a693c17ce083341e630d424e5090ba848462d3be68bbe16fb0082a786."
   },
   "verification": {
     "backend_targeted": "40 passed in17.62s (36 existing +4 new HTTP)",

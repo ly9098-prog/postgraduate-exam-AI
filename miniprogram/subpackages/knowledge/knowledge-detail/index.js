@@ -191,11 +191,15 @@ error: '',
 })
 },
 async loadDetail(showLoading = true, force = false) {
+const requestedId = this.knowledgePointId
+const isStale = () => this._unloaded || this.knowledgePointId !== requestedId
 if (showLoading) this.setData({ loading: true, error: '' })
 try {
-const detail = await this._fetchDetail(this.knowledgePointId, force)
+const detail = await this._fetchDetail(requestedId, force)
+if (isStale()) return
 this._applyDetail(detail)
 } catch (error) {
+if (isStale()) return
 if (showLoading) {
 this.setData({ loading: false, error: api.getErrorMessage(error) })
 }

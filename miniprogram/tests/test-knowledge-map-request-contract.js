@@ -226,25 +226,126 @@ test('unloaded detail relation switch cannot publish its late result', async () 
   })
 })
 
-test('legacy ordinary detail load can overwrite a later relation switch result', async () => {
+function routeDetail(api, first) {
+  api.get = url => url.endsWith('/1')
+    ? first.promise
+    : Promise.resolve({ knowledge_point_id: 2, name: 'related' })
+}
+
+async function completeSwitch(page, timers) {
+  page.openRelation({ currentTarget: { dataset: { id: 2 } } })
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.equal(timers.size, 1)
+  ;[...timers.values()][0].callback()
+  assert.equal(page.knowledgePointId, 2)
+  assert.equal(page.data.detail.knowledge_point_id, 2)
+}
+
+for (const [label, showLoading, force] of [
+  ['ordinary', true, false],
+  ['background', false, false],
+  ['forced refresh', false, true],
+]) {
+  test(`late ${label} detail response cannot overwrite a completed relation switch`, async () => {
+    await withPage('detail', async ({ page, api, timers }) => {
+      const first = deferred()
+      routeDetail(api, first)
+      const initialLoad = page.loadDetail(showLoading, force)
+      await completeSwitch(page, timers)
+      first.resolve({ knowledge_point_id: 1, name: 'original' })
+      await initialLoad
+      assert.equal(page.knowledgePointId, 2)
+      assert.equal(page.data.detail.knowledge_point_id, 2)
+      assert.equal(page.data.detail.name, 'related')
+      page.onUnload()
+    })
+  })
+}
+
+test('late detail failure cannot show an error over a completed relation switch', async () => {
   await withPage('detail', async ({ page, api, timers }) => {
     const first = deferred()
-    api.get = url => url.endsWith('/1')
-      ? first.promise
-      : Promise.resolve({ knowledge_point_id: 2, name: 'related' })
+    routeDetail(api, first)
     const initialLoad = page.loadDetail()
-    page.openRelation({ currentTarget: { dataset: { id: 2 } } })
-    await Promise.resolve()
-    await Promise.resolve()
-    const transition = [...timers.values()][0]
-    assert.ok(transition)
-    transition.callback()
-    assert.equal(page.knowledgePointId, 2)
-    assert.equal(page.data.detail.knowledge_point_id, 2)
-    first.resolve({ knowledge_point_id: 1, name: 'original' })
+    await completeSwitch(page, timers)
+    first.reject(new Error('offline'))
     await initialLoad
-    assert.equal(page.knowledgePointId, 2)
-    assert.equal(page.data.detail.knowledge_point_id, 1)
+    assert.equal(page.data.error, '')
+    assert.equal(page.data.loading, false)
+    assert.equal(page.data.detail.knowledge_point_id, 2)
+    page.onUnload()
+  })
+})
+
+test('late detail response after unload publishes nothing', async () => {
+  await withPage('detail', async ({ page, api, calls }) => {
+    const first = deferred()
+    api.get = () => first.promise
+    const load = page.loadDetail(false)
+    page.onUnload()
+    const patches = calls.patches.length
+    const titles = calls.titles.length
+    first.resolve({ knowledge_point_id: 1 })
+    await load
+    assert.equal(calls.patches.length, patches)
+    assert.equal(calls.titles.length, titles)
+  })
+})
+
+test('late detail failure after unload publishes nothing', async () => {
+  await withPage('detail', async ({ page, api, calls }) => {
+    const first = deferred()
+    api.get = () => first.promise
+    const load = page.loadDetail()
+    page.onUnload()
+    const patches = calls.patches.length
+    first.reject(new Error('offline'))
+    await load
+    assert.equal(calls.patches.length, patches)
+  })
+})
+
+test('detail response for the still-current point is applied', async () => {
+  await withPage('detail', async ({ page, api }) => {
+    api.get = () => Promise.resolve({ knowledge_point_id: 1, name: 'current' })
+    await page.loadDetail()
+    assert.equal(page.data.detail.name, 'current')
+    assert.equal(page.data.loading, false)
+    api.get = () => Promise.reject(new Error('offline'))
+    await page.loadDetail(true, true)
+    assert.equal(page.data.error, 'offline')
+  })
+})
+
+test('old-point load still applies after a failed relation switch', async () => {
+  await withPage('detail', async ({ page, api, calls }) => {
+    const first = deferred()
+    api.get = url => url.endsWith('/1') ? first.promise : Promise.reject(new Error('offline'))
+    const load = page.loadDetail(false)
+    page.openRelation({ currentTarget: { dataset: { id: 2 } } })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(page.knowledgePointId, 1)
+    assert.deepEqual(calls.toasts, ['offline'])
+    first.resolve({ knowledge_point_id: 1, name: 'original' })
+    await load
+    assert.equal(page.data.detail.name, 'original')
+    page.onUnload()
+  })
+})
+
+test('retry started during a switch leaves loading cleared once the switch publishes', async () => {
+  await withPage('detail', async ({ page, api, timers }) => {
+    const first = deferred()
+    routeDetail(api, first)
+    const retry = page.loadDetail(true, true)
+    assert.equal(page.data.loading, true)
+    await completeSwitch(page, timers)
+    first.resolve({ knowledge_point_id: 1, name: 'original' })
+    await retry
+    assert.equal(page.data.loading, false)
+    assert.equal(page.data.error, '')
+    assert.equal(page.data.detail.knowledge_point_id, 2)
     page.onUnload()
   })
 })
