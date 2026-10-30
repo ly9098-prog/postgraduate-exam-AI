@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-31",
+  "status": "RETAIN",
+  "ledger_item": "OCR-03",
+  "risk_tier": "L2",
+  "source_changed": false,
+  "test_changed": false,
+  "ci_changed": false,
+  "scope": {
+    "documented_sources": 20,
+    "subdomains": 7,
+    "environment_gap": "ENV-02..05"
+  },
+  "dispositions": {
+    "shared_upload_admission": "RETAIN",
+    "public_chunk_resume": "RETAIN",
+    "admin_stage_resume": "RETAIN",
+    "batch_image": "RETAIN",
+    "internal_ocr_worker_protocol": "RETAIN",
+    "worker_v2_task_interfaces": "RETAIN",
+    "real_environment": "ENV-BLOCKED"
+  },
+  "source_baseline": {
+    "mapping": "docs/architecture/refactor-results/ocr-consumer-map-2026-10-30.json",
+    "files": 20,
+    "section_332_hashes_unchanged": true,
+    "new_baseline_files": 0,
+    "evidence": "~/.cache/postgraduate-ai/refactor/2026-10-31-ocr03/source-baseline.json (local-only, not in repo)"
+  },
+  "verification": {
+    "python": "backend/.venv/bin/python 3.12.3",
+    "focused_test": {
+      "status": "passed",
+      "tests": 253,
+      "warnings": 1,
+      "seconds": 51.61,
+      "scope": "shared upload admission, Public/Admin resume, batch image, internal OCR job protocol, worker-v2 interfaces"
+    },
+    "focused_test_selector": {
+      "entries": 16,
+      "files": [
+        "tests/test_services/test_import_upload_admission.py",
+        "tests/test_services/test_import_upload_admission_record.py",
+        "tests/test_services/test_pipeline_upload_unified.py",
+        "tests/pipeline/test_public_admin_pipeline_equivalence.py",
+        "tests/pipeline/test_rollback_resume_idempotency.py",
+        "tests/test_api/test_admin_imports.py",
+        "tests/test_api/test_app_import_boundaries.py",
+        "tests/test_features/test_batch_image_stream.py",
+        "tests/test_features/test_batch_import_optimizations.py",
+        "tests/ocr_pipeline/test_ocr_job_service.py",
+        "tests/ocr_pipeline/test_ocr_job_state_machine.py",
+        "tests/test_services/test_worker_dispatcher_v2_contract.py",
+        "tests/test_services/test_worker_v2_handlers.py",
+        "tests/test_services/test_worker_v2_cleanup.py",
+        "tests/test_services/test_worker_v2_failures.py",
+        "tests/test_services/test_worker_v2_ports.py"
+      ],
+      "commands": [
+        "cd backend && python -m pytest <files above> -q"
+      ]
+    },
+    "static": [
+      {
+        "command": "ruff check app/ --ignore I001,F401,N818",
+        "status": "passed"
+      },
+      {
+        "command": "python -m compileall -q app",
+        "status": "passed"
+      },
+      {
+        "command": "git diff --check",
+        "status": "passed"
+      }
+    ],
+    "fixed_ci": "not rerun; source/test/CI unchanged",
+    "openapi": "not rerun; source unchanged",
+    "readiness": "not rerun; source unchanged"
+  },
+  "not_verified": [
+    "real Admin browser/JWT/RBAC or Public app execution",
+    "real external OCR/PaddleOCR and object storage",
+    "real PostgreSQL concurrency and Redis queue behavior",
+    "multi-worker internal OCR job claim/recovery",
+    "OCR-04 artifact upload contract repair",
+    "production"
+  ],
+  "evidence_directory": "~/.cache/postgraduate-ai/refactor/2026-10-31-ocr03 (local-only, not in repo)"
+}
