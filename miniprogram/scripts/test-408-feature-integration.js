@@ -54,11 +54,13 @@ for (const base of ['pages', 'subpackages', 'utils']) {
 // P0: subject stage + manual weight, stored independently from backend plan payload.
 has('subpackages/study/study-plan/index.wxml', [/四科阶段与权重/, /onStrategyStageChange/, /bindchanging="onStrategyWeightChange"/])
 has('subpackages/study/study-plan/index.js', [/studyStrategy\.saveProfile/, /strategyWeightValid/, /stageOptions/])
-has('utils/storage.js', [/const studyStrategy =/, /buildNextBestAction/, /buildChoiceLossBudget/])
+has('utils/study-strategy.js', [/const studyStrategy =/, /buildNextBestAction/, /buildChoiceLossBudget/])
+has('utils/storage.js', [/require\('\.\/study-strategy'\)/, /^\s+studyStrategy,$/m])
 
 // P0: diagnosis -> next action automatic router, colocated with taxonomy.
 has('subpackages/study/utils/error-diagnosis.js', [/buildNextAction/, /routeParamsForPractice/, /subject_code/])
-has('subpackages/study/wrong-detail/wrong-detail.js', [/openNextErrorAction/, /errorDiagnosis\.buildNextAction/])
+has('subpackages/study/wrong-detail/wrong-detail.js', [/openNextErrorAction/])
+has('subpackages/study/wrong-detail/utils/wrong-detail-diagnosis-flow.js', [/openNextErrorAction/, /errorDiagnosis\.buildNextAction/])
 has('subpackages/study/wrong-detail/wrong-detail.wxml', [/NEXT ACTION/, /openNextErrorAction/])
 const wrongCss = read('subpackages/study/wrong-detail/wrong-detail.wxss')
 assert.strictEqual((wrongCss.match(/\.diagnosis-next-action\{/g) || []).length, 1, 'duplicate NEXT ACTION style block')
@@ -68,13 +70,27 @@ has('pages/dashboard/dashboard.js', [/buildChoiceLossBudget/, /choiceLossBudget,
 has('pages/dashboard/dashboard.wxml', [/选择题失分预算/, /CHOICE ONLY/, /maxWrongQuestions/])
 
 // P1: Pomodoro task types survive sessions and appear in stats.
-has('pages/pomodoro/pomodoro.js', [/pomodoroTaskTypes/, /selectTaskType/, /recordSession/, /activeTaskTypeLabel/])
-const pomodoroPage = read('pages/pomodoro/pomodoro.js')
-assert.ok(/const activeTaskType = sessionTaskType \|\| ''/.test(pomodoroPage), 'legacy sessions must stay unclassified')
-assert.ok(!/sessionTaskType \|\| pomodoroTaskTypes\.DEFAULT_TYPE/.test(pomodoroPage), 'legacy sessions must not inherit default task type')
+has('pages/pomodoro/pomodoro.js', [/pomodoroTaskTypes/, /selectTaskType/, /selectedTaskTypeLabel/])
+has('pages/pomodoro/utils/start-session-controller.js', [/pomodoroTaskTypes\.recordSession/])
+const restoreControllers = [
+  read('pages/pomodoro/utils/free-session-restore-controller.js'),
+  read('pages/pomodoro/utils/countdown-session-restore-controller.js'),
+]
+restoreControllers.forEach(text => {
+  assert.ok(/taskType: (sessionTaskType|taskType) \|\| ''/.test(text), 'legacy sessions must stay unclassified')
+  assert.ok(/'未分类'/.test(text), 'legacy sessions must keep the unclassified label')
+})
+;[
+  ...restoreControllers,
+  read('pages/pomodoro/pomodoro.js'),
+  read('pages/pomodoro/utils/start-session-controller.js'),
+].forEach(text => {
+  assert.ok(!/TaskType \|\| (options\.)?pomodoroTaskTypes\.DEFAULT_TYPE/.test(text), 'legacy sessions must not inherit default task type')
+})
 has('pages/pomodoro/pomodoro.wxml', [/任务类型/, /selectedTaskType/])
-has('subpackages/productivity/pomodoro-stats/index.js', [/labelForSession/])
-has('utils/storage.js', [/const pomodoroTaskTypes =/, /typeForSession/])
+has('subpackages/productivity/pomodoro-stats/stats-load-view-flow.js', [/labelForSession/])
+has('utils/pomodoro-task-types.js', [/const pomodoroTaskTypes =/, /typeForSession/])
+has('utils/storage.js', [/require\('\.\/pomodoro-task-types'\)/, /^\s+pomodoroTaskTypes,$/m])
 
 // P1: chapter graduation is computed next to tree grouping and shown on the map.
 has('subpackages/knowledge/knowledge-subject/tree-groups.js', [/evaluateChapter/, /summarizeGroups/, /value == null/])
@@ -84,12 +100,12 @@ has('subpackages/knowledge/knowledge-subject/index.wxml', [/章节毕业/, /grad
 // P1: Study Hub is a true Next Best Action and can target no-data subjects by canonical code.
 has('pages/home/home.js', [/buildNextBestAction/, /route === 'pomodoro'/])
 has('pages/home/home.wxml', [/primaryTaskTitle/, /primaryTaskAction/, /primaryTaskKicker/, /今日刷题进度/])
-has('subpackages/study/practice/practice.js', [/subjectCode/, /preset\.subjectCode/])
+has('subpackages/study/practice/utils/practice-launch-flow.js', [/subjectCode/, /preset\.subjectCode/])
 has('pages/pomodoro/pomodoro.js', [/fromSubjectCode/, /opts && opts\.subject_code/])
 
 // Compatibility invariant: local strategy fields must not be added to legacy study-plan API payload.
 const plan = read('subpackages/study/study-plan/index.js')
-const payloadMatch = plan.match(/const payload = \{([\s\S]*?)\n\}/)
+const payloadMatch = plan.match(/(?:const|var|let) payload = \{([\s\S]*?)\n\s*\}/)
 assert.ok(payloadMatch, 'study-plan payload not found')
 assert.ok(!/subjects|strategy|weight|stage/.test(payloadMatch[1]), 'legacy /study-plan payload was extended unexpectedly')
 

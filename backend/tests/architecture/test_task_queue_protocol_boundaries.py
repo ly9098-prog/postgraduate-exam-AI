@@ -539,3 +539,15 @@ def test_transition_delegation_gate_rejects_removed_result_mapping() -> None:
         tuple(_qualified_call_order(mutated, "execute_v2_complete"))
         != TRANSITION_ENTRY_CALLS["execute_v2_complete"]
     )
+
+
+UNFENCED_DISPATCHER_TASK_TYPES = frozenset({"answer_projection", "error_diagnosis"})
+
+
+def test_dispatcher_task_types_are_fenced_or_explicitly_exempt() -> None:
+    from app.services.db_fencing import FENCING_TABLES
+    from app.services.worker_task_types import DISPATCHER_TASK_TYPES
+
+    dispatcher = set(DISPATCHER_TASK_TYPES)
+
+    assert dispatcher - set(FENCING_TABLES) == UNFENCED_DISPATCHER_TASK_TYPES
