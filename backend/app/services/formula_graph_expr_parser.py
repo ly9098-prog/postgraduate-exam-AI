@@ -6,6 +6,7 @@ module first, with a whitelist of allowed node types and symbol names.
 
 import ast
 import logging
+import math
 
 import sympy as sp
 
@@ -15,6 +16,9 @@ logger = logging.getLogger(__name__)
 MAX_EXPRESSION_LENGTH = 500
 MAX_AST_NODES = 100
 MAX_AST_DEPTH = 20
+MAX_ESTIMATED_DIGITS = 1000
+MAX_POWER_EXPONENT_LOG10 = 6
+_MIN_LOG_SIZE = math.log10(2)
 
 # ── Allowed AST node types ──
 ALLOWED_AST_TYPES = frozenset(
@@ -178,6 +182,43 @@ def validate_expression(expr_str: str) -> None:
             _walk(child, depth + 1)
 
     _walk(tree)
+    _estimate_log_size(tree.body)
+
+
+def _estimate_log_size(node) -> float:
+    """Upper-bound log10 size of a subtree's exact value (x counts as 1).
+
+    sympify evaluates integer and rational powers eagerly, so a short input such
+    as ``9**9**9**9`` would otherwise hang the process.
+    """
+    if isinstance(node, ast.Constant):
+        if not isinstance(node.value, (int, float)):
+            return _MIN_LOG_SIZE
+        value = abs(node.value)
+        if value == 0 or value == float("inf"):
+            return _MIN_LOG_SIZE
+        if isinstance(node.value, int):
+            return max(len(str(value)), _MIN_LOG_SIZE)
+        return max(abs(math.log10(value)), _MIN_LOG_SIZE)
+    if isinstance(node, ast.Name):
+        return _MIN_LOG_SIZE
+    if isinstance(node, ast.UnaryOp):
+        return _estimate_log_size(node.operand)
+    if isinstance(node, ast.Call):
+        return max((_estimate_log_size(arg) for arg in node.args), default=_MIN_LOG_SIZE)
+    if isinstance(node, ast.BinOp):
+        left = _estimate_log_size(node.left)
+        right = _estimate_log_size(node.right)
+        if isinstance(node.op, ast.Pow):
+            if right > MAX_POWER_EXPONENT_LOG10:
+                raise ValueError("Exponent too large")
+            size = left * 10**right
+        else:
+            size = left + right
+        if size > MAX_ESTIMATED_DIGITS:
+            raise ValueError("Expression value too large to evaluate safely")
+        return size
+    return _MIN_LOG_SIZE
 
 
 def parse_expression(expr_str: str) -> sp.Expr:
