@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import get_current_user, issue_user_token, set_user_nbf
+from app.core.security import (
+    get_current_user,
+    issue_user_token,
+    read_user_nbf,
+    set_user_nbf,
+)
 from app.core.time_utils import normalize_to_naive_utc, utcnow_aware
 from app.models.user import User
 from app.schemas.user import (
@@ -97,11 +102,19 @@ async def refresh(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
         await token_service.revoke_all_user_tokens(db, user.id)
         raise HTTPException(status_code=403, detail="账号已封禁")
 
+    # A logout that lands while this refresh is in flight advances the marker;
+    # the session then predates the logout and must not mint a fresh credential.
+    nbf_before = await read_user_nbf(user.id)
+
     # Rotate atomically: every refresh token can be consumed only once.
     try:
         new_refresh_token = await token_service.rotate_refresh_token(db, token_record)
     except ValueError:
         raise HTTPException(status_code=401, detail="刷新令牌无效或已使用")
+
+    if await read_user_nbf(user.id) != nbf_before:
+        await token_service.revoke_all_user_tokens(db, user.id)
+        raise HTTPException(status_code=401, detail="会话已失效，请重新登录")
 
     new_jwt, new_expires_at = await issue_user_token(user.id)
 

@@ -91,6 +91,18 @@ def decode_token(token: str) -> int:
     return int(decode_token_payload(token)["sub"])
 
 
+async def read_user_nbf(user_id: int) -> int | None:
+    """Return the account-wide invalidation marker, failing closed if unavailable."""
+    try:
+        value = await cache.get_strict(f"user:jwt:nbf:{user_id}")
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
+    return int(value) if value else None
+
+
 async def issue_user_token(user_id: int) -> tuple[str, int]:
     """Issue a token that is newer than any account-wide invalidation marker."""
     try:
