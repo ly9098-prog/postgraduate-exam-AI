@@ -552,6 +552,9 @@ class PaddleOCRVLClient:
 
         # Shared HTTP client with connection pooling
         self._client: httpx.AsyncClient | None = None
+        # Result downloads follow provider-supplied URLs, so they use a client that
+        # only connects to public IPs (DNS is resolved and checked at connect time).
+        self._download_client: httpx.AsyncClient | None = None
 
         # Circuit breaker
         self._circuit_breaker = _CircuitBreaker(
@@ -565,6 +568,9 @@ class PaddleOCRVLClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+        if self._download_client is not None:
+            await self._download_client.aclose()
+            self._download_client = None
 
     @staticmethod
     def _restricted() -> bool:
@@ -685,6 +691,16 @@ class PaddleOCRVLClient:
                 timeout=httpx.Timeout(60.0, connect=10.0),
             )
         return self._client
+
+    def _get_download_client(self) -> httpx.AsyncClient:
+        if self._download_client is None:
+            from app.services.safe_httpx import build_public_only_client
+
+            self._download_client = build_public_only_client(
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                timeout=httpx.Timeout(60.0, connect=10.0),
+            )
+        return self._download_client
 
     @property
     def is_available(self) -> bool:
@@ -1102,7 +1118,7 @@ class PaddleOCRVLClient:
         """
         url = await _validate_result_url(url)
 
-        client = self._get_client()
+        client = self._get_download_client()
 
         # Disable auto-redirect: validate each hop manually before connecting
         async with client.stream("GET", url, follow_redirects=False) as response:

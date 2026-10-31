@@ -116,7 +116,7 @@ class TestDownloadValidation:
             url="https://storage.example.com/big.jsonl",
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
@@ -136,7 +136,7 @@ class TestDownloadValidation:
             url="https://storage.example.com/many.jsonl",
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
@@ -170,7 +170,7 @@ class TestDownloadValidation:
             headers={"location": "http://169.254.169.254/latest/meta-data/"},
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(redirect_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
@@ -192,7 +192,7 @@ class TestDownloadValidation:
             url="https://storage.example.com/result.jsonl",
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
@@ -215,7 +215,7 @@ class TestDownloadValidation:
             url="https://storage.example.com/data.jsonl",
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
@@ -241,7 +241,7 @@ class TestDownloadValidation:
             url="https://storage.example.com/data.jsonl",
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
@@ -264,7 +264,7 @@ class TestDownloadValidation:
             url="https://storage.example.com/data.jsonl",
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
@@ -287,7 +287,7 @@ class TestDownloadValidation:
             url="https://storage.example.com/data.jsonl",
         )
 
-        with patch.object(client, "_get_client") as mock_get_client:
+        with patch.object(client, "_get_download_client") as mock_get_client:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
