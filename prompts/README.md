@@ -27,5 +27,5 @@ prompts/
 ## 这次整理留在原处的原因
 
 - 答案批次、PDF 导入稿、UI 旧轮次数量大，只按目录归类，不改正文。
-- `tasks/current_task.md`、`tasks/next_task.md`、`tasks/fix_task.md` 保留路径，因为代码和文档注释还指向它们。三份任务都已完成，文件里只留完成记录和归档位置。
+- `tasks/current_task.md` 保留为活动全栈重构入口，原计划与每卷最多100批次的历史记录在 `tasks/current_task/`；接续先读 `tasks/context.md` 和 `tasks/refactor_workflow.md`。`tasks/next_task.md`、`tasks/fix_task.md` 保留原路径，按各自状态和当前授权判断。
 - 公式图目录只把 `v2.1` 留在 `math_chart/` 根上，更早的 `directory_*.md` 移到 `previous/`。

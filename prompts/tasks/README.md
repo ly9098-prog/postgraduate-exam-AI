@@ -1,10 +1,12 @@
 # 任务 Prompt
 
-一次性任务书。不要把这些文件当成仍在执行的命令。
+任务入口与历史任务书并存。当前活动重构按 `context.md` 和 `current_task.md` 接续；其他历史任务书不自动构成执行指令。
 
 | 目录 | 内容 |
 |------|------|
-| `current_task.md` / `next_task.md` / `fix_task.md` | 已完成。只留完成记录，步骤在 `done/` |
+| `current_task.md` / `context.md` / `refactor_workflow.md` | 活动全栈重构的任务入口、接续摘要和执行工作流 |
+| `current_task/` | 有限领域收口账本、原计划与历史记录分卷；每份历史文件最多100批次，容量索引见 `current_task.md` |
+| `next_task.md` / `fix_task.md` | 历史任务书，按文件自身状态和当前授权判断，不自动施工 |
 | `reference/` | 仍被文档引用的结构说明，例如 segment schema |
 | `backlog/` | 历史任务书。每个文件开头标明不要施工；不代表待办，也不要按正文改代码 |
 | `done/` | 已结束的任务书和审计记录 |
