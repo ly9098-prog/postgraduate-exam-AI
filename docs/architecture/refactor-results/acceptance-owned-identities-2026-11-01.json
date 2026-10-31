@@ -17,8 +17,45 @@
   "provider_test_account_inventory": {
     "tool": "WeChat DevTools test-account list",
     "accounts": 0,
+    "account_owned_app_ids": 3,
+    "test_labeled_apps": 2,
+    "current_project_matches_owned_app": true,
+    "current_project_app_explicitly_test_labeled": false,
+    "ticket_status": "not_queried",
     "tickets_created_or_used": false,
-    "provider_identity_exchange": false
+    "provider_identity_exchange": false,
+    "identifier_values_emitted": false
+  },
+  "stage_evidence_audit": {
+    "audit_date": "2026-11-01",
+    "method": "current source hash comparison and archived JUnit/result inspection; prior runtime suites not rerun",
+    "ENV-02": {
+      "current_source_hashes_match": true,
+      "archived_api_browser_acceptance": "PASS",
+      "stage_status": "PASS-ISOLATED"
+    },
+    "ENV-03": {
+      "fresh_migration_tests": 8,
+      "postgres_redis_integration_tests": 22,
+      "pomodoro_postgres_concurrency_tests": 6,
+      "failures_errors_skipped": 0,
+      "current_equals_head": "v19_pomodoro_subject_allocations",
+      "refresh_rotation_redis_recovery_pg_restore": "PASS",
+      "evidence_date": "2026-10-31",
+      "stage_status": "PASS-ISOLATED"
+    },
+    "ENV-05": {
+      "queue_pg_fencing_tests": 29,
+      "redis_recovery_tests": 6,
+      "queue_hardening_tests": 23,
+      "worker_process_recovery_tests": 2,
+      "failures_errors_skipped": 0,
+      "multiprocess_projection_and_redis_restore": "PASS",
+      "evidence_date": "2026-10-31",
+      "stage_status": "PASS-ISOLATED"
+    },
+    "final_environment_acceptance_complete": false,
+    "ENV-01": "PARTIAL; no test account entry, current project app is not explicitly test-labeled, provider ticket not queried, no provider exchange/device/mobile network proof"
   },
   "identity_rbac": {
     "status": "passed",
