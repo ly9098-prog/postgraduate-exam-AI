@@ -1,0 +1,177 @@
+{
+  "date": "2026-11-01",
+  "timezone": "Asia/Shanghai",
+  "status": "PASS-ISOLATED-IDENTITIES-CLEANED",
+  "verified_source_head": "1315986cc7e59d2331484fe05b706748a01c0aff",
+  "authorization": {
+    "create_acceptance_test_identities_and_roles": true,
+    "delete_owned_test_data_after_acceptance": true,
+    "production_mutation": false
+  },
+  "source_commits": [
+    "239dc7f91c6996d270392386fe372f5c8d5f5265",
+    "9087adf355ee176ae06c3280b3d049da3f26132d",
+    "432d91259dec64b566f50dc4bc97d71e75c70942"
+  ],
+  "scope": "fresh owned clone of prior synthetic acceptance SQLite; real unmodified local API and WeChat DevTools runtime",
+  "identity_rbac": {
+    "status": "passed",
+    "scope": "actual HTTP API; fresh isolated synthetic SQLite clone",
+    "custom_roles": 2,
+    "dedicated_admin_accounts": 3,
+    "dedicated_development_learners": 2,
+    "checks": {
+      "reader_question_read_200": true,
+      "reader_admin_list_and_create_403": true,
+      "reader_role_list_403": true,
+      "empty_role_question_read_403": true,
+      "existing_session_grant_200_then_revoke_403": true,
+      "admin_token_rejected_by_public_domain_401": true,
+      "public_token_rejected_by_admin_domain_401": true,
+      "both_new_learners_have_zero_wrong_questions": true,
+      "delete_deactivates_and_old_token_and_new_login_401": true,
+      "denied_account_creation_persisted": false,
+      "dedicated_audit_actions_verified": {
+        "admin_user.create": 2,
+        "admin_user.delete": 1,
+        "role.update_permissions": 3,
+        "system.login": 4
+      }
+    },
+    "custom_role_setup": "owned fixture SQL; role creation API absent from current OpenAPI",
+    "harness_corrections": [
+      "httpx client context corrected before business requests; first successful bootstrap login audited",
+      "audit count corrected from 3 to 4 after accounting for initial bootstrap login; verification did not rerun mutations"
+    ],
+    "credentials_printed": false,
+    "production_mutated": false,
+    "cleanup": "passed; identities, roles and newly owned associated rows physically deleted from clone"
+  },
+  "wechat_login": {
+    "status": 200,
+    "userId": 3,
+    "mode": "isolated development identity",
+    "providerExchange": false
+  },
+  "learning_ownership": {
+    "status": "passed",
+    "identity": "new dedicated development learner; not provider-issued WeChat exchange",
+    "interaction": "real WeChat DevTools runtime, page event handlers and confirmation methods",
+    "practice": {
+      "questions": 2,
+      "answers": 2,
+      "correct": 1,
+      "wrong": 1,
+      "new_sessions": 1,
+      "new_records": 2
+    },
+    "wrong_book": {
+      "ui_list_count": 1,
+      "new_rows": 1,
+      "detail_loaded": true,
+      "master_confirm_then_unmaster_confirm_passed": true,
+      "persisted_final_mastered": false
+    },
+    "other_learner": {
+      "practice_records": 0,
+      "wrong_list_total": 0,
+      "foreign_detail_http": 404,
+      "foreign_update_http": 404,
+      "owner_wrong_row_unchanged": true
+    },
+    "runtime_preflight": "old runtime request wrapper failed; request mock explicitly restored and simulator recompiled; only successful post-compile chain counted",
+    "business_source_modified": false,
+    "production_mutated": false,
+    "pending_outbox_not_claimed_consumed": true
+  },
+  "pomodoro": {
+    "status": "passed",
+    "new_completed_sessions": 1,
+    "actual_duration_seconds": 68,
+    "paused_seconds": 14,
+    "start_pause_resume_and_completion": true,
+    "completion_invocation": "actual page endSession handler; no new UI confirmation claim",
+    "ui_final_phase": "idle",
+    "user_a_counts": {
+      "practice_records": 2,
+      "practice_sessions": 1,
+      "wrong_questions": 1,
+      "pomodoro_sessions": 1
+    },
+    "user_b_counts": {
+      "practice_records": 0,
+      "practice_sessions": 0,
+      "wrong_questions": 0,
+      "pomodoro_sessions": 0
+    },
+    "real_device": false,
+    "production_mutated": false,
+    "target_maxMs_error_reproduced": false,
+    "console_error_scan_performed": false
+  },
+  "logout": {
+    "wechat_local_session_cleared": true,
+    "learner_a_refresh_after_logout_http": 401,
+    "learner_a_bearer_after_logout_http": 401,
+    "learner_b_refresh_after_logout_http": 401,
+    "learner_b_bearer_after_logout_http": 401
+  },
+  "cleanup": {
+    "status": "passed",
+    "scope": "new owned synthetic clone only",
+    "new_admin_accounts_deleted": 3,
+    "new_development_learners_deleted": 2,
+    "new_custom_roles_deleted": 2,
+    "new_rows_deleted_by_table": {
+      "roles": 2,
+      "task_outbox": 2,
+      "admin_users": 3,
+      "role_permissions": 2,
+      "audit_logs": 10,
+      "users": 2,
+      "pomodoro_sessions": 1,
+      "practice_sessions": 1,
+      "refresh_tokens": 4,
+      "pomodoro_subject_allocations": 1,
+      "pomodoro_pause_intervals": 1,
+      "practice_records": 2,
+      "review_schedules": 1,
+      "wrong_questions": 1,
+      "wrong_question_error_diagnoses": 1
+    },
+    "total_new_rows_deleted": 34,
+    "baseline_tables_compared": 79,
+    "all_baseline_rows_and_counts_match": true,
+    "new_foreign_key_violations": 0,
+    "owned_api_stopped_gracefully": true,
+    "api_port_closed": true,
+    "production_mutated": false,
+    "prior_synthetic_database_unchanged": true,
+    "credentials_removed": true
+  },
+  "evidence_directory": "/home/lmh/.cache/postgraduate-ai/acceptance/2026-11-01-identities",
+  "business_source_changed": false,
+  "review": {
+    "self_review": "completed; API assertions, persisted data, cross-user denial, cleanup baseline and source protection checked",
+    "new_independent_review": "not run for acceptance-record-only followup",
+    "prior_code_review": "completed in acceptance-commit-readiness-2026-11-01.json; no source change since"
+  },
+  "stage_status": {
+    "ENV-01": "PARTIAL",
+    "ENV-02": "PASS-ISOLATED",
+    "ENV-03": "PASS-ISOLATED",
+    "ENV-04": "BLOCKED",
+    "ENV-05": "PASS-ISOLATED",
+    "ENV-06": "BLOCKED"
+  },
+  "remaining_gates": [
+    "provider-issued dedicated WeChat identity and actual jscode2session exchange",
+    "test HTTPS and real device/mobile network",
+    "controlled external AI/OCR/storage/HTTPS and WebSocket gateway",
+    "production window, verified backup/rollback artifacts and concrete production scope after prior gates"
+  ],
+  "full_environment_acceptance_complete": false,
+  "push_performed": false,
+  "mini_program_uploaded": false,
+  "production_mutated": false
+}
