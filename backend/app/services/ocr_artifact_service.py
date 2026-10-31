@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import binascii
+import fcntl
 import hashlib
 import json
 import os
@@ -32,6 +33,7 @@ _MARKER = b'"data":"'
 _MAX_HEADER_BYTES = 4096
 _MAX_TRAILER_BYTES = 16
 _TEMP_GRACE_SEC = 3600
+_LOCK_NAME = ".quota.lock"
 _UPLOADABLE = {OCRJobStatus.RUNNING.value, OCRJobStatus.UPLOADING.value}
 
 
@@ -210,20 +212,27 @@ def _published_files(root: Path):
 def _usage_bytes(root: Path, exclude: Path) -> int:
     total = 0
     for path in _published_files(root):
-        if path.name.endswith(".tmp") or path == exclude:
+        if path.name.endswith(".tmp") or path.name == _LOCK_NAME or path == exclude:
             continue
         with suppress(OSError):
             total += path.stat().st_size
     return total
 
 
-async def _check_total_quota(target: Path, size: int) -> None:
-    try:
-        used = await asyncio.to_thread(_usage_bytes, _root(), target)
-    except OSError as exc:
-        raise ArtifactUploadError(503, "Artifact storage unavailable") from exc
-    if used + size > settings.OCR_WORKER_ARTIFACT_TOTAL_MAX_BYTES:
-        raise ArtifactUploadError(507, "Artifact storage quota exceeded")
+def _publish_within_quota(tmp: Path, target: Path, size: int) -> None:
+    """Check the aggregate quota and publish ``tmp`` as one step.
+
+    The lock file serializes concurrent uploads across worker processes, so two
+    uploads cannot both pass the check and then jointly exceed the quota.
+    """
+    root = _root()
+    root.mkdir(mode=0o750, parents=True, exist_ok=True)
+    with open(root / _LOCK_NAME, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        used = _usage_bytes(root, target)
+        if used + size > settings.OCR_WORKER_ARTIFACT_TOTAL_MAX_BYTES:
+            raise ArtifactUploadError(507, "Artifact storage quota exceeded")
+        os.replace(tmp, target)
 
 
 def cleanup_expired_artifacts() -> int:
@@ -240,6 +249,8 @@ def cleanup_expired_artifacts() -> int:
     temp_cutoff = now - _TEMP_GRACE_SEC
     removed = 0
     for path in list(_published_files(root)):
+        if path.name == _LOCK_NAME:
+            continue
         cutoff = temp_cutoff if path.name.endswith(".tmp") else retention_cutoff
         try:
             if path.stat().st_mtime < cutoff:
@@ -272,11 +283,10 @@ async def receive_artifact(
             )
             if sha != header["sha256"]:
                 raise ArtifactUploadError(422, "Artifact sha256 mismatch")
-            await _check_total_quota(target, size)
             await _run_io(_sync_file, handle)
         # The stream can outlive the lease: re-check right before publishing.
         await validate(header)
-        await _run_io(os.replace, tmp, target)
+        await _run_io(_publish_within_quota, tmp, target, size)
     finally:
         with suppress(OSError):
             tmp.unlink(missing_ok=True)

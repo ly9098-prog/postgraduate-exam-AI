@@ -103,7 +103,9 @@ async def _post(env, body, *, headers=None, stream=True):
 
 
 def _files(env):
-    return [p for p in env.root.rglob("*") if p.is_file()] if env.root.exists() else []
+    if not env.root.exists():
+        return []
+    return [p for p in env.root.rglob("*") if p.is_file() and p.name != ".quota.lock"]
 
 
 def _stored(env, job_id):
@@ -508,3 +510,27 @@ def test_cleanup_without_artifact_dir_is_a_noop(env):
     from app.services import ocr_artifact_service as artifacts
 
     assert artifacts.cleanup_expired_artifacts() == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_uploads_cannot_jointly_exceed_the_quota(env, monkeypatch):
+    import time
+
+    from app.services import ocr_artifact_service as artifacts
+
+    monkeypatch.setattr(settings, "OCR_WORKER_ARTIFACT_TOTAL_MAX_BYTES", 1500)
+    real_usage = artifacts._usage_bytes
+
+    def slow_usage(root, exclude):
+        used = real_usage(root, exclude)
+        time.sleep(0.2)
+        return used
+
+    monkeypatch.setattr(artifacts, "_usage_bytes", slow_usage)
+    first, second = await _job(env), await _job(env)
+    results = await asyncio.gather(
+        _post(env, _body(first, b"x" * 1000)),
+        _post(env, _body(second, b"y" * 1000)),
+    )
+    assert sorted(r.status_code for r in results) == [200, 507]
+    assert sum(len(p.read_bytes()) for p in _files(env)) <= 1500
