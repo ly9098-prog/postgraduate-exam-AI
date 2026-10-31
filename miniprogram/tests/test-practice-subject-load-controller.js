@@ -1,4 +1,7 @@
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
 const { test } = require('node:test')
 const {
   createPracticeSubjectLoadController,
@@ -136,4 +139,44 @@ test('page adapter preserves request sequencing and selected subject wiring', as
     selectedSubjectHasChildren: false,
     expandedSubjectId: 7,
   })
+})
+
+test('registered practice page wires its imported subject filter into the loader', async () => {
+  const calls = []
+  let definition
+  const filename = path.join(__dirname, '../subpackages/study/practice/practice.js')
+  const rawTree = [{ subject_id: 7 }]
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
+    Page: value => { definition = value },
+    wx: { showToast: value => calls.push(['toast', value]) },
+    require(name) {
+      if (name === '../../../utils/api') return { get: async () => rawTree }
+      if (name === '../utils/subject-scope') {
+        return { filter408SubjectTree: tree => {
+          calls.push(['filter', tree])
+          return tree
+        } }
+      }
+      if (name === './utils/subject-tree') return { normalizeSubjectTree: tree => tree }
+      if (name === './utils/practice-subject-load-page-adapter') {
+        return { createPracticeSubjectLoadPageController }
+      }
+      return {}
+    },
+  }, { filename })
+  const page = {
+    ...definition,
+    _pageAlive: true,
+    _subjectsRequestSeq: 0,
+    data: { ...definition.data },
+    setData(patch) { Object.assign(this.data, patch) },
+    initDefaultSubject: tree => calls.push(['default', tree]),
+    _applyLaunchPreset: async () => false,
+  }
+
+  await page.loadPracticeSubjects()
+
+  assert.equal(page.data.subjectTree, rawTree)
+  assert.equal(page._subjectsRequestSeq, 1)
+  assert.deepEqual(calls.map(call => call[0]), ['filter', 'default'])
 })

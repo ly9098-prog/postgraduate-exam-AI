@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
+const { createFreeTimerLimitController } = require('../pages/pomodoro/utils/free-timer-limit-controller')
 
 const {
   buildSubjectLoadPageCapabilities,
@@ -268,7 +269,7 @@ test('session control adapters preserve terminal and timer behavior ports', () =
   assert.equal(freeTimer.isBlocked(), false)
 
   const freeLimit = ports[9]
-  assert.equal(freeLimit.maxMs, 5 * 60 * 60 * 1000)
+  assert.equal(freeLimit.maxMs(), 5 * 60 * 60 * 1000)
   freeLimit.setElapsedSec(12)
   assert.equal(page._timerState.elapsedSec, 12)
 
@@ -276,6 +277,53 @@ test('session control adapters preserve terminal and timer behavior ports', () =
   pauseSync.setPendingPomodoroSync('complete', 1, 2)
   pauseSync.retryPendingPomodoroSync()
   assert.deepEqual(calls.slice(-2).map(call => call[0]), ['setPending', 'retryPending'])
+})
+
+test('free timer ticks use the real limit adapter below and at the five-hour cap', () => {
+  const { page, calls } = recordingPage()
+  page.data.isFreeTimer = true
+  const limit = createFreeTimerLimitController(
+    buildFreeTimerLimitPageCapabilities(page, { api: fakeApi(calls) })
+  )
+  page._checkFreeTimerLimitAndAutoEnd = () => limit.check()
+  const timer = buildFreeTimerPageCapabilities(page, {})
+
+  for (const elapsedMs of [1000, 5 * 60 * 60 * 1000 - 1]) {
+    page._getEffectiveFreeElapsedMs = () => elapsedMs
+    assert.equal(timer.shouldFinalize(), false)
+  }
+  assert.equal(calls.length, 0)
+
+  page._getEffectiveFreeElapsedMs = () => 5 * 60 * 60 * 1000
+  assert.equal(timer.shouldFinalize(), true)
+  assert.deepEqual(calls, [['autoFinishFree']])
+})
+
+test('free timer auto finish uses the real adapter to cap display and complete', async t => {
+  const { page, calls } = recordingPage()
+  const previousWx = global.wx
+  global.wx = { showToast: toast => calls.push(['toast', toast]) }
+  t.after(() => {
+    if (previousWx === undefined) delete global.wx
+    else global.wx = previousWx
+  })
+  page._completePomodoroWithRetry = async (...args) => {
+    calls.push(['complete', ...args])
+    return true
+  }
+  page._consumePomodoroTerminalConflict = () => null
+  const limit = createFreeTimerLimitController(
+    buildFreeTimerLimitPageCapabilities(page, { api: { now: () => 12345 } })
+  )
+
+  await limit.autoFinish()
+
+  assert.equal(page._timerState.elapsedSec, 18000)
+  assert.ok(calls.some(call => call[0] === 'setData' && call[1].freeDisplayTime === '05:00:00'))
+  assert.deepEqual(calls.filter(call => call[0] === 'complete'), [['complete', 99, 12345]])
+  assert.equal(calls.filter(call => call[0] === 'resetIdle').length, 1)
+  assert.equal(calls.filter(call => call[0] === 'loadStats').length, 1)
+  assert.equal(page._freeTimerFinalizing, false)
 })
 
 test('confirm adapters route API through deps and preserve page snapshots', () => {

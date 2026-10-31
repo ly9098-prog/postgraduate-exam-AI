@@ -170,7 +170,7 @@ function buildFreeTimerLimitPageCapabilities(page, deps) {
     isFreeTimer: () => page.data.isFreeTimer,
     isPaused: () => page.data.isPaused,
     getEffectiveFreeElapsedMs: () => page._getEffectiveFreeElapsedMs(),
-    maxMs: FREE_TIMER_MAX_MS,
+    maxMs: () => FREE_TIMER_MAX_MS,
     clearFreeTimerInterval: () => page._clearFreeTimerInterval(),
     formatElapsedSec,
     setElapsedSec: value => { page._timerState.elapsedSec = value },

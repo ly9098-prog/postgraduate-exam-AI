@@ -252,7 +252,7 @@ _practiceSubjectLoadController() {
     this._practiceSubjectLoadControllerInstance =
       createPracticeSubjectLoadPageController(this, {
         api,
-        filterSubjectTree,
+        filterSubjectTree: filter408SubjectTree,
         normalizeSubjectTree,
         wx,
       })

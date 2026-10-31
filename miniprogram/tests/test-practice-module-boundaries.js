@@ -24,6 +24,7 @@ test('page checks actual direct declarations and cannot be satisfied by a nested
 test('page detects dependency, state, return and async signature drift', () => {
   for (const [oldText, newText] of [
     ['getPlatform: () => wx', 'getPlatform: () => ({})'],
+    ['filterSubjectTree: filter408SubjectTree', 'filterSubjectTree'],
     ['_pageAlive: false', '_pageAlive: true'],
     ['return exitPage.', 'exitPage.'],
     ['async onReady()', 'onReady()'],

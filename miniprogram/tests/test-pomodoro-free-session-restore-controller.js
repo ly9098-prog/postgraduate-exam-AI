@@ -9,6 +9,10 @@ const {
   resolveRestoredSubject,
 } = require('../pages/pomodoro/utils/session-restore')
 const { formatElapsedSec } = require('../pages/pomodoro/utils/timer-math')
+const { createFreeTimerLimitController } = require('../pages/pomodoro/utils/free-timer-limit-controller')
+const {
+  buildFreeTimerLimitPageCapabilities,
+} = require('../pages/pomodoro/utils/pomodoro-session-control-page-adapter')
 
 const MAX_MS = 5 * 60 * 60 * 1000
 
@@ -134,6 +138,26 @@ test('restores a running free session and restarts its interval', () => {
   assert.equal(calls.intervals, 1)
   assert.equal(calls.limits, 1)
   assert.equal(calls.now, 1)
+})
+
+test('running restoration checks the cap through the real limit adapter and controller', () => {
+  const { controller, page, calls } = createHarness()
+  page._getEffectiveFreeElapsedMs = () => 59000
+  const limit = createFreeTimerLimitController(
+    buildFreeTimerLimitPageCapabilities(page, { api: { now: () => 60000 } })
+  )
+  page._checkFreeTimerLimitAndAutoEnd = () => limit.check()
+
+  assert.equal(controller.restore({
+    id: 7,
+    preset: 'free',
+    start_time: 1000,
+    total_paused_sec: 0,
+    subject_id: 4,
+  }), true)
+  assert.equal(calls.intervals, 1)
+  assert.equal(page._timerState.elapsedSec, 59)
+  assert.equal(page.data.freeDisplayTime, '00:00:59')
 })
 
 test('restores a paused free session without restarting the interval', () => {
