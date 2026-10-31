@@ -5,6 +5,7 @@ import os
 import uuid
 
 import pytest
+import pytest_asyncio
 
 asyncpg = pytest.importorskip("asyncpg")
 POSTGRES_URL = os.getenv("POMODORO_TEST_POSTGRES_URL", "")
@@ -31,7 +32,7 @@ import app.models  # noqa: F401,E402
 from app.services import pomodoro_service  # noqa: E402
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def pg_schema():
     """Isolated schema containing the real columns/invariants used by the service."""
     schema = "pomo_concurrency_" + uuid.uuid4().hex[:12]
@@ -93,6 +94,18 @@ async def pg_schema():
                 CHECK (ended_at IS NULL OR ended_at > started_at)
         );
 
+        CREATE TABLE "{schema}".pomodoro_subject_allocations (
+            id BIGSERIAL PRIMARY KEY,
+            session_id BIGINT NOT NULL REFERENCES "{schema}".pomodoro_sessions(id)
+                ON DELETE CASCADE,
+            subject_id BIGINT REFERENCES "{schema}".subjects(id) ON DELETE SET NULL,
+            weight_basis_points INTEGER NOT NULL CHECK (weight_basis_points > 0),
+            subject_code_snapshot VARCHAR(32) NOT NULL CHECK (subject_code_snapshot <> ''),
+            subject_name_snapshot VARCHAR(64) NOT NULL CHECK (subject_name_snapshot <> ''),
+            UNIQUE (session_id, subject_id),
+            UNIQUE (session_id, subject_code_snapshot)
+        );
+
         CREATE INDEX ix_pomodoro_sessions_user_status_start
             ON "{schema}".pomodoro_sessions(user_id, status, start_time);
         CREATE INDEX ix_pomodoro_sessions_user_status_end
@@ -111,7 +124,10 @@ async def pg_schema():
 
         INSERT INTO "{schema}".users(id, openid) VALUES (101, 'pomo-service-user');
         INSERT INTO "{schema}".subjects(id, code, name, level, path, sort_order, is_active)
-            VALUES (201, 'pomo-test-subject', 'Pomodoro Test', 1, '/pomo-test-subject', 0, TRUE);
+            VALUES (200, 'exam408', '408', 1, '200', 0, TRUE);
+        INSERT INTO "{schema}".subjects(
+            id, parent_id, code, name, level, path, sort_order, is_active
+        ) VALUES (201, 200, 'data_structure', 'Data Structure', 2, '200/201', 1, TRUE);
         """
     )
     try:
@@ -127,7 +143,7 @@ async def _connect(schema: str):
     return conn
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def service_sessions(pg_schema):
     """AsyncSession factory wired to the isolated schema for real service calls."""
     engine = create_async_engine(
@@ -225,7 +241,7 @@ async def test_for_update_serializes_pause_then_resume_on_same_session(pg_schema
             assert row["status"] == "running"
             pause_locked.set()
             await allow_pause_commit.wait()
-            started = await c1.fetchval("SELECT clock_timestamp()")
+            started = await c1.fetchval("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
             await c1.execute(
                 "INSERT INTO pomodoro_pause_intervals(session_id, started_at) VALUES($1, $2)",
                 session_id,
@@ -259,7 +275,7 @@ async def test_for_update_serializes_pause_then_resume_on_same_session(pg_schema
                 session_id,
             )
             assert open_pause is not None
-            ended = await c2.fetchval("SELECT clock_timestamp()")
+            ended = await c2.fetchval("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
             await c2.execute(
                 "UPDATE pomodoro_pause_intervals SET ended_at=$2 WHERE id=$1",
                 open_pause["id"],
