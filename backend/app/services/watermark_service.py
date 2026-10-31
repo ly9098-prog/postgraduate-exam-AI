@@ -1,5 +1,6 @@
 """水印规则服务 — 加载、缓存和匹配水印规则。"""
 
+import logging
 import re
 import time
 
@@ -11,12 +12,68 @@ from app.core.admin_security import AdminPrincipal
 from app.models.watermark_rule import WatermarkRule
 from app.services.admin_audit_service import write_admin_audit
 
+logger = logging.getLogger(__name__)
+
 _cache: dict[str, list[re.Pattern]] = {}
 _cache_ts: float = 0.0
 _CACHE_TTL = 300  # 5 minutes
 
 _MAX_PATTERN_LENGTH = 200
-_NESTED_QUANTIFIER_RE = re.compile(r"[+*}]\)?[+*?{]")
+_MAX_MATCH_CHARS = 1000
+_ALLOWED_RULE_TYPES = frozenset({"regex", "exact"})
+
+try:  # Python 3.11+
+    from re import _constants as _sre_constants
+    from re import _parser as _sre_parse
+except ImportError:  # pragma: no cover
+    import sre_constants as _sre_constants
+    import sre_parse as _sre_parse
+
+_REPEAT_OPS = {
+    _sre_constants.MAX_REPEAT,
+    _sre_constants.MIN_REPEAT,
+    getattr(_sre_constants, "POSSESSIVE_REPEAT", _sre_constants.MAX_REPEAT),
+}
+
+
+def _child_subpatterns(op, av):
+    if op in _REPEAT_OPS:
+        yield av[2]
+    elif op == _sre_constants.SUBPATTERN:
+        yield av[3]
+    elif op == _sre_constants.BRANCH:
+        yield from av[1]
+    elif op in (_sre_constants.ASSERT, _sre_constants.ASSERT_NOT):
+        yield av[1]
+    elif op == _sre_constants.GROUPREF_EXISTS:
+        yield av[1]
+        if av[2] is not None:
+            yield av[2]
+    elif op == getattr(_sre_constants, "ATOMIC_GROUP", None):
+        yield av
+
+
+def _has_backtracking_hazard(pattern) -> bool:
+    """True if the subtree has alternation or a variable-count repeat."""
+    for op, av in pattern:
+        if op == _sre_constants.BRANCH:
+            return True
+        if op in _REPEAT_OPS and av[0] != av[1]:
+            return True
+        for child in _child_subpatterns(op, av):
+            if _has_backtracking_hazard(child):
+                return True
+    return False
+
+
+def _is_catastrophic(pattern) -> bool:
+    for op, av in pattern:
+        if op in _REPEAT_OPS and av[1] > 1 and _has_backtracking_hazard(av[2]):
+            return True
+        for child in _child_subpatterns(op, av):
+            if _is_catastrophic(child):
+                return True
+    return False
 
 
 async def load_rules(db: AsyncSession) -> list[re.Pattern]:
@@ -37,8 +94,10 @@ async def load_rules(db: AsyncSession) -> list[re.Pattern]:
             if rule.rule_type == "exact":
                 compiled.append(re.compile(r"^" + re.escape(rule.pattern) + r"$"))
             else:
+                _validate_pattern(rule.pattern)
                 compiled.append(re.compile(rule.pattern))
-        except re.error:
+        except (re.error, ValueError):
+            logger.warning("Skipping unsafe watermark rule id=%s", getattr(rule, "id", None))
             continue
 
     _cache["rules"] = compiled
@@ -55,7 +114,7 @@ def invalidate_cache() -> None:
 
 def match_watermark(text: str, patterns: list[re.Pattern]) -> bool:
     """判断文本是否匹配任一水印规则。"""
-    stripped = text.strip()
+    stripped = text.strip()[:_MAX_MATCH_CHARS]
     if not stripped:
         return False
     for pat in patterns:
@@ -85,12 +144,18 @@ def _validate_pattern(pattern: str) -> None:
     """校验正则模式：语法 + 长度 + ReDoS 风险。"""
     if len(pattern) > _MAX_PATTERN_LENGTH:
         raise ValueError(f"正则表达式过长（最大 {_MAX_PATTERN_LENGTH} 字符）")
-    if _NESTED_QUANTIFIER_RE.search(pattern):
-        raise ValueError("正则表达式含嵌套量词，存在 ReDoS 风险")
     try:
+        parsed = _sre_parse.parse(pattern)
         re.compile(pattern)
-    except re.error as e:
+    except (re.error, RecursionError, OverflowError) as e:
         raise ValueError(f"无效的正则表达式: {e}")
+    if _is_catastrophic(parsed):
+        raise ValueError("正则表达式含可回溯嵌套结构，存在 ReDoS 风险")
+
+
+def _validate_rule_type(rule_type: str) -> None:
+    if rule_type not in _ALLOWED_RULE_TYPES:
+        raise ValueError("rule_type 必须为 regex 或 exact")
 
 
 async def create_rule(
@@ -102,7 +167,8 @@ async def create_rule(
     request: Request | None = None,
 ) -> dict:
     """创建新的水印规则。"""
-    if rule_type == "regex":
+    _validate_rule_type(rule_type)
+    if rule_type != "exact":
         _validate_pattern(pattern)
 
     rule = WatermarkRule(
@@ -152,9 +218,13 @@ async def update_rule(
         "is_active": rule.is_active,
     }
 
+    if rule_type is not None:
+        _validate_rule_type(rule_type)
+    effective_type = rule_type or rule.rule_type
+    effective_pattern = pattern if pattern is not None else rule.pattern
+    if effective_type != "exact" and (pattern is not None or rule_type is not None):
+        _validate_pattern(effective_pattern)
     if pattern is not None:
-        if (rule_type or rule.rule_type) == "regex":
-            _validate_pattern(pattern)
         rule.pattern = pattern
     if rule_type is not None:
         rule.rule_type = rule_type
