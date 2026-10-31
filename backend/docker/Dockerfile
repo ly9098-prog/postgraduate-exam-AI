@@ -4,7 +4,7 @@ FROM python:3.11-slim AS builder
 WORKDIR /app
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
+    PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/" && \
     $PIPOPT -r requirements.txt
 
 # Local development keeps the optional OCR runtime available by default. Cloud
@@ -13,7 +13,7 @@ ARG INSTALL_OCR=true
 COPY requirements-ocr.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ "$INSTALL_OCR" = "true" ]; then \
-      PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
+      PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/" && \
       $PIPOPT -r requirements-ocr.txt && \
       $PIPOPT --no-deps paddleocr; \
     else \
