@@ -11,6 +11,7 @@
 
 ## 已完成
 
+- §351：生产只读精确检查确认17张表为空，但全部仍属于当前ORM/服务/路由/worker schema；无安全可删候选，未执行DROP或修改数据。可见最新PG备份时间为2026-10-16、Redis为2026-10-22，未为无候选删表创建新备份。无backend/app或Admin前端新代码，因此没有服务器代码同步。
 - §350：重核ENV-01前置：WeChat MCP可用，账号有3个AppID（2个名称有测试标记），当前验收项目匹配未标记为测试的应用；测试号列表0，本轮未查/设ticket，也未触发provider wx.login。已有合成用户身份已按§349删除。ENV-02源码哈希与隔离API/浏览器报告匹配；ENV-03迁移8/PG-Redis22/番茄钟PG并发6、ENV-05 fencing29/Redis恢复6/队列硬化23/worker恢复2的存档JUnit报告全零失败/跳过，PG/Redis恢复与worker投影证据PASS。只是复核且未重跑；阶段仍是ENV-02/03/05 PASS-ISOLATED，ENV-01 PARTIAL，最终门禁未全关。规划与结构化审计记录在§14和 `acceptance-owned-identities-2026-11-01.json`。
 - §349：新合成副本创建3个管理账号、2个自定义角色、2个开发学习用户；真实API验证RBAC、同会话授权/撤权、跨JWT域拒绝及停用后旧令牌/新登录401。微信模拟器完成2题1对1错、错题详情/掌握/取消，另一用户读写该错题404；自由计时completed68秒/暂停14秒，退出后两域学习令牌均失效。旧运行时请求失败在restore mock+重编译后排除，仅计成功链路；本次直接调用endSession，不新增结束确认声明。清理15表34条新增行，79表逐行/计数与基线相同，旧副本SHA不变；恢复原11项模拟器存储、删除本轮凭据、停API。另核验DevTools测试号账户列表为0，故真实身份交换仍待验。结果 `acceptance-owned-identities-2026-11-01.json`，记录提交 `7f6cd4cb`、账号可用性记录 `b643465f`；无业务源码变更或生产操作。
 - §348：用户授权本地提交并继续修复准入缺口；旧统计脚本改跑当前职责行为门禁，外层31/内部206项全通过、0跳过，新增真实提交适配器联通与进程内变异校验。独立审查唯一回滚疑点经真实依赖/flush后提交故障验证关闭（1项通过），未改业务源；4个显式范围提交完成（小程序239dc7f9、Admin9087adf3、PG夹具432d9125、验收记录1315986c）。达到继续隔离验收的代码标准；环境条件继续见阶段表。结果 `docs/architecture/refactor-results/acceptance-commit-readiness-2026-11-01.json`。
@@ -56,5 +57,5 @@
 
 - 优先解决ENV-01专用身份/HTTPS/真机与ENV-04受控外部能力，再进入ENV-06。ENV-02已发现缺陷已获授权修复，生产最后处理，先核查DEPLOY_PLAN与实际配置、窗口、有效备份/回滚制品；本轮隔离恢复不是生产备份。
 - 生产update-all不含worker；新迁移先build后用新镜像run；nginx文件bind mount换inode需force-recreate。匹配生产记录只用sync_uuid，不按本地numeric id修改生产。
-- 保留已有文档、删除和未跟踪内容；`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§350后当前卷46节、四卷共344条记录；ENV阶段不变。代码自审及独立审查完成、零未解决发现；本次仅证据复核和文档更新，不重跑套件或重复独立代码审查。本轮提交数量以最终git日志为准，未推送/部署或写系统记忆。任务交接分卷的既有重组保持未暂存。
+- 保留已有文档、删除和未跟踪内容；`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§351后当前卷47节、四卷共345条记录；ENV阶段不变。生产只读空表检查没有安全删除候选，无生产数据/schema变更；后端/Admin无新代码，不同步服务器。本次不重跑测试套件。任务交接分卷的既有重组已按显式路径提交，未推送或写系统记忆。
 - 代码图谱通过本地stdio可用，project `home-lmh-projects-postgraduate-ai`，generation `2026-10-31T09:32:18Z`，68045节点/236032边；相关刷新/队列/import/client路径已核对，无已记录缺口且metadata_match，非完整性证明。Graphify缺graph.json，显式文档读取作为回退。

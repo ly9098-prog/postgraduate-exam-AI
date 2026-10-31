@@ -495,3 +495,11 @@ ENV-02转PASS-ISOLATED；ENV-01 PARTIAL、ENV-03/05保留PASS-ISOLATED、ENV-04/
 本轮按当前HEAD核验ENV-02修复源哈希与既有隔离API/浏览器证据一致。归档测试XML：ENV-03 fresh migration 8项、PG/Redis集成22项、Pomodoro PG concurrency 6项全零失败/错误/跳过；current=head=`v19_pomodoro_subject_allocations`，既有PG/Redis刷新轮换、缓存崩溃恢复和新库备份恢复报告PASS。ENV-05 fencing29、Redis故障恢复6、队列硬化23、worker进程恢复2项也全零失败/错误/跳过；双worker+scheduler投影和Redis RDB恢复报告PASS。上述阶段测试/运行证据日期为2026-10-31；此批只做hash/JSON/XML审计，没有重跑服务、浏览器或测试。
 
 按当前规划，ENV-02/03/05各自的限定隔离技术验收已完成，状态仍为PASS-ISOLATED；ENV-01只有本地开发身份/模拟器部分通过。完整最终环境验收依赖按序先关闭ENV-01，且ENV-04/06仍缺受控外部能力、生产窗口和有效备份/回滚制品。未触及生产，无身份/角色待清理，本轮无源码变更。详细更新见`docs/project/ENV_ACCEPTANCE_PLAN_2026-10-31.md`§14及`docs/architecture/refactor-results/acceptance-owned-identities-2026-11-01.json`。专项接口/部署实现未变，无需改专项文档。四卷容量100/98/100/46，共344条记录；验收文档已显式路径提交`307a8df9`，本地共7个提交且未推送；既有重组仍未暂存、未写系统记忆。
+
+## 三百五十一、生产空表只读盘点（2026-11-01）
+
+用户要求提交任务文档，并清理生产空表且绝不删除非空表；随后补充若有后端/Admin新代码则同步服务器。先提交任务分卷文档`c3e95160`。按`docs/project/DEPLOY_PLAN.md`连接文档所指生产PostgreSQL，只读确认库`postgraduate`、迁移头`v19_pomodoro_subject_allocations`。以逐表`EXISTS(SELECT 1 ... LIMIT 1)`精确核验public表，发现17表在各自查询时为空；没有查询业务数据行。
+
+逐一对照当前代码，17表均由现行SQLAlchemy ORM模型注册，并用于当前服务/路由/worker或其外键链路：Admin AI设置/用量、AI反馈、导出快照、公式预览/导入、可恢复导入流水线、OCR任务/worker凭据、推荐实验分桶、顺序刷题预约、大纲知识点映射、标签、用户推荐偏好及水印规则。空数据不代表schema废弃；手工DROP会造成生产schema漂移并让现行功能报错，故无安全可删除候选。可见PG dump最新为2026-10-16，Redis RDB最新为2026-10-22；没有当前回滚点，本轮未触发备份脚本或DDL，生产数据和schema均未改变。
+
+检查当前工作区无`backend/app/`或`admin-frontend/`代码变更；`backend/service_compatibility.py`仍为排除的无关未跟踪诊断文本，不上传。未执行rsync。后续若确需删除空表，必须先退役所有代码消费者并通过Alembic迁移表达schema删除，核实当前完整备份/恢复路径与操作窗口，删除前在同一事务持锁并复查空值；本轮只做只读盘点，不代表生产环境验收完成。四卷容量100/98/100/47，共345条记录。
