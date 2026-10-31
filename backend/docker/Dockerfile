@@ -2,10 +2,13 @@
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
-COPY requirements.txt .
+# requirements.lock is resolved for Python 3.11 / linux from requirements.txt
+# (uv pip compile requirements.txt --python-version 3.11 --python-platform linux
+#  --generate-hashes -o requirements.lock); pip refuses any file whose hash differs.
+COPY requirements.txt requirements.lock ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/" && \
-    $PIPOPT -r requirements.txt
+    $PIPOPT --require-hashes --no-deps -r requirements.lock
 
 # Local development keeps the optional OCR runtime available by default. Cloud
 # production sets INSTALL_OCR=false because OCR is provided by the remote API.

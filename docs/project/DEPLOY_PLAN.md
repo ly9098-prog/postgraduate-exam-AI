@@ -292,7 +292,7 @@ RUN pip install --no-cache-dir --user \
     -r requirements.txt
 ```
 
-2026-10-31 安全审计修复：已移除 `--trusted-host mirrors.aliyun.com`。该参数会让 pip 对该主机跳过 TLS 证书校验（即使地址是 `https://`），镜像源本身证书有效，无需该参数；`backend/tests/test_deploy_dockerfile_pip_tls.py` 防止回退。依赖仍未做哈希锁定（`requirements.txt` 有部分未固定版本，生成 `--require-hashes` 锁文件需联网解析），属遗留风险。
+2026-10-31 安全审计修复：已移除 `--trusted-host mirrors.aliyun.com`。该参数会让 pip 对该主机跳过 TLS 证书校验（即使地址是 `https://`），镜像源本身证书有效，无需该参数；`backend/tests/test_deploy_dockerfile_pip_tls.py` 防止回退。后端镜像（`backend/docker/Dockerfile`）现从 `backend/requirements.lock` 以 `pip install --require-hashes --no-deps` 安装，锁文件由 `uv pip compile requirements.txt --python-version 3.11 --python-platform linux --generate-hashes -o requirements.lock` 生成（版本与 2026-10-31 生产镜像一致）；修改 `requirements.txt` 后必须重新生成，`backend/tests/test_deploy_requirements_lock.py` 检查覆盖。可选的 `requirements-ocr.txt`（仅 `INSTALL_OCR=true` 的本地镜像）和 `deploy/Dockerfile.prod`、`backend/Dockerfile`（开发用）仍未锁定。
 
 服务器带宽有限（~20KB/s），不使用国内源时运行时依赖下载可能需要较长时间。阿里云源可缩短后端镜像构建时间。
 

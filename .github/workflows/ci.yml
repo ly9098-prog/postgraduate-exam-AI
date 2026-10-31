@@ -623,6 +623,7 @@ jobs:
             tests/test_deploy_nginx_forwarded_for.py \
             tests/test_services/test_formula_graph_expr_parser_magnitude_guard.py \
             tests/test_deploy_dockerfile_pip_tls.py \
+            tests/test_deploy_requirements_lock.py \
             tests/test_services/test_safe_httpx_pinned_backend.py \
             tests/test_features/test_ocr_vl_result_url_global_only.py \
             tests/test_services/test_account_erasure_service.py \
