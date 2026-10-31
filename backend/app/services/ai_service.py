@@ -31,6 +31,8 @@ from app.ai.prompts import (
     build_study_advice,
     build_visual_evidence_probe,
 )
+from app.services.ai.analysis_responses import quota_exceeded_response
+from app.services.ai_learning_service import check_token_limit
 from app.services.ai.analysis_content import (
     _ANALYSIS_WRAPPER_KEYS,
     _canonical_answer_check_list,  # noqa: F401 — historical public import
@@ -139,6 +141,11 @@ def _analysis_timeout_sec(effective_force: bool) -> int:
         if effective_force
         else ERROR_ANALYSIS_TIMEOUT_SECONDS
     )
+
+
+# 与 ai_learning_service 的同类入口一致：先按预估额度做准入，实际用量事后记入 AiChat。
+_ERROR_ANALYSIS_QUOTA_ESTIMATE = 900
+_ADVICE_QUOTA_ESTIMATE = 1000
 
 
 async def _analyze_error_with_lease(
@@ -613,6 +620,9 @@ async def analyze_error(
     if preparation.response is not None:
         return preparation.response
 
+    if not await check_token_limit(db, user_id, _ERROR_ANALYSIS_QUOTA_ESTIMATE):
+        return quota_exceeded_response()
+
     return await _analyze_error_with_lease(db, user_id, preparation)
 
 
@@ -661,6 +671,9 @@ async def generate_advice(
     runtime = await resolve_llm_runtime_config(db, feature="analysis")
 
     if runtime is None:
+        return advice_fallback_response(get_fallback_advice())
+
+    if not await check_token_limit(db, user_id, _ADVICE_QUOTA_ESTIMATE):
         return advice_fallback_response(get_fallback_advice())
 
     # Collect user's wrong question stats

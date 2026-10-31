@@ -77,7 +77,7 @@
 
 ### 已实现但边界需注意
 
-- **token 限额只覆盖 AI 学习引擎**：`ai_learning_service.py` 已检查日/月额度；基础 `ai_service.py` 的 `error-analysis` / `study-advice` 仍未做额度检查。
+- **token 限额覆盖所有计费入口（2026-10-31 起）**：`ai_learning_service.py` 与基础 `ai_service.py` 的 `error-analysis`（含 prewarm/recover，缓存命中不计）/ `study-advice` 均在调用模型前复用 `check_token_limit` 准入；超限时 error-analysis 返回 `error_code=ai_quota_exceeded`、`retryable=false` 的降级结果（prewarm 不重试），study-advice 返回降级建议。
 - **summary Prompt 仍未接入基础路由**：`prompts.py` 中存在 `build_summary`，当前无 `/ai/summary` 路由。
 - **基础 AI JSON 解析仍较弱**：`ai_service.py` 直接 `json.loads`，失败后包裹原始文本；AI 学习引擎已有 code fence / JSON 对象提取兜底。
 
@@ -99,9 +99,6 @@
 
 ### Phase 1 — 基础 AI 服务补齐（1-2 天）
 
-- **复用 AI 学习引擎限额检查**
-  - 将 `ai_service.py` 的 `error-analysis` / `study-advice` 接入日/月 token 限额
-  - 超限返回降级而非报错
 - **JSON 解析增强**
   - 复用 `_parse_json_response` 思路，从 markdown 代码块提取 JSON
   - 兜底用正则提取 `{...}` 结构

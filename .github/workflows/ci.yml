@@ -621,6 +621,7 @@ jobs:
             tests/test_services/test_token_user_service_compatibility.py \
             tests/test_services/test_avatar_decompression_guard.py \
             tests/test_deploy_nginx_forwarded_for.py \
+            tests/test_services/test_ai_quota_admission.py \
             tests/test_services/test_watermark_redos_guard.py \
             tests/test_api/test_sync_import_route_guard.py \
             tests/test_services/test_sync_lifecycle_guard.py \

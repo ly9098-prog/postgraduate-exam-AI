@@ -24,6 +24,22 @@ def generation_in_progress_response() -> dict[str, Any]:
     }
 
 
+def quota_exceeded_response() -> dict[str, Any]:
+    return {
+        "content": get_fallback_analysis(),
+        "from_cache": False,
+        "from_fallback": True,
+        "tokens_used": 0,
+        "model": "fallback",
+        "duration_ms": 0,
+        "force_regenerated": False,
+        "cache_preserved": False,
+        "visual_input_count": 0,
+        "error_code": "ai_quota_exceeded",
+        "retryable": False,
+    }
+
+
 def vision_input_missing_response(*, visual_input_count: int = 0) -> dict[str, Any]:
     return {
         "content": get_fallback_analysis(),
