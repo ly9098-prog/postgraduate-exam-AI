@@ -1,6 +1,6 @@
 # 审计日志规范（Audit Log）
 
-> 版本：v2.5（action 清单按代码写入值补全） | 状态：已同步 | 更新：2026-10-23
+> 版本：v2.6（补齐登录成功与单题导入审核审计） | 状态：已同步 | 更新：2026-11-01
 > 修订自审计报告 C5（分级写入策略）、I7（分区与归档）
 > **取代旧文档 OPERATION_LOG.md**
 
@@ -30,6 +30,8 @@
 | `low` | 登录 / 登出 / token 刷新 | Phase 1 同步或轻量 fire-and-forget（按接口确认） | 仅 error log |
 
 健康检查接口不写 audit_log，仅通过 `X-Request-Id` 响应头保留排障入口。
+
+2026-11-01已实现：Admin登录成功以 `system.login`、`low` 写入，与 `last_login_at/last_login_ip` 同事务提交；审计持久化失败时登录更新回滚，不返回登录成功响应或刷新cookie。该路径不采用fire-and-forget或仅记录error log。失败登录不写成功审计；本次未增加失败登录、登出或刷新动作的审计。审计只记录操作者、资源与请求元信息，不记录口令、access token或refresh token。
 
 > 本节 2.2-2.4 的 TypeScript/NestJS 代码块是历史设计示例，仅用于说明审计事务不变式，不能直接复制执行。当前实现使用 `backend/app/services/admin_audit_service.py`、SQLAlchemy `AsyncSession` 与 FastAPI Admin services；实际 action 名称和 severity 以代码调用为准。
 
@@ -141,9 +143,9 @@ this.prisma.auditLog.create({ data: { action: 'system.login', severity: 'low', .
 
 ```
 # 认证（severity: low）
-system.login
-system.logout
-system.token_refresh
+system.login              # 已实现：登录成功；resource_type=admin_user
+system.logout             # 命名保留；本次未增加写入
+system.token_refresh      # 命名保留；本次未增加写入
 
 # 小程序用户管理
 app_user.view             # important（敏感查看）
@@ -180,6 +182,8 @@ question.rollback         # critical（回滚到指定版本并追加新版本�
 question.backfill_embeddings # normal（批量回填 embedding 向量）
 
 > 2026-10-24 同步：首次导入审核走导入管理接口（import 级，见 REVIEW_FLOW.md §3），审核动作记录在 `question_imports.status / reviewed_by / reviewed_at`，不写 `question.*` 审计动作。已入库题目重审/回滚写上表 `question.*` 动作；编辑统一写 `question.update`（含图片/选项操作，复用 update_admin_question 写入），旧文档示例 `question.edit` 已废弃。
+>
+> 2026-11-01补充：单题首次审核通过接口新增 `import.approve`（`important`，resource_type=`import`，resource_id为导入记录ID），detail仅含 `batch_id/question_id/status`，与审核/发布同事务提交。重复审核、发布失败不写成功审计，审计持久化失败时审核更新一并回滚。本次未扩展批次通过、拒绝或公式审核的审计写入，不能由单题证据推断全部审核入口已覆盖。
 >
 > 2026-10-23 同步：本清单按代码实际写入值逐项核对补全——科目/后台管理员/小程序用户的 `.edit` 旧名更正为 `.update`（代码无 `subject.edit` / `admin_user.edit` / `app_user.edit`）；补齐 `import.batch_answer_image_fill`、`knowledge.create_edge` / `knowledge.infer_edges`、`syllabus.*`、`vector_config.update`、`admin_user.change_password` / `admin_user.reset_password` / `admin_user.force_logout`、`app_user.update` / `app_user.bind_admin` / `app_user.unbind_admin`。「具体 action 以实现写入值为准」的原则适用于全部章节；severity 缺省为 `normal`（`write_admin_audit` 默认值）。
 

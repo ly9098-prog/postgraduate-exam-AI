@@ -25,6 +25,7 @@ client = TestClient(app)
 class _FakeDb:
     def __init__(self):
         self.commit = AsyncMock()
+        self.add = MagicMock()
 
 
 async def _override_db():

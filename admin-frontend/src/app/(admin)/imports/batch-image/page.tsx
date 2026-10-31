@@ -154,6 +154,7 @@ export default function BatchImagePage() {
 
     const abortCtrl = new AbortController();
     abortRef.current = abortCtrl;
+    const isCurrentRun = () => abortRef.current === abortCtrl && !abortCtrl.signal.aborted;
 
     try {
       // The backend endpoint is already a true batch API.  Submit all images in
@@ -178,6 +179,7 @@ export default function BatchImagePage() {
         `/imports/batch-image/upload${qs}`,
         { method: "POST", body: formData, signal: abortCtrl.signal },
       );
+      if (!isCurrentRun()) return;
 
       setQueuePhase("polling");
       setMessage({
@@ -190,16 +192,17 @@ export default function BatchImagePage() {
 
       let terminal = false;
       const syncJobStatus = async () => {
-        if (terminal || abortCtrl.signal.aborted) return;
+        if (terminal || !isCurrentRun()) return;
         try {
           const status = await apiRequest<BatchImageJobStatusResponse>(
             `/imports/batch-image/${result.job_id}`,
             { signal: abortCtrl.signal },
           );
+          if (!isCurrentRun()) return;
 
           const itemsBySeq = new Map(status.items.map((item) => [item.seq, item]));
           setImageTasks((prev) =>
-            prev.map((task) => {
+            !isCurrentRun() ? prev : prev.map((task) => {
               const item = itemsBySeq.get(task.seq);
               if (!item) return { ...task, jobStatus: status };
               const nextStatus: ImageTask["status"] =
@@ -240,11 +243,12 @@ export default function BatchImagePage() {
         getApiAccessToken(),
         {
           onTrace: (event) => {
+            if (terminal || !isCurrentRun()) return;
             if (seenSeqs.has(event.seq)) return;
             seenSeqs.add(event.seq);
             if (!event.item_seq) return;
             setImageTasks((prev) =>
-              prev.map((task) =>
+              !isCurrentRun() ? prev : prev.map((task) =>
                 task.seq === event.item_seq
                   ? {
                       ...task,
@@ -264,12 +268,12 @@ export default function BatchImagePage() {
       // Safety watchdog: backend DB is the source of truth.  This prevents a
       // Redis/SSE disconnect from leaving the page forever at “识别中 / 0%”.
       await syncJobStatus();
-      if (!terminal) {
+      if (!terminal && isCurrentRun()) {
         const timer = setInterval(() => { void syncJobStatus(); }, 2500);
         pollTimersRef.current.set(result.job_id, timer);
       }
     } catch (err: unknown) {
-      if (abortCtrl.signal.aborted) return;
+      if (!isCurrentRun()) return;
       const msg = err instanceof Error ? err.message : String(err);
       setImageTasks((prev) =>
         prev.map((task) => ({
@@ -631,9 +635,10 @@ export default function BatchImagePage() {
                 </Button>
               ) : (
                 <div className="flex gap-2">
-                  {queuePhase === "polling" ? (
-                    <Button onClick={resetQueue} variant="secondary" className="h-11 w-11 p-0 import-interactive" aria-label="停止并重置任务" title="停止并重置">
+                  {queuePhase === "uploading" || queuePhase === "polling" ? (
+                    <Button onClick={resetQueue} variant="secondary" className={cn("h-11 shrink-0 import-interactive", queuePhase === "polling" && "w-11 p-0")} aria-label={queuePhase === "uploading" ? "取消上传" : "停止并重置任务"} title={queuePhase === "uploading" ? "取消上传并重置" : "停止并重置"}>
                       <X className="h-4 w-4" aria-hidden="true" />
+                      {queuePhase === "uploading" ? "取消上传" : null}
                     </Button>
                   ) : null}
                   <Button disabled={files.length === 0 || queuePhase !== "idle"} onClick={() => { if (queuePhase === "idle") startQueue(); }} className="h-11 flex-1 import-interactive group">

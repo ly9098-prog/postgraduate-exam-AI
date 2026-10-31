@@ -274,7 +274,7 @@ describe("batch image page lifecycle", () => {
     });
   });
 
-  it("characterizes a post-cancel transport response crossing a reset", async () => {
+  it("ignores a post-cancel status response after a new queue starts", async () => {
     let release!: (value: ReturnType<typeof job>) => void;
     const oldStatus = new Promise<ReturnType<typeof job>>((resolve) => { release = resolve; });
     let uploads = 0;
@@ -293,13 +293,60 @@ describe("batch image page lifecycle", () => {
     await ports.callbacks[0]();
     expect(tasks()[0]).toMatchObject({ jobId: "job-2", questionCount: 0 });
 
-    // This port delivers after cancellation; native browser timing remains unverified.
     release(job("job-1", "completed", 99));
     await firstRun;
     expect(tasks()[0]).toMatchObject({
-      jobId: "job-2", status: "succeeded", questionCount: 99,
-      jobStatus: { job_id: "job-1" },
+      jobId: "job-2", status: "processing", questionCount: 0,
+      jobStatus: { job_id: "job-2" },
     });
+  });
+
+  it("exposes upload cancellation and discards an upload response arriving after reset", async () => {
+    let release!: (value: { job_id: string }) => void;
+    ports.request.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    seed({ 0: [new File(["old"], "old.png")] });
+    render(BatchImagePage);
+    const run = ports.callbacks[0]();
+    const tree = render(BatchImagePage);
+    const cancel = click(tree, "取消上传");
+    expect(cancel).toBeTypeOf("function");
+    await cancel!();
+    expect((ports.request.mock.calls[0][1].signal as AbortSignal).aborted).toBe(true);
+    release({ job_id: "cancelled-upload" });
+    await run;
+    expect(ports.states[7]).toBe("idle");
+    expect(tasks()).toEqual([]);
+    expect(ports.streams).toEqual([]);
+    expect(ports.request).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("discards queued trace callbacks and does not recreate a watchdog after reset", async () => {
+    let release!: (value: ReturnType<typeof job>) => void;
+    const oldStatus = new Promise<ReturnType<typeof job>>((resolve) => { release = resolve; });
+    let uploads = 0;
+    ports.request.mockImplementation(async (url: string) => {
+      if (url.startsWith("/imports/batch-image/upload")) return { job_id: `job-${++uploads}` };
+      return url.endsWith("/job-1") ? oldStatus : job("job-2");
+    });
+    seed({ 0: [new File(["old"], "old.png")] });
+    render(BatchImagePage);
+    const firstRun = ports.callbacks[0]();
+    await Promise.resolve();
+    const oldStream = ports.streams[0];
+    await ports.callbacks[1]();
+    seed({ 0: [new File(["new"], "new.png")] });
+    render(BatchImagePage);
+    await ports.callbacks[0]();
+    const requests = ports.request.mock.calls.length;
+    oldStream.events.onTrace({ seq: 99, item_seq: 1 });
+    oldStream.events.onDone();
+    oldStream.events.onError();
+    release(job("job-1", "running", 99));
+    await firstRun;
+    expect(tasks()[0]).toMatchObject({ jobId: "job-2", traceEvents: [], questionCount: 0 });
+    expect(ports.request).toHaveBeenCalledTimes(requests);
+    expect(vi.getTimerCount()).toBe(1);
   });
 });
 

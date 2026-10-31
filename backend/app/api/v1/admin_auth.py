@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import (
     REFRESH_COOKIE_KEY,
+    AdminPrincipal,
     PasswordPolicyError,
     blacklist_admin_token,
     consume_admin_refresh_token,
@@ -25,6 +26,7 @@ from app.schemas.admin_auth import (
     AdminMeResponse,
     AdminTokenResponse,
 )
+from app.services.admin_audit_service import write_admin_audit
 from app.services.admin_auth_service import (
     authenticate_admin,
     build_admin_login_response,
@@ -178,6 +180,15 @@ async def login(
     )
     admin_user.last_login_at = utcnow()
     admin_user.last_login_ip = request.client.host if request.client else None
+    await write_admin_audit(
+        db,
+        AdminPrincipal(admin_user, {}),
+        "system.login",
+        "admin_user",
+        admin_user.id,
+        severity="low",
+        request=request,
+    )
     await db.commit()
     set_refresh_cookie(response, refresh_token, request=request)
     return AdminTokenResponse(

@@ -68,6 +68,7 @@ from app.schemas.admin_imports import (
 from app.schemas.common import paginated_response
 from app.schemas.import_review import PipelineStatusResponse, PipelineUploadResponse
 from app.schemas.question_publish import PublishResponse
+from app.services.admin_audit_service import write_admin_audit
 from app.services.admin_import_service import (
     approve_import_batch,
     approve_import_question,
@@ -590,11 +591,26 @@ async def batch_complete_import_questions_item(
 @router.post("/questions/{import_id}/approve", response_model=AdminImportActionResponse)
 async def approve_import_question_item(
     import_id: int,
+    request: Request,
     current_admin=Depends(require_permissions("import:write")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         item = await approve_import_question(db, import_id, current_admin.id)
+        await write_admin_audit(
+            db,
+            current_admin,
+            "import.approve",
+            "import",
+            import_id,
+            severity="important",
+            detail={
+                "batch_id": item.batch_id,
+                "question_id": item.question_id,
+                "status": item.status,
+            },
+            request=request,
+        )
         await db.commit()
         return AdminImportActionResponse(
             id=item.id, status=item.status, affected_count=1

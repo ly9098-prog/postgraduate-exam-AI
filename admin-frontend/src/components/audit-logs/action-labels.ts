@@ -1,4 +1,5 @@
 export const ACTION_LABELS: Record<string, string> = {
+  "system.login": "管理员登录",
   "question.update": "编辑题目",
   "question.delete": "删除题目",
   "question.batch_delete": "批量删除题目",
@@ -29,6 +30,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "ai_quota.exhausted": "AI额度耗尽",
   "role.update_permissions": "修改角色权限",
   "import.complete": "AI补全导入题",
+  "import.approve": "导入题目审核通过",
   "import.batch_complete": "AI批量补全",
   "import.enrich": "AI富化导入题",
   "watermark_rule.create": "新增水印规则",

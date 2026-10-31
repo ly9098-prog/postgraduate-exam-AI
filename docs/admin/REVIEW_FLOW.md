@@ -1,11 +1,12 @@
 # 题目审核流程设计
 
-> 版本：v2.4（已入库题目重审与版本回滚实现） | 状态：部分实现 | 更新：2026-10-24
+> 版本：v2.5（补齐单题导入审核成功审计） | 状态：部分实现 | 更新：2026-11-01
 > 修订自审计报告 C6：完善 editing/re_pending 状态机；引入 question_versions 快照；权限分级
 > 2026-05-30 变更原因：同步题库 Level 1 完全重复检测；导入阶段标记疑似重复，审核发布阶段按 `subject + question_hash` 拦截。
 > 2026-08-10 变更原因：题目知识点改由 `question_knowledge_points` 关联表保存（`questions.knowledge_points` 列移除）；编辑审计动作统一为 `question.update`。
 > 2026-10-23 变更原因：§6 审核工作台按 `review-query-state.ts` / `page.tsx` 复核改写（过滤条件清单、答案状态筛选、re_pending 页面现状登记；该页面后续已在 v2.4 接入 `/review`）。
 > 2026-10-24 变更原因：实现已入库题目 `re_pending` 写入、单题/批量重审与版本回滚；首次导入审核仍保持在 `/imports`。
+> 2026-11-01 变更原因：单题导入审核通过写 `import.approve`，与审核/发布同事务提交；失败或重复审核不写成功审计。
 
 ---
 
@@ -100,6 +101,8 @@ POST /api/admin/v1/imports/questions/{importId}/reject   # Body(可选): { "reas
 ```
 
 审核通过即发布：`approve_import_question` 将 `question_imports.status` 置为 `approved`，随即调用 `publish_single_question` 写入正式 `questions`（命中完全重复时挂到已发布题目，`status=published` 且 `question_id` 指向正式题；发布失败回滚为 `pending` 留在审核队列）。reject 仅置 `status=rejected` 并记录 `reject_reason`，不写 `questions`。已发布题目（`status=published` / `question_id` 非空）不可重复审核。
+
+2026-11-01：单题通过接口在提交前写 `import.approve` 成功审计（`important`），关联操作者、请求IP/User-Agent及导入ID，detail包含 `batch_id/question_id/status`。审计与审核/发布共用事务；审计写入失败不能保留已成功审核的更新。发布失败、重复审核不追加成功审计。本补充仅覆盖单题通过入口，批次/拒绝的现有行为不由此改变。
 
 ### 3.2 批次审核与发布
 
@@ -252,6 +255,8 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 ## 七、审计日志格式
 
 > 2026-10-24 同步：首次导入审核不写 `question.*` 审计，动作记录在 `question_imports.status / reviewed_by / reviewed_at`；已入库题目重审写 `question.approved` / `question.rejected` / `question.batch_approved` / `question.batch_rejected`。题目编辑统一写 `question.update`。
+>
+> 2026-11-01：单题导入审核通过还会写 `import.approve`，详见§3.1；仍不复用正式题目重审的 `question.*` 动作。
 
 ### question.update（编辑，实际实现）
 

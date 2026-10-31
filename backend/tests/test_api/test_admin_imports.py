@@ -1,6 +1,6 @@
 from datetime import datetime
 from io import BytesIO
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -32,6 +32,7 @@ class _Db:
     def __init__(self):
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
+        self.add = MagicMock()
 
     async def execute(self, _statement):
         class _Scalars:
