@@ -37,9 +37,10 @@ _QUESTION_FIELDS = (
     "raw_content",
     "image_url",
     "year",
-    "review_status",
-    "is_active",
 )
+
+# 审核生命周期字段：仅持有 question:review 的调用方可通过同步变更。
+_LIFECYCLE_FIELDS = ("review_status", "is_active")
 
 _TAG_FIELDS = ("name", "subject_id", "parent_id", "sort_order")
 
@@ -75,7 +76,9 @@ def _build_tag(data: dict) -> Tag:
     return tag
 
 
-def _build_question(data: dict) -> tuple[Question, list | None]:
+def _build_question(
+    data: dict, *, allow_lifecycle: bool = False
+) -> tuple[Question, list | None]:
     q = Question()
     q.sync_uuid = data["sync_uuid"]
     q.sync_version = data.get("sync_version", 0)
@@ -83,6 +86,13 @@ def _build_question(data: dict) -> tuple[Question, list | None]:
     for f in _QUESTION_FIELDS:
         if f in data:
             setattr(q, f, data[f])
+    if allow_lifecycle:
+        for f in _LIFECYCLE_FIELDS:
+            if f in data:
+                setattr(q, f, data[f])
+    else:
+        q.review_status = "re_pending"
+        q.is_active = False
     if data.get("updated_at"):
         q.updated_at = _parse_datetime(data["updated_at"])
     if data.get("created_at"):
@@ -90,18 +100,42 @@ def _build_question(data: dict) -> tuple[Question, list | None]:
     return q, kp_names
 
 
-def _update_question(existing: Question, data: dict) -> list | None:
+def _apply_lifecycle(existing: Question, data: dict) -> None:
+    """Apply review_status/is_active under the admin review transition rules."""
+    from app.services.admin_question_service import _REVIEW_ALLOWED_TRANSITIONS
+
+    target = data.get("review_status")
+    current = str(existing.review_status or "")
+    if (
+        target is not None
+        and target != current
+        and target in _REVIEW_ALLOWED_TRANSITIONS.get(current, ())
+    ):
+        existing.review_status = target
+    if "is_active" in data:
+        wanted = bool(data["is_active"])
+        if not wanted or existing.review_status == "approved":
+            existing.is_active = wanted
+
+
+def _update_question(
+    existing: Question, data: dict, *, allow_lifecycle: bool = False
+) -> list | None:
     kp_names = data.get("knowledge_points")
     for f in _QUESTION_FIELDS:
         if f in data:
             setattr(existing, f, data[f])
+    if allow_lifecycle:
+        _apply_lifecycle(existing, data)
     existing.sync_version = data.get("sync_version", existing.sync_version)
     if data.get("updated_at"):
         existing.updated_at = _parse_datetime(data["updated_at"])
     return kp_names
 
 
-async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
+async def merge_sync_package(
+    db: AsyncSession, package: dict, *, allow_lifecycle: bool = False
+) -> SyncReport:
     report = SyncReport()
 
     tags_data = package.get("tags", [])
@@ -182,7 +216,7 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                 if existing_suuid != sync_uuid:
                     report.questions_deduped += 1
                     continue
-            q, kp_names = _build_question(q_data)
+            q, kp_names = _build_question(q_data, allow_lifecycle=allow_lifecycle)
             db.add(q)
             revision_questions.append(q)
             report.questions_new += 1
@@ -198,7 +232,9 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
 
             if local_updated and cloud_updated and local_updated > cloud_updated:
                 prev_subject_id = existing.subject_id
-                kp_names = _update_question(existing, q_data)
+                kp_names = _update_question(
+                    existing, q_data, allow_lifecycle=allow_lifecycle
+                )
                 revision_questions.append(existing)
                 if kp_names is not None:
                     pending_syncs.append((existing, kp_names))

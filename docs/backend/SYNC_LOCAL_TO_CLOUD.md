@@ -189,6 +189,7 @@ python3 -m scripts.sync_to_cloud --dry-run
 ## 安全设计
 
 - API 端点受 Admin RBAC 保护，需要 `sync:write` 权限
+- 审核生命周期（2026-10-31 安全审计修复）：`review_status`/`is_active` 不再属于普通同步字段。仅同时持有 `question:review` 的调用方才会应用包内生命周期字段，且遵循 `_REVIEW_ALLOWED_TRANSITIONS`（仅 re_pending→approved/rejected、rejected→approved），激活仅限 approved；仅 `sync:write` 时新建题目一律落为 `re_pending` + `is_active=false`，已有题目保持原状态。每次成功提交写入 `sync.import` 审计记录（severity=important）。
 - JWT token 通过 `--token` 传入，不持久化
 - IntegrityError 捕获防止并发/重试导致的重复插入
 - Payload 大小限制防止 2C2G 服务器 OOM
