@@ -392,6 +392,7 @@ jobs:
           node miniprogram/tests/test-quiz-runner-sync.js
           node miniprogram/tests/test-study-ui-refinements.js
           node miniprogram/tests/test-practice-reference-ui.js
+          node miniprogram/tests/test-export-ws-auth.js
           node --test \
             miniprogram/tests/test-question-adapter-options.js \
             miniprogram/tests/test-question-adapter-answers.js \

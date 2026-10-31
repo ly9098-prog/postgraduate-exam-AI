@@ -238,10 +238,12 @@ class ExportStatusSyncManager {
       this._startPolling()
       return
     }
-    const wsUrl = this._buildWsUrl(token)
+    const wsUrl = this._buildWsUrl()
     try {
+      // Subprotocol keeps the JWT out of URLs, which proxies and access logs record.
       const socketTask = wx.connectSocket({
         url: wsUrl,
+        protocols: ['bearer', token],
         header: {
           'X-Trace-ID': this._traceId,
           'X-Request-ID': api.createRequestId(),
@@ -255,9 +257,9 @@ class ExportStatusSyncManager {
     }
   }
 
-  _buildWsUrl(token) {
+  _buildWsUrl() {
     const wsBase = config.BASE_URL.replace(/^http/, 'ws').replace(/\/api\/v1$/, '')
-    return `${wsBase}/api/v1/exports/ws?token=${encodeURIComponent(token || '')}`
+    return `${wsBase}/api/v1/exports/ws`
   }
 
   _bindSocketHandlers(socketTask) {
