@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { MathFormula } from "@/components/ui/math-formula";
 import {
   haveIdenticalBlankOptionSets,
@@ -10,6 +12,25 @@ import {
 interface QuestionOptionsProps {
   options: NormalizedQuestionOption[];
   className?: string;
+}
+
+function OptionImage({ imageUrl, optionKey }: { imageUrl: string; optionKey: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className="text-xs text-[var(--color-text-hint)]">
+        （图片选项 {optionKey} 加载失败）
+      </span>
+    );
+  }
+  return (
+    <img
+      src={imageUrl}
+      alt={`选项 ${optionKey}`}
+      className="max-h-32 max-w-full rounded-lg border border-[var(--color-border)]/50 object-contain"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 /**
@@ -41,19 +62,7 @@ export function QuestionOptions({ options, className = "" }: QuestionOptionsProp
                 <MathFormula text={opt.text} />
               </span>
             ) : opt.imageUrl ? (
-              <img
-                src={opt.imageUrl}
-                alt={`选项 ${opt.key}`}
-                className="max-h-32 max-w-full rounded-lg border border-[var(--color-border)]/50 object-contain"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  target.style.display = "none";
-                  if (target.parentElement) {
-                    target.parentElement.innerHTML =
-                      `<span class="text-xs text-[var(--color-text-hint)]">（图片选项 ${opt.key} 加载失败）</span>`;
-                  }
-                }}
-              />
+              <OptionImage imageUrl={opt.imageUrl} optionKey={opt.key} />
             ) : null}
           </div>
         </div>
