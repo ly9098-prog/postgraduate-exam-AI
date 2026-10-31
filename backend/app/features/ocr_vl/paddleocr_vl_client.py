@@ -241,7 +241,7 @@ def _check_content_length(response: httpx.Response) -> None:
 def _validate_result_url_sync(url: str) -> str:
     """Validate a result download URL for safety.
 
-    Checks: https scheme, non-private resolved IP, no loopback/link-local.
+    Checks: https scheme, no embedded credentials, every resolved IP globally routable.
     Raises ``ResultDownloadError`` for unsafe URLs.
     """
     parsed = urlparse(url)
@@ -252,15 +252,18 @@ def _validate_result_url_sync(url: str) -> str:
     hostname = parsed.hostname
     if not hostname:
         raise ResultDownloadError("Result URL has no hostname")
+    if parsed.username is not None or parsed.password is not None:
+        raise ResultDownloadError("Result URL must not embed credentials")
 
     try:
         addr_info = socket.getaddrinfo(hostname, parsed.port or 443)
         for _family, _type, _proto, _canonname, sockaddr in addr_info:
-            ip = ipaddress.ip_address(sockaddr[0])
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
+            ip = ipaddress.ip_address(str(sockaddr[0]).split("%", 1)[0])
+            # is_global also rejects CGNAT, benchmarking, documentation,
+            # multicast, unspecified and reserved ranges.
+            if not ip.is_global or ip.is_multicast:
                 raise ResultDownloadError(
-                    f"Result URL resolves to private/loopback/link-local "
-                    f"address: {sockaddr[0]}"
+                    f"Result URL resolves to a non-public address: {sockaddr[0]}"
                 )
     except socket.gaierror as exc:
         raise ResultDownloadError(

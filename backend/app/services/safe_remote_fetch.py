@@ -60,9 +60,9 @@ def _resolve_public_addresses(hostname: str, port: int) -> list[str]:
             ip = ipaddress.ip_address(raw_ip)
         except ValueError as exc:
             raise UnsafeRemoteURLError("invalid resolved address") from exc
-        # is_global excludes loopback, private, link-local, multicast,
-        # unspecified, reserved and documentation ranges.
-        if not ip.is_global:
+        # is_global excludes loopback, private, link-local, unspecified, reserved
+        # and documentation ranges; multicast must be rejected explicitly.
+        if not ip.is_global or ip.is_multicast:
             raise UnsafeRemoteURLError("remote host resolves to a non-public address")
         normalized = str(ip)
         if normalized not in addresses:
