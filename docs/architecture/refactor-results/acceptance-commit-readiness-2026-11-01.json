@@ -1,0 +1,201 @@
+{
+  "date": "2026-11-01",
+  "timezone": "Asia/Shanghai",
+  "status": "READY_FOR_ISOLATED_ACCEPTANCE",
+  "authorization": {
+    "commit": true,
+    "fix_code_blockers_before_continuing_acceptance": true,
+    "push": false,
+    "production_mutation": false
+  },
+  "baseline_head": "c0687b9d3c77d6d264bf3981999ba89babca0640",
+  "scope": {
+    "commit_groups": [
+      {
+        "scope": "miniprogram",
+        "paths": [
+          "miniprogram/utils/pomodoro-task-types.js",
+          "miniprogram/subpackages/study/practice/practice.js",
+          "miniprogram/pages/pomodoro/utils/pomodoro-session-control-page-adapter.js",
+          "miniprogram/scripts/architecture/practice-page-templates.json",
+          "miniprogram/tests/test-pomodoro-task-types.js",
+          "miniprogram/tests/test-pomodoro-page-adapter-contracts.js",
+          "miniprogram/tests/test-pomodoro-free-session-restore-controller.js",
+          "miniprogram/tests/test-practice-module-boundaries.js",
+          "miniprogram/tests/test-practice-subject-load-controller.js",
+          "miniprogram/scripts/test-pomodoro-practice-stats.js",
+          "miniprogram/tests/test-practice-submit-adapter-integration.js"
+        ]
+      },
+      {
+        "scope": "admin",
+        "paths": [
+          ".github/workflows/ci.yml",
+          "backend/app/api/v1/admin_auth.py",
+          "backend/app/api/v1/admin_imports.py",
+          "backend/tests/test_api/test_admin_acceptance_audit.py",
+          "backend/tests/test_api/test_admin_auth.py",
+          "backend/tests/test_api/test_admin_imports.py",
+          "admin-frontend/src/app/(admin)/imports/batch-image/page.tsx",
+          "admin-frontend/src/app/(admin)/imports/import-page-contracts.test.ts",
+          "admin-frontend/src/components/audit-logs/action-labels.ts",
+          "docs/admin/AUDIT_LOG.md",
+          "docs/admin/REVIEW_FLOW.md"
+        ]
+      },
+      {
+        "scope": "pomodoro-tests",
+        "paths": [
+          "backend/tests/integration/test_pomodoro_postgres_concurrency.py"
+        ]
+      },
+      {
+        "scope": "acceptance-docs",
+        "paths": [
+          "docs/project/ENV_ACCEPTANCE_PLAN_2026-10-31.md",
+          "docs/architecture/refactor-results/miniprogram-environment-acceptance-2026-10-31.json",
+          "docs/architecture/refactor-results/env02-defect-fixes-2026-11-01.json",
+          "docs/architecture/refactor-results/acceptance-commit-readiness-2026-11-01.json"
+        ]
+      }
+    ],
+    "task_handoff_files_remain_unstaged": true,
+    "unrelated_dirty_work_preserved": true
+  },
+  "legacy_gate_repair": {
+    "file": "miniprogram/scripts/test-pomodoro-practice-stats.js",
+    "failure_cause": "The old entry searched pre-refactor Page method bodies for implementation text after that logic moved to current controllers and adapters.",
+    "red": {
+      "passed": 29,
+      "failed": 12
+    },
+    "green": {
+      "outer_checks_passed": 31,
+      "outer_checks_failed": 0,
+      "behavior_test_files": 25,
+      "behavior_tests_passed": 206,
+      "behavior_tests_failed": 0,
+      "behavior_tests_skipped": 0
+    },
+    "preserved_checks": [
+      "history formatting and record keys",
+      "statistics WXML text",
+      "incomplete result state and removed completion-rate text",
+      "page-container system-back wiring",
+      "trend unavailable state",
+      "canonical result recovery and display content"
+    ],
+    "new_integration": "real submit adapters/controllers and builders; persist before POST, fixed batch/request id, background exclusion and identical frozen request after wall-clock jump/network failure",
+    "failure_sensitivity": {
+      "gate_subprocess_failure_propagated": true,
+      "mutations": [
+        {
+          "mutation": "endpoint",
+          "exit_code": 1,
+          "detected": true
+        },
+        {
+          "mutation": "duration",
+          "exit_code": 1,
+          "detected": true
+        }
+      ],
+      "repository_sources_mutated": false
+    },
+    "business_runtime_changed_in_this_followup": false,
+    "ci_node_selector": "ci.yml has no Node/miniprogram step or fixed JS selector; existing Python static selector remains unchanged"
+  },
+  "reused_validation": {
+    "env02_result": "docs/architecture/refactor-results/env02-defect-fixes-2026-11-01.json",
+    "fixed_static_tests": 8336,
+    "mocked_readiness_tests": 69,
+    "frontend_tests": 1869,
+    "frontend_typecheck_lint_build": "passed",
+    "openapi_critical_response_contract": "passed",
+    "source_hashes_rechecked": true,
+    "scope": "business and CI inputs match previous successful run; only a legacy standalone Node gate and a focused Node integration regression were changed in this followup; these were verified narrowly",
+    "all_github_workflows_claimed_passed": false
+  },
+  "review": {
+    "independent": "completed",
+    "reviewer": "Hume",
+    "confirmed_actionable_findings": 0,
+    "unresolved_findings": 0,
+    "candidate_findings": [
+      {
+        "severity": "P2",
+        "claim": "login business could remain committed without successful audit after failed commit",
+        "disposition": "rejected after actual dependency/flush/pre-commit failure experiment",
+        "evidence": "review-rollback-probe.log",
+        "source_changed": false
+      }
+    ],
+    "commit_fault_probe": {
+      "passed": 1,
+      "warnings": 1,
+      "mocked_database": false,
+      "scope": "actual request dependency, real synthetic SQLite, flushed writes, pre-commit failure and fresh-session verification"
+    },
+    "report_evidence": "independent-review.md",
+    "earlier_incomplete_reviewer_excluded": true
+  },
+  "readiness": {
+    "further_isolated_acceptance": true,
+    "full_ENV01_to_ENV06": false,
+    "production_acceptance": false,
+    "environment_conditions": [
+      "dedicated test WeChat identity/AppID mapping and test HTTPS",
+      "real device/mobile network",
+      "controlled AI/OCR, test storage and HTTPS/WS gateway",
+      "preceding final gates plus specific production scope/window and verified production backup/rollback artifacts"
+    ],
+    "current_probe_evidence": "environment-readiness.json",
+    "absence_of_local_8080_is_not_remote_ocr_proof": true,
+    "code_blockers_open": 0
+  },
+  "git": {
+    "source_commits": {
+      "miniprogram": "239dc7f91c6996d270392386fe372f5c8d5f5265",
+      "admin": "9087adf355ee176ae06c3280b3d049da3f26132d",
+      "pomodoro-tests": "432d91259dec64b566f50dc4bc97d71e75c70942"
+    },
+    "pushed": false,
+    "production_deployed": false,
+    "committed": true,
+    "scope_note": "Business/test source commits are recorded here; the documentation commit carrying this result cannot contain its own hash. The local closeout receipt records all four commits."
+  },
+  "evidence_root": "~/.cache/postgraduate-ai/acceptance/2026-11-01-commit-readiness/",
+  "evidence_sha256": {
+    "legacy-pomodoro-red.log": "51689236c83a340078fe01a673ec6e421ece4d75781a566f3cab4cd0e0cedb23",
+    "legacy-pomodoro-green.log": "506d84dd46108eea5ad97ff4c1f4807682e0bd9f1df6d4812a1ac6b0d87da31f",
+    "legacy-gate-mutation-checks.json": "28ddd5ae091fec0f3f555b96ab4137c1733a2ca47bfaa2361d6905a6e5daa238",
+    "environment-readiness.json": "b78b62757a41f3e800bc4ab36c393ccf65432acfbf3fee1ef61c945a397a7668",
+    "review-rollback-probe.log": "a22fc914ea6778bc2cfca449a21e867a7009bca078edb4d1dce3109364396e03",
+    "independent-review.md": "57ef047d38127a6fdb90499387fd0e70bd6cc8f0f534e5243891b3eb12ba4afd"
+  },
+  "source_sha256": {
+    "miniprogram/utils/pomodoro-task-types.js": "f0e2e982c2106de29f799002160ad76d8f3176c530948710ca6799b72e7c75b8",
+    "miniprogram/subpackages/study/practice/practice.js": "1d220853d118ffecee2e21e2e2170f0c3abf0ce85a44ba8e4f8e71faa6e3fbfd",
+    "miniprogram/pages/pomodoro/utils/pomodoro-session-control-page-adapter.js": "0c70639e587f8eba1c1a7c1a38f34cc36faccc8e122c53096db46755488d476a",
+    "miniprogram/scripts/architecture/practice-page-templates.json": "899f7279784d693c1cb118d8424d771554e0d1e893e1f9842e47acff784cf9c0",
+    "miniprogram/tests/test-pomodoro-task-types.js": "124dd2cb8e7b93852ab4d0f849ddd959740806f9c616c7f0c2c84fdce5cce0c5",
+    "miniprogram/tests/test-pomodoro-page-adapter-contracts.js": "a87648a42dcaf0a2922eece6528f1f2a0160913134ced79f852a9853e72cb8c3",
+    "miniprogram/tests/test-pomodoro-free-session-restore-controller.js": "1d042f97d2b4fcb6a42629aa4c61320996743a3fd002b70fada537daeb3e707e",
+    "miniprogram/tests/test-practice-module-boundaries.js": "299a86c530f9f0d24422e42bf78623e2c880317f5d1d9fcc18d6967f6b843434",
+    "miniprogram/tests/test-practice-subject-load-controller.js": "4a352cb36284503daaf098d98407fa6a9d123052fff6d9a514bb693fddf7d971",
+    "miniprogram/scripts/test-pomodoro-practice-stats.js": "fb813cf2e5f841c5ca57aa1b2ad11aaf952455c85bf92cae356d8aa9dfd1b2cf",
+    "miniprogram/tests/test-practice-submit-adapter-integration.js": "ab90001a3b8020597fa57000eec824b1002aa05ac50cada151d4ebb9dd7bccfa",
+    ".github/workflows/ci.yml": "cde89264cdfbeffc6ce6dfd240919385b0a56dce144238ea8d381b714a942c9b",
+    "backend/app/api/v1/admin_auth.py": "e2e29fae025b73710dd55aa4c9cd94852d980cca2c90153d2c523310ee475e0e",
+    "backend/app/api/v1/admin_imports.py": "672a9fdf4f3f0cfd1b1ce4ee200cf247268e87818271718a86a7325c0c24b92a",
+    "backend/tests/test_api/test_admin_acceptance_audit.py": "bb3008a164bfd008ca533a7a6f5b476b60769a05fb9e8564dbcbc76fa8260a14",
+    "backend/tests/test_api/test_admin_auth.py": "246f0367f2164b24c2055a2a5d43ac3d4f88938236a186e7fbe3a15944886175",
+    "backend/tests/test_api/test_admin_imports.py": "53a7acd989da12889b1ad393af215a34ef3106eeff91d4a655a7c35ab7e313cd",
+    "admin-frontend/src/app/(admin)/imports/batch-image/page.tsx": "342e7dcb65a05f6f4a5f24d6466500bd8c7d11d84d54d2194f5d8e84d4772d1b",
+    "admin-frontend/src/app/(admin)/imports/import-page-contracts.test.ts": "0510c1c48bba73276da79b0b4fd2919fb5c53db9a727a4e57ffca45ce2f3800c",
+    "admin-frontend/src/components/audit-logs/action-labels.ts": "d493411c4d29f431ab49cfc23704f021d3b9027f85ceb3eb7b0688da8469842d",
+    "docs/admin/AUDIT_LOG.md": "b126e2f0bfc88427e030f5de16e53255d1e7bb84578ae13736a97513f0e5aa54",
+    "docs/admin/REVIEW_FLOW.md": "0229d5d8637f3c7547bdd930d4308d17fd6f60d06ee0d5b8dc1f314fa93098e8",
+    "backend/tests/integration/test_pomodoro_postgres_concurrency.py": "c1f12aec1ce4ddc72fcfd8a2539ebb1362581e4c95fadb3fbb043f25c3451dcc"
+  }
+}

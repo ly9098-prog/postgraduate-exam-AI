@@ -1,0 +1,343 @@
+{
+  "date": "2026-11-01",
+  "timezone": "Asia/Shanghai",
+  "head": "c0687b9d3c77d6d264bf3981999ba89babca0640",
+  "status": "FIXES_VERIFIED_ISOLATED",
+  "ledger_stage": "ENV-02",
+  "risk_tier": "L3",
+  "authorization": {
+    "user_request": "修复这些发现的问题",
+    "scope": "repair the discovered Admin login/single-question approval audit gaps and upload cancellation/late-response ownership defects"
+  },
+  "stage_status": "PASS-ISOLATED",
+  "full_environment_objective_complete": false,
+  "env_stages": {
+    "ENV-01": "PARTIAL",
+    "ENV-02": "PASS-ISOLATED",
+    "ENV-03": "PASS-ISOLATED",
+    "ENV-04": "BLOCKED",
+    "ENV-05": "PASS-ISOLATED",
+    "ENV-06": "BLOCKED"
+  },
+  "stage_status_semantics": "Only the bounded isolated checks passed. Preceding final gates remain open; this does not authorize production operations.",
+  "implementation": {
+    "successful_admin_login": {
+      "action": "system.login",
+      "severity": "low",
+      "resource_type": "admin_user",
+      "same_transaction_as": [
+        "last_login_at",
+        "last_login_ip"
+      ],
+      "cookie_set_after_commit": true,
+      "detail_includes_credentials": false
+    },
+    "single_import_approval": {
+      "action": "import.approve",
+      "severity": "important",
+      "resource_type": "import",
+      "detail_fields": [
+        "batch_id",
+        "question_id",
+        "status"
+      ],
+      "same_transaction_as": [
+        "reviewed_by",
+        "reviewed_at",
+        "publication"
+      ],
+      "permission_unchanged": "import:write",
+      "response_schema_unchanged": true
+    },
+    "audit_failure": "Audit insert failure rolls back the corresponding login/approval business update; login returns no successful cookie.",
+    "unsuccessful_operations": "Failed login, rejected publication and replayed approval create no success audit entry.",
+    "upload_cancel": {
+      "visible_control": "取消上传",
+      "phases_with_cancel": [
+        "uploading",
+        "polling"
+      ],
+      "cleanup": "existing resetQueue abort and resource cleanup",
+      "ownership_checks": [
+        "after upload await",
+        "after status await",
+        "in deferred state updaters",
+        "on SSE callbacks",
+        "before starting the polling watchdog"
+      ],
+      "server_job_cancellation_guaranteed": false
+    },
+    "schema_migration_added": false,
+    "runtime_dependencies_added": false,
+    "ci_fixed_test_list_updated": true
+  },
+  "source_sha256": {
+    ".github/workflows/ci.yml": "cde89264cdfbeffc6ce6dfd240919385b0a56dce144238ea8d381b714a942c9b",
+    "backend/app/api/v1/admin_auth.py": "e2e29fae025b73710dd55aa4c9cd94852d980cca2c90153d2c523310ee475e0e",
+    "backend/app/api/v1/admin_imports.py": "672a9fdf4f3f0cfd1b1ce4ee200cf247268e87818271718a86a7325c0c24b92a",
+    "backend/tests/test_api/test_admin_acceptance_audit.py": "bb3008a164bfd008ca533a7a6f5b476b60769a05fb9e8564dbcbc76fa8260a14",
+    "backend/tests/test_api/test_admin_auth.py": "246f0367f2164b24c2055a2a5d43ac3d4f88938236a186e7fbe3a15944886175",
+    "backend/tests/test_api/test_admin_imports.py": "53a7acd989da12889b1ad393af215a34ef3106eeff91d4a655a7c35ab7e313cd",
+    "admin-frontend/src/app/(admin)/imports/batch-image/page.tsx": "342e7dcb65a05f6f4a5f24d6466500bd8c7d11d84d54d2194f5d8e84d4772d1b",
+    "admin-frontend/src/app/(admin)/imports/import-page-contracts.test.ts": "0510c1c48bba73276da79b0b4fd2919fb5c53db9a727a4e57ffca45ce2f3800c",
+    "admin-frontend/src/components/audit-logs/action-labels.ts": "d493411c4d29f431ab49cfc23704f021d3b9027f85ceb3eb7b0688da8469842d"
+  },
+  "verification": {
+    "red": {
+      "backend": {
+        "tests": 6,
+        "failed": 4,
+        "passed": 2,
+        "evidence": "backend-red.log"
+      },
+      "frontend": {
+        "tests": 21,
+        "failed": 3,
+        "passed": 18,
+        "evidence": "frontend-red.log"
+      }
+    },
+    "backend_api": {
+      "tests": 41,
+      "passed": 41,
+      "evidence": "backend-green.log",
+      "selection": [
+        "tests/test_api/test_admin_acceptance_audit.py",
+        "tests/test_api/test_admin_auth.py",
+        "tests/test_api/test_admin_imports.py"
+      ]
+    },
+    "backend_services": {
+      "tests": 85,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 85,
+      "seconds": 10.207,
+      "evidence": "backend-services.xml"
+    },
+    "import_page": {
+      "tests": 21,
+      "passed": 21,
+      "evidence": "frontend-green.log"
+    },
+    "fixed_static_ci": {
+      "tests": 8336,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 8336,
+      "seconds": 917.87,
+      "evidence": "ci-static.xml",
+      "selector": ".github/workflows/ci.yml / Static architecture & non-GPU regression tests",
+      "warnings": 65,
+      "step_exit_code": 0
+    },
+    "mocked_readiness": {
+      "tests": 69,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 69,
+      "seconds": 5.209,
+      "evidence": "ci-readiness.xml",
+      "selector": ".github/workflows/ci.yml / Mocked readiness boundary regression",
+      "step_exit_code": 0,
+      "real_pg_redis_readiness": false
+    },
+    "admin_frontend": {
+      "typecheck": "passed",
+      "lint": {
+        "status": "passed",
+        "errors": 0,
+        "warnings": 138
+      },
+      "test_files": 150,
+      "tests": 1869,
+      "passed": 1869,
+      "build": "passed",
+      "evidence": [
+        "admin-typecheck.log",
+        "admin-lint.log",
+        "admin-test.log",
+        "admin-build.log"
+      ]
+    },
+    "backend_static": {
+      "changed_python_strict_ruff": "passed",
+      "compileall_app": "passed",
+      "ruff_app_gate": "passed",
+      "ruff_app_gate_command": "ruff check app/ --ignore I001,F401,N818",
+      "evidence": "backend-ruff-app.log"
+    },
+    "openapi": {
+      "exported_live_isolated_api": true,
+      "approval_path_parameter_and_response_unchanged": true,
+      "offline_cache_probe_exit": 1,
+      "generate_types_exit": 0,
+      "critical_response_contract_tsc_exit": 0,
+      "typescript_generator": "openapi-typescript@7.8.0 via existing generate-openapi-types.mjs",
+      "response_contract_source": "admin-frontend/contracts/openapi-contract-check.ts",
+      "workspace": "contracts/",
+      "evidence": [
+        "openapi-verification.json",
+        "openapi-typescript.log",
+        "openapi-typescript-online.log",
+        "openapi-tsc.log"
+      ],
+      "initial_offline_probe": "ENOTCACHED; excluded from success evidence, retained; standard online generator succeeded"
+    },
+    "real_isolated_api": {
+      "status": "passed",
+      "scope": "real isolated API; cloned synthetic SQLite data",
+      "login_http": 200,
+      "approval_http": 200,
+      "replay_http": 422,
+      "failed_login_http": 401,
+      "new_audit_actions": [
+        "system.login",
+        "import.approve"
+      ],
+      "request_metadata_saved": true,
+      "approval_business_and_audit_persisted": true,
+      "replay_and_failed_login_no_extra_success_audit": true,
+      "credentials_in_audit": false,
+      "question_publish_service_mocked": false,
+      "production_mutated": false,
+      "evidence": "audit-api-verification.json",
+      "database_scope": "independent clone of existing synthetic acceptance SQLite; not written back to the original"
+    },
+    "browser": {
+      "status": "passed",
+      "failures": [
+        {
+          "path": "/batch-image/upload",
+          "error": "net::ERR_ABORTED"
+        }
+      ],
+      "pageErrors": [],
+      "realIsolatedLogin": true,
+      "mobileNoHorizontalOverflow": true,
+      "uploadCancelledAtNativeSocket": true,
+      "newBatchCompletesAfterCancel": true,
+      "browser": "Chromium via Playwright",
+      "viewport_widths": [
+        1440,
+        390
+      ],
+      "upload_phase_cancel_visible_and_enabled": true,
+      "new_batch": {
+        "filename": "new.png",
+        "question_count": 4
+      },
+      "cancel_failure_semantics": "net::ERR_ABORTED is the expected cancelled upload; no page errors",
+      "transport": "native local HTTP gateway observed EOF",
+      "external_ocr_executed": false,
+      "controlled_responses": [
+        "upload",
+        "job status",
+        "SSE"
+      ],
+      "evidence": [
+        "browser-verification.json",
+        "browser-gateway.json",
+        "upload-cancel-desktop.png",
+        "upload-cancel-mobile.png",
+        "upload-cancel-new-batch.png"
+      ]
+    },
+    "suite_overlap": "Targeted and full selections overlap; their counts must not be summed as unique coverage.",
+    "final_repository_checks": "verification.json in the local evidence directory"
+  },
+  "runtime_cleanup": {
+    "ports_closed": {
+      "3000": true,
+      "8000": true,
+      "8002": true
+    },
+    "data_retained": true,
+    "production_mutated": false,
+    "forced_kill_used": false,
+    "signal": "SIGTERM",
+    "ports": [
+      3000,
+      8000,
+      8002
+    ],
+    "scope": "only owned local API, Next dev and native gateway",
+    "evidence": "runtime.json"
+  },
+  "review": {
+    "self_review": "completed",
+    "independent_review": "completed in 2026-11-01 commit-readiness followup",
+    "unresolved_findings": 0,
+    "result": "docs/architecture/refactor-results/acceptance-commit-readiness-2026-11-01.json",
+    "candidate_disposition": "get_db rollback candidate rejected after actual dependency flush/pre-commit failure probe"
+  },
+  "not_verified_or_changed": [
+    "dedicated WeChat test identity, test HTTPS, real device and mobile network switching",
+    "real external AI/OCR, test storage and HTTPS/WS gateway",
+    "production HTTPS Secure cookie and production acceptance",
+    "complete real PostgreSQL/Redis reliability suite was not rerun in this repair batch; earlier isolated evidence retains its original scope",
+    "bulk, rejection, formula, failed-login, logout and refresh audit behavior was not expanded by this repair",
+    "the legacy pomodoro source-location test failure was resolved in the commit-readiness followup; original failed evidence is retained",
+    "no claim that all GitHub workflows or the final six-stage environment acceptance passed"
+  ],
+  "git": {
+    "committed": true,
+    "pushed": false,
+    "uploaded_miniprogram": false,
+    "source_commits": {
+      "miniprogram": "239dc7f91c6996d270392386fe372f5c8d5f5265",
+      "admin": "9087adf355ee176ae06c3280b3d049da3f26132d",
+      "pomodoro-tests": "432d91259dec64b566f50dc4bc97d71e75c70942"
+    },
+    "scope_note": "Business/test source commits are recorded here; the documentation commit carrying this result cannot contain its own hash. The local closeout receipt records all four commits.",
+    "snapshot_phase": "updated after reviewed source commits in the 2026-11-01 followup"
+  },
+  "production_mutated": false,
+  "documentation": [
+    "docs/admin/AUDIT_LOG.md",
+    "docs/admin/REVIEW_FLOW.md",
+    "docs/project/ENV_ACCEPTANCE_PLAN_2026-10-31.md",
+    "prompts/tasks/context.md",
+    "prompts/tasks/current_task.md",
+    "prompts/tasks/current_task/closure-ledger.md",
+    "prompts/tasks/current_task/history-04.md"
+  ],
+  "previous_acceptance": "docs/architecture/refactor-results/miniprogram-environment-acceptance-2026-10-31.json",
+  "evidence_root": "~/.cache/postgraduate-ai/acceptance/2026-11-01-env02-fixes/",
+  "evidence_policy": "Raw logs, screenshots, databases and private synthetic identities are local-only and must not be committed.",
+  "evidence_sha256": {
+    "backend-red.log": "18fc4ff55c1e266e20bbe4b9c4d6c5d93101ea1637cbf76c05d98004519cd818",
+    "frontend-red.log": "fa7cc6966eb65eb3a523fa0b01c27b4e4510ee686ed92a72d26636ad6000eb5f",
+    "backend-green.log": "b03dbfda693c9e581f6e9a4e8788653f7ddefbc6849b9a54a4c2966ce1ddda48",
+    "frontend-green.log": "4a1965a6b9a961a5f1551ab728cae3931fda8aa60c53aec060e1f2a2c97d8750",
+    "backend-services.log": "7965f47fc22c95e4bd79402259c3efa82962841a92b0114a9e8c9ad06e6d0f00",
+    "backend-services.xml": "a276257355feddfeef55a2fe5686655de6fb04d1477fe08d74005b54e9e7ddaf",
+    "ci-static.log": "af6885c3cf2ccff565479230fd41e51fceba6fa7a617f658761017bdbd809468",
+    "ci-static.xml": "56306b4b4d84002f8025752a9a8eda46c5b4db927858b09f84514db898c9f64f",
+    "ci-readiness.log": "ab76bd36c645ad590cb8bc8b76ac44a3b189d0bfc1c71aebf41724eea7c791dd",
+    "ci-readiness.xml": "bbe0aab5473baee505ef256fb282507e590b0cbce3207cb826224b2bc89eb108",
+    "ci-results.json": "2d647465f2edebaafb1480293f8e6f0ff07e520de2d62b370e88cd2d1e341cff",
+    "admin-typecheck.log": "ca8f7040b6c3656779764471915fee01317aceb4a8790b7bd8c62e4cdf9019a0",
+    "admin-lint.log": "dfbae3279b84edd2890ac36662dff51ddbbc54cd827292aba8f71e0fbdd9485d",
+    "admin-test.log": "640af27ae2270536362caf83a02ece263405dbdb116066a0d66681fb6a87c5e3",
+    "admin-build.log": "0c5171cdeb091fbced8f5deb27c6cd4f815d97e9902dd97b1c8b28047a2da600",
+    "backend-ruff-app.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "openapi-verification.json": "11dff0a04c4d2c6ab7db8e33bebc29d8cd168c359ebcdd333bc3f2ca423f27fa",
+    "openapi.json": "b8f50fd85f47991aba505400fb90b10b8d72125ac9b328cd62fa1fb9f4888f7c",
+    "openapi-typescript.log": "872161237a7f45b7681210a70c40740c2f9eda494acbd8d27dc19acc67986c07",
+    "openapi-typescript-online.log": "e51a13b488157d17a01a68fcfd59bb5c2c724b3e4bdeff8b9053c7c927d616c6",
+    "openapi-tsc.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "audit-api-verification.json": "f151af65522843dc8e6e72aedf9507537bbf24b397c7ec84b9ee0c025724bdaf",
+    "browser-verification.json": "ebd975a11190c5fad10111057907d4a57e7412bcc10d1ef3478706aa5e3e168d",
+    "browser-gateway.json": "a9c602b3effb2e228a8a852d757c91ee05045d588bfec2cdb851652746b8728d",
+    "upload-cancel-desktop.png": "a24d1510a8270cce475269bb16a5863976cd1685ad0908a7c34b10b232753b28",
+    "upload-cancel-mobile.png": "af13794a1aad82c0c39c59e3c23ff75c87ed53f69b1f9bcdc9524d1f6203c70b",
+    "upload-cancel-new-batch.png": "d0af5d6ab5f7ebd9b2cc04cec400783394b24e9582a88e2fff4ef84d3b2265fa",
+    "runtime.json": "abdf45f941577ffa68a1131af7a74810983dc8bf5e45cfd346149b792ff8151e",
+    "baseline-hashes.json": "d9da7585c49926c43293cbfd54e6159780c56864e665f614dfd921c953c11e40"
+  },
+  "followup_readiness_result": "docs/architecture/refactor-results/acceptance-commit-readiness-2026-11-01.json"
+}
