@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.deployment_profile import is_restricted_environment
 from app.core.security import get_current_user
 from app.models.user import User
 from rag.context_builder import build_context
@@ -7,7 +8,13 @@ from rag.context_builder import build_context
 router = APIRouter(prefix="/api/v1/rag")
 
 
-@router.get("/search")
+def require_dev_rag_access() -> None:
+    """RAG returns repository source chunks; developer tooling only."""
+    if is_restricted_environment():
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+@router.get("/search", dependencies=[Depends(require_dev_rag_access)])
 async def search(
     query: str,
     top_k: int = 3,
@@ -22,7 +29,7 @@ async def search(
     return {"query": query, "results": results}
 
 
-@router.get("/context")
+@router.get("/context", dependencies=[Depends(require_dev_rag_access)])
 async def get_context(
     query: str,
     _: User = Depends(get_current_user),

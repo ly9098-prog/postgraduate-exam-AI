@@ -28,6 +28,7 @@ from app.api.v1.study_plan import router as study_plan_router
 from app.api.v1.study_report import router as study_report_router
 from app.api.v1.sync import router as sync_router
 from app.api.v1.wrong_questions import router as wrong_questions_router
+from app.core.deployment_profile import is_restricted_environment
 
 public_api_router = APIRouter()
 
@@ -36,7 +37,9 @@ public_api_router.include_router(questions_router)
 public_api_router.include_router(practice_router)
 public_api_router.include_router(wrong_questions_router)
 public_api_router.include_router(ai_router)
-public_api_router.include_router(rag_router)
+# RAG returns repository source chunks; never mount it in restricted profiles.
+if not is_restricted_environment():
+    public_api_router.include_router(rag_router)
 public_api_router.include_router(imports_router)
 public_api_router.include_router(behavior_router)
 public_api_router.include_router(review_router)
