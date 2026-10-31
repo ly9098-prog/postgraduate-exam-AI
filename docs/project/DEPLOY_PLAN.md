@@ -121,6 +121,8 @@ bash deploy/scripts/deploy.sh update-admin
 >
 > 每次 `deploy.sh update`（或任何重建 app/scheduler 容器的操作）后都建议执行一次 reload；若更新后 `curl https://www.xzshub.top/api/v1/health` 非 200，先 reload nginx 再排查其它。
 
+> **X-Forwarded-For 信任边界（2026-10-31 安全审计修复）：** `deploy/nginx/nginx.conf` 所有反代 location 一律 `proxy_set_header X-Forwarded-For $remote_addr;`（覆盖而非追加客户端自带的 XFF），否则攻击者可伪造 XFF 绕过按 IP 的登录限流。后端 Dockerfile 仍为 `--forwarded-allow-ips=*`，依赖 app 端口仅绑定 `127.0.0.1:8000`（同 compose 网络内的容器仍可直连 app，需自行保证其可信）；不要把 8000 暴露到公网。若日后在 nginx 前加 CDN/LB，必须同时配置 `set_real_ip_from <LB CIDR>` + `real_ip_header`，否则所有客户端共用同一限流桶。`nginx.conf` 是文件级 bind mount，上线需 `--force-recreate nginx`（见上文）。生产服务器尚未应用此改动，待授权后随部署同步。
+
 ### 2.3 查看状态
 
 ```bash
