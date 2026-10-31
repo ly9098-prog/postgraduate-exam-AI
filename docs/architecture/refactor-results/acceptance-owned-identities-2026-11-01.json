@@ -14,6 +14,12 @@
     "432d91259dec64b566f50dc4bc97d71e75c70942"
   ],
   "scope": "fresh owned clone of prior synthetic acceptance SQLite; real unmodified local API and WeChat DevTools runtime",
+  "provider_test_account_inventory": {
+    "tool": "WeChat DevTools test-account list",
+    "accounts": 0,
+    "tickets_created_or_used": false,
+    "provider_identity_exchange": false
+  },
   "identity_rbac": {
     "status": "passed",
     "scope": "actual HTTP API; fresh isolated synthetic SQLite clone",
