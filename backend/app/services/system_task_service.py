@@ -970,11 +970,15 @@ async def _run_with_lock(
 async def _run_refresh_token_cleanup(source: str) -> TaskRunOutcome:
     async def work():
         from app.core.database import async_session
-        from app.services import token_service
+        from app.services import account_erasure_service, token_service
 
         async with async_session() as db:
             deleted = await token_service.cleanup_expired_tokens(db)
-        return f"清理 {deleted} 条过期 refresh token"
+            lifecycle = await account_erasure_service.run_account_lifecycle_sweep(db)
+        return (
+            f"清理 {deleted} 条过期 refresh token；账号生命周期：清除 "
+            f"{lifecycle['purged']}、失败 {lifecycle['failed']}、匿名化 {lifecycle['anonymized']}"
+        )
 
     return await _run_with_lock(
         "refresh_token_cleanup", source, "token:cleanup", work, ttl=300

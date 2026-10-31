@@ -140,6 +140,8 @@ class User(Base):
 | created_at | DateTime | server_default=now() |
 | updated_at | DateTime | server_default=now(), onupdate |
 
+> **账号生命周期（2026-10-31 安全审计修复，`services/account_erasure_service.py`）：** 注销（`POST /users/me/deletion-request`）即把 `openid` 改写为不可逆的 `erasing:<uuid>`；每 6 小时的清理任务随后清除所有带 `user_id` 的表（含 `ai_chats`/`ai_generation_logs`/`ai_feedback_logs`）与导出文件，并将 `openid` 标记为 `erased:<uuid>`。连续 365 天无刷新令牌与练习记录的账号仅匿名化登录标识（`anonymized:<uuid>`）并删除其刷新令牌，不删除学习数据。状态编码在 `openid` 前缀中，无新增列。已封禁账号注销时保留原 `openid` 且不进入清除（防止借注销规避封禁）。后台用户列表仍会显示这些墓碑账号。
+
 ---
 
 ## refresh_tokens

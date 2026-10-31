@@ -23,7 +23,7 @@ from app.schemas.user import (
     UserUpdate,
     WechatLogin,
 )
-from app.services import token_service, user_service
+from app.services import account_erasure_service, token_service, user_service
 
 router = APIRouter(prefix="/api/v1")
 MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -216,8 +216,7 @@ async def request_deletion(
 
     now = utcnow_aware()
     previous_avatar_url = current_user.avatar_url
-    current_user.nickname = None
-    current_user.avatar_url = None
+    account_erasure_service.tombstone_cancelled_user(current_user)
     current_user.deleted_at = normalize_to_naive_utc(now)
     await db.commit()
 
