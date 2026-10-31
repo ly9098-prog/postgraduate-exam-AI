@@ -461,3 +461,50 @@ async def test_complete_rejects_artifact_that_is_not_a_json_object(env):
     )
     assert response.status_code == 409
     assert await _status(env, job_id) != "completed"
+
+
+@pytest.mark.asyncio
+async def test_upload_rejected_when_aggregate_quota_is_full(env, monkeypatch):
+    monkeypatch.setattr(settings, "OCR_WORKER_ARTIFACT_TOTAL_MAX_BYTES", 1500)
+    first = await _job(env)
+    assert (await _post(env, _body(first, b"x" * 1000))).status_code == 200
+
+    second = await _job(env)
+    response = await _post(env, _body(second, b"y" * 1000))
+    assert response.status_code == 507
+    assert not list((env.root / "ocr-results" / second).glob("*"))
+
+    # Replacing a job's own artifact does not count its previous copy twice.
+    assert (await _post(env, _body(first, b"z" * 1000))).status_code == 200
+
+
+def test_cleanup_removes_expired_artifacts_and_keeps_fresh_ones(env, monkeypatch):
+    import os
+    import time
+
+    from app.services import ocr_artifact_service as artifacts
+
+    monkeypatch.setattr(settings, "STAGING_RETENTION_SEC", 3600)
+    old_dir = env.root / "ocr-results" / "old"
+    fresh_dir = env.root / "ocr-results" / "fresh"
+    old_dir.mkdir(parents=True)
+    fresh_dir.mkdir(parents=True)
+    old_file = old_dir / "document.ir.json"
+    old_tmp = fresh_dir / ".document.ir.json.abc.tmp"
+    fresh_file = fresh_dir / "document.ir.json"
+    for path in (old_file, old_tmp, fresh_file):
+        path.write_text("{}")
+    stale = time.time() - 7200
+    os.utime(old_file, (stale, stale))
+    os.utime(old_tmp, (stale, stale))
+
+    assert artifacts.cleanup_expired_artifacts() == 2
+    assert not old_dir.exists()
+    assert not old_tmp.exists()
+    assert fresh_file.exists()
+
+
+def test_cleanup_without_artifact_dir_is_a_noop(env):
+    from app.services import ocr_artifact_service as artifacts
+
+    assert artifacts.cleanup_expired_artifacts() == 0

@@ -31,6 +31,7 @@ _SHA_RE = re.compile(r"[0-9a-f]{64}")
 _MARKER = b'"data":"'
 _MAX_HEADER_BYTES = 4096
 _MAX_TRAILER_BYTES = 16
+_TEMP_GRACE_SEC = 3600
 _UPLOADABLE = {OCRJobStatus.RUNNING.value, OCRJobStatus.UPLOADING.value}
 
 
@@ -198,6 +199,61 @@ async def _run_io(func, *args) -> None:
         raise ArtifactUploadError(503, "Artifact storage unavailable") from exc
 
 
+def _published_files(root: Path):
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            path = Path(dirpath) / name
+            if not path.is_symlink():
+                yield path
+
+
+def _usage_bytes(root: Path, exclude: Path) -> int:
+    total = 0
+    for path in _published_files(root):
+        if path.name.endswith(".tmp") or path == exclude:
+            continue
+        with suppress(OSError):
+            total += path.stat().st_size
+    return total
+
+
+async def _check_total_quota(target: Path, size: int) -> None:
+    try:
+        used = await asyncio.to_thread(_usage_bytes, _root(), target)
+    except OSError as exc:
+        raise ArtifactUploadError(503, "Artifact storage unavailable") from exc
+    if used + size > settings.OCR_WORKER_ARTIFACT_TOTAL_MAX_BYTES:
+        raise ArtifactUploadError(507, "Artifact storage quota exceeded")
+
+
+def cleanup_expired_artifacts() -> int:
+    """Delete artifacts older than ``STAGING_RETENTION_SEC`` and stale temp files.
+
+    Nothing reads a stored artifact after ``complete_job`` verified it, so expiry
+    only needs to outlast a job's lifetime.
+    """
+    root = _root()
+    if not root.is_dir():
+        return 0
+    now = datetime.now(UTC).timestamp()
+    retention_cutoff = now - settings.STAGING_RETENTION_SEC
+    temp_cutoff = now - _TEMP_GRACE_SEC
+    removed = 0
+    for path in list(_published_files(root)):
+        cutoff = temp_cutoff if path.name.endswith(".tmp") else retention_cutoff
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    for dirpath, _dirnames, _filenames in sorted(os.walk(root), reverse=True):
+        if Path(dirpath) != root:
+            with suppress(OSError):
+                Path(dirpath).rmdir()
+    return removed
+
+
 async def receive_artifact(
     stream: AsyncIterable[bytes],
     *,
@@ -216,6 +272,7 @@ async def receive_artifact(
             )
             if sha != header["sha256"]:
                 raise ArtifactUploadError(422, "Artifact sha256 mismatch")
+            await _check_total_quota(target, size)
             await _run_io(_sync_file, handle)
         # The stream can outlive the lease: re-check right before publishing.
         await validate(header)

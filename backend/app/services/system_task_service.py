@@ -987,10 +987,12 @@ async def _run_refresh_token_cleanup(source: str) -> TaskRunOutcome:
 
 async def _run_staging_cleanup(source: str) -> TaskRunOutcome:
     async def work():
+        from app.services.ocr_artifact_service import cleanup_expired_artifacts
         from app.services.staging_storage import async_cleanup_orphans
 
         removed = await async_cleanup_orphans()
-        return f"清理 {removed} 个过期/孤立 staging 条目"
+        artifacts = await asyncio.to_thread(cleanup_expired_artifacts)
+        return f"清理 {removed} 个过期/孤立 staging 条目，{artifacts} 个 OCR worker 产物"
 
     return await _run_with_lock(
         "staging_cleanup", source, "staging:cleanup", work, ttl=900
