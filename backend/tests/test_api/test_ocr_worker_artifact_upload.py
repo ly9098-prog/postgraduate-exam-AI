@@ -388,3 +388,76 @@ async def test_unavailable_storage_is_503(env, tmp_path, monkeypatch):
     job_id = await _job(env)
     response = await _post(env, _body(job_id, b"x"))
     assert response.status_code == 503
+
+
+async def _started_job(env):
+    async with env.factory() as db:
+        job = await jobs.create_job(
+            db,
+            request_id=f"bind-{uuid.uuid4().hex}",
+            document_id="doc",
+            document_sha256="a" * 64,
+            input_artifact_key="uploads/x.pdf",
+            input_mime_type="application/pdf",
+            input_size_bytes=10,
+            pipeline_fingerprint="pipe",
+        )
+        claimed, token = await jobs.claim_job(db, worker_id=WORKER)
+        await jobs.start_job(db, claimed.id, token)
+        await db.commit()
+        return job.id, token
+
+
+async def _complete(env, job_id, token, *, key, sha):
+    return await env.client.post(
+        f"/api/internal/ocr-worker/jobs/{job_id}/complete",
+        json={"lease_token": token, "output_artifact_key": key, "output_sha256": sha},
+        headers=AUTH,
+    )
+
+
+async def _status(env, job_id):
+    async with env.factory() as db:
+        return (await jobs._get_job_or_raise(db, job_id)).status
+
+
+@pytest.mark.asyncio
+async def test_complete_rejects_non_canonical_artifact_key(env):
+    job_id, token = await _started_job(env)
+    data = b'{"pages":[]}'
+    assert (await _post(env, _body(job_id, data))).status_code == 200
+    response = await _complete(
+        env, job_id, token, key="ocr-results/other/document.ir.json",
+        sha=hashlib.sha256(data).hexdigest(),
+    )
+    assert response.status_code == 409
+    assert await _status(env, job_id) != "completed"
+
+
+@pytest.mark.asyncio
+async def test_complete_rejects_missing_artifact(env):
+    job_id, token = await _started_job(env)
+    response = await _complete(env, job_id, token, key=_key(job_id), sha="b" * 64)
+    assert response.status_code == 409
+    assert await _status(env, job_id) != "completed"
+
+
+@pytest.mark.asyncio
+async def test_complete_rejects_hash_that_does_not_match_stored_artifact(env):
+    job_id, token = await _started_job(env)
+    assert (await _post(env, _body(job_id, b'{"pages":[]}'))).status_code == 200
+    response = await _complete(env, job_id, token, key=_key(job_id), sha="c" * 64)
+    assert response.status_code == 409
+    assert await _status(env, job_id) != "completed"
+
+
+@pytest.mark.asyncio
+async def test_complete_rejects_artifact_that_is_not_a_json_object(env):
+    job_id, token = await _started_job(env)
+    data = b"not json"
+    assert (await _post(env, _body(job_id, data))).status_code == 200
+    response = await _complete(
+        env, job_id, token, key=_key(job_id), sha=hashlib.sha256(data).hexdigest()
+    )
+    assert response.status_code == 409
+    assert await _status(env, job_id) != "completed"

@@ -54,6 +54,37 @@ def _root() -> Path:
     return Path(configured or Path(settings.STAGING_STORAGE_DIR) / "worker-artifacts")
 
 
+def verify_stored_artifact(job_id: str, output_artifact_key: str, output_sha256: str) -> None:
+    """Check a completion claim against the artifact the upload flow stored.
+
+    Raises ValueError unless the key is the job's canonical key and the stored
+    file exists, is within the size limit, hashes to ``output_sha256`` and holds
+    a JSON object.
+    """
+    expected = artifact_key(job_id)
+    if output_artifact_key != expected:
+        raise ValueError("output_artifact_key does not belong to this job")
+    path = _root() / expected
+    limit = settings.OCR_WORKER_ARTIFACT_MAX_BYTES
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("result artifact is missing")
+        with path.open("rb") as handle:
+            raw = handle.read(limit + 1)
+    except OSError as exc:
+        raise ValueError("result artifact is unreadable") from exc
+    if len(raw) > limit:
+        raise ValueError("result artifact exceeds the size limit")
+    if hashlib.sha256(raw).hexdigest() != output_sha256:
+        raise ValueError("output_sha256 does not match the stored artifact")
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError("result artifact is not valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("result artifact must be a JSON object")
+
+
 def _parse_header(raw: bytes) -> dict:
     try:
         header = json.loads(raw.rstrip().removesuffix(b",") + b"}")

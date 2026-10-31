@@ -229,6 +229,7 @@ async def complete_job(
             worker_fingerprint=body.worker_fingerprint,
             model_fingerprint=body.model_fingerprint,
             complete_idempotency_key=body.complete_idempotency_key,
+            verify_artifact=True,
         )
     except ValueError as e:
         _err(str(e), status_code=status.HTTP_409_CONFLICT)

@@ -10,6 +10,7 @@ Design principles:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 from datetime import datetime, timedelta
@@ -356,6 +357,7 @@ async def complete_job(
     worker_fingerprint: str | None = None,
     model_fingerprint: str | None = None,
     complete_idempotency_key: str | None = None,
+    verify_artifact: bool = False,
 ) -> OCRJob:
     """Mark job as completed with output artifact.
 
@@ -376,6 +378,15 @@ async def complete_job(
         raise ValueError(f"Job {job_id} already completed with a different output")
 
     _verify_lease(job, lease_token)
+    if verify_artifact:
+        from app.services import ocr_artifact_service
+
+        await asyncio.to_thread(
+            ocr_artifact_service.verify_stored_artifact,
+            job.id,
+            output_artifact_key,
+            output_sha256,
+        )
     if job.status == OCRJobStatus.RUNNING.value:
         guard_ocr_job_transition(job.status, OCRJobStatus.UPLOADING.value)
         job.status = OCRJobStatus.UPLOADING.value
