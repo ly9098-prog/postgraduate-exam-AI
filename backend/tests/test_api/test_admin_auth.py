@@ -460,7 +460,7 @@ def test_login_consecutive_failures_set_account_lock(monkeypatch):
 
 
 def test_login_blocked_when_account_locked(monkeypatch):
-    """Locked accounts reject bad credentials without consulting a real DB."""
+    """Locked accounts are rejected before any credential comparison."""
     import asyncio
 
     from app.core.cache import cache
@@ -477,12 +477,34 @@ def test_login_blocked_when_account_locked(monkeypatch):
         asyncio.run(cache.delete_strict(_ip_rate_key("admin")))
         app.dependency_overrides.pop(get_db, None)
 
-    authenticate.assert_awaited_once()
+    authenticate.assert_not_awaited()
     assert resp.status_code == 429
     error = resp.json()["error"]
     assert error["code"] == "HTTP_429"
     assert error["retryable"] is True
     assert "临时锁定" not in str(resp.json())
+
+
+def test_login_locked_account_rejects_even_with_correct_password(monkeypatch):
+    """The lock throttles guessing: no verification, even for a valid credential."""
+    import asyncio
+
+    from app.core.cache import cache
+
+    authenticate = AsyncMock(return_value=object())
+    monkeypatch.setattr(admin_auth, "authenticate_admin", authenticate)
+    app.dependency_overrides[get_db] = _override_db
+    asyncio.run(cache.set_strict("admin:login:account_lock:admin", 1, ttl=900))
+    try:
+        resp = client.post("/api/admin/v1/auth/login", json={"username": "admin", "password": "right"})
+    finally:
+        asyncio.run(cache.delete_strict("admin:login:account_lock:admin"))
+        asyncio.run(cache.delete_strict("admin:login:account_fail:admin"))
+        asyncio.run(cache.delete_strict(_ip_rate_key("admin")))
+        app.dependency_overrides.pop(get_db, None)
+
+    authenticate.assert_not_awaited()
+    assert resp.status_code == 429
 
 
 # ── 密码策略 ──

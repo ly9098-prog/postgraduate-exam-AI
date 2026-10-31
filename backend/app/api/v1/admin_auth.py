@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -30,6 +31,8 @@ from app.services.admin_auth_service import (
     change_admin_password,
     get_admin_me_response,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/v1/auth", tags=["admin-auth"])
 
@@ -134,11 +137,16 @@ async def login(
             detail="登录尝试过于频繁，请稍后重试",
             headers={"Retry-After": str(settings.ADMIN_LOGIN_WINDOW_SEC)},
         )
-    # An account-level lock still suppresses distributed wrong-password
-    # attempts, but it must not let an attacker deny service to the real admin.
-    # We therefore verify the submitted credential first: a correct password
-    # clears the lock; an incorrect password remains rate-limited.
+    # A locked account is rejected before any credential comparison so the lock
+    # actually throttles guessing; the window is bounded by ADMIN_LOGIN_WINDOW_SEC.
     account_locked = await _read_fail_count(account_lock_key) > 0
+    if account_locked:
+        logger.warning("Admin login rejected: account locked")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="该账号登录失败次数过多，请稍后重试",
+            headers={"Retry-After": str(settings.ADMIN_LOGIN_WINDOW_SEC)},
+        )
 
     try:
         admin_user = await authenticate_admin(db, data)
