@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import io
+import struct
 import uuid
 
 import httpx
@@ -25,6 +26,8 @@ WX_URL = "https://api.weixin.qq.com/sns/jscode2session"
 LOCAL_APP_ENVS = {"development", "local", "test"}
 AVATAR_SIZE = 512
 AVATAR_JPEG_QUALITY = 88
+MAX_AVATAR_DIMENSION = 4096
+MAX_AVATAR_PIXELS = 4096 * 4096
 
 
 def _dev_openid(code: str) -> str:
@@ -174,28 +177,47 @@ async def update_user(
 def _normalize_avatar_bytes(data: bytes) -> bytes:
     """Decode and normalize a user supplied avatar into a bounded JPEG."""
     try:
-        with Image.open(io.BytesIO(data)) as source:
-            source.load()
-            image = ImageOps.exif_transpose(source)
-            if image.width <= 0 or image.height <= 0:
-                raise ValueError("头像图片尺寸无效")
-            # chooseAvatar normally returns a square crop.  ImageOps.fit also
-            # gives us a stable square result for camera/gallery edge cases.
-            image = ImageOps.fit(
-                image.convert("RGB"),
-                (AVATAR_SIZE, AVATAR_SIZE),
-                method=Image.Resampling.LANCZOS,
-            )
-            output = io.BytesIO()
-            image.save(
-                output,
-                format="JPEG",
-                quality=AVATAR_JPEG_QUALITY,
-                optimize=True,
-            )
-            return output.getvalue()
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        return _decode_avatar(data)
+    except (
+        UnidentifiedImageError,
+        OSError,
+        Image.DecompressionBombError,
+        SyntaxError,
+        EOFError,
+        struct.error,
+        ZeroDivisionError,
+    ) as exc:
         raise ValueError("头像文件不是有效图片") from exc
+
+
+def _decode_avatar(data: bytes) -> bytes:
+    with Image.open(io.BytesIO(data)) as source:
+        width, height = source.size
+        if (
+            width <= 0
+            or height <= 0
+            or width > MAX_AVATAR_DIMENSION
+            or height > MAX_AVATAR_DIMENSION
+            or width * height > MAX_AVATAR_PIXELS
+        ):
+            raise ValueError("头像图片尺寸超出限制")
+        source.load()
+        image = ImageOps.exif_transpose(source)
+        # chooseAvatar normally returns a square crop.  ImageOps.fit also
+        # gives us a stable square result for camera/gallery edge cases.
+        image = ImageOps.fit(
+            image.convert("RGB"),
+            (AVATAR_SIZE, AVATAR_SIZE),
+            method=Image.Resampling.LANCZOS,
+        )
+        output = io.BytesIO()
+        image.save(
+            output,
+            format="JPEG",
+            quality=AVATAR_JPEG_QUALITY,
+            optimize=True,
+        )
+        return output.getvalue()
 
 
 async def replace_user_avatar(db: AsyncSession, user: User, data: bytes) -> User:

@@ -619,6 +619,7 @@ jobs:
             tests/architecture/test_knowledge_diagnosis_boundaries.py \
             tests/test_services/test_dashboard_stats_compatibility.py \
             tests/test_services/test_token_user_service_compatibility.py \
+            tests/test_services/test_avatar_decompression_guard.py \
             tests/test_services/test_dashboard_insights_contract.py \
             tests/test_services/test_dashboard_fallback_topics_db.py \
             tests/test_services/test_dashboard_insights_projection.py \
