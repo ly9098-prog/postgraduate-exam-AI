@@ -621,6 +621,7 @@ jobs:
             tests/test_services/test_token_user_service_compatibility.py \
             tests/test_services/test_avatar_decompression_guard.py \
             tests/test_deploy_nginx_forwarded_for.py \
+            tests/test_services/test_admin_password_change_revocation.py \
             tests/test_services/test_dashboard_insights_contract.py \
             tests/test_services/test_dashboard_fallback_topics_db.py \
             tests/test_services/test_dashboard_insights_projection.py \

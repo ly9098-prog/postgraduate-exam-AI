@@ -12,6 +12,7 @@ from app.core.admin_security import (
     validate_admin_password_strength,
     verify_admin_password,
 )
+from app.core.time_utils import unix_timestamp, utcnow
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 from app.schemas.admin_auth import AdminChangePasswordRequest, AdminLoginRequest
 from app.services.admin_audit_service import write_admin_audit
@@ -158,10 +159,9 @@ async def change_admin_password(
     validate_admin_password_strength(data.new_password)
     # hash_admin_password 内部已有字节长度校验，超长会抛 ValueError
     admin_user.password_hash = hash_admin_password(data.new_password)
-    invalid_after = None
-    if operator is not None:
-        invalid_after = int(operator.token_payload.get("iat", 0)) + 1
-    await set_admin_user_nbf(admin_user.id, invalid_after)
+    # 水印取凭据变更时刻（而非操作者 token 的 iat），使此前签发的全部会话失效；
+    # 路由随后删除刷新 Cookie，操作者需重新登录。
+    await set_admin_user_nbf(admin_user.id, int(unix_timestamp(utcnow())) + 1)
     await write_admin_audit(
         db,
         operator,
