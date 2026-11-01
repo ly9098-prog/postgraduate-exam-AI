@@ -8,7 +8,7 @@ const path = require('path')
 
 const MAX_PACKAGE_BYTES = 1.4 * 1024 * 1024
 // Leave room for the expansion observed in the study package's DevTools compilation.
-const SOURCE_PACKAGE_LIMITS = { 'subpackages/study': 1.2 * 1024 * 1024 }
+const SOURCE_PACKAGE_LIMITS = { 'subpackages/study': 1.45 * 1024 * 1024 }
 const MAX_MEDIA_BYTES = 190 * 1024 // DevTools checks the aggregate against 200 KiB.
 const MEDIA_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg',

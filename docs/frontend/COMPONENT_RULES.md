@@ -163,33 +163,25 @@ node tests/test-component-paths.js
 并将媒体源码合计预算限制为 190 KiB，为开发者工具的 200 KiB 阈值留余量。
 该脚本不是编译器，不能用源码统计替代开发者工具的「重新扫描」；
 本次另在模拟器实际 JS 上下文验证了 11 个公式的 HTML/DOM-tree 渲染。
-`test-katex-upload-syntax.js` 使用 Acorn 的保守 ES2015 语法检查全部 18 个 vendor JS，
-并校验三份文件字节一致；`test-package-quality.js` 同时调用此语法检查。
+`test-katex-upload-syntax.js` 使用 Acorn 的保守 ES2015 语法检查 exam/formulas 的 12 个 vendor JS，
+并校验两份文件字节一致；`test-package-quality.js` 同时调用此语法检查。
 Node 回归在独立进程测试 33 个公式案例，包含重音、上下标、矩阵、带分隔线数组和 aligned；
 本次临时对比确认修复前后 HTML 完全一致。语法回归与质量扫描不能代替微信服务器实际上传，
 本次未执行新的版本上传或发布。
 Android/iOS 真机渲染仍未验证。
 
-### 2026-10-27：study 运行时迁入主包
+### 2026-10-27：study 运行时迁入主包（历史）
 
-上述 2026-10-04 的编译扫描与模拟器结果是历史验收。当前六个预构建文件位于
-`miniprogram/vendor/katex/`，与迁移前 study 文件字节一致；study 的六个原入口保留同步
-`module.exports = require(...)` 转发。exam、formulas 的独立副本继续保留。
-`babelSetting.ignore` 精确迁至主包的这六个文件，业务编译开关、打包忽略规则和预算未变。
-study 是普通分包，引用主包运行时；不能将其改为独立分包后继续沿用此依赖。
+该次把 study 的六个预构建文件迁到主包 `vendor/katex/`；2026-11-01 已按微信工具“主包未使用JS”提示移除，study 恢复本地全量副本。以下文本是历史状态，不代表当前结构。
 
 study、exam 的 `latex/index.js`、Parser、组件模板和样式保留各自实现。study 的 DOM-tree
 转 rich-text 与 exam 的 HTML 解析存在语义差异，不能合并包装器或替换整套组件。
-这次只是包间体积转移：study 源码 1,399,232 → 1,124,220 字节，低于既有 1.2 MiB 门禁；
-主包为 772,769 字节，低于既有 1.4 MiB 门禁。六个转发入口合计 434 字节，
-配置路径缩短另减少 180 字节，本批源码统计总量净增 254 字节。
+2026-11-01 当前规则：普通分包不得把主包 vendor 作为运行时依赖；如再次提取主包 vendor，必须保持至少一个主包直接消费者，并重新验证微信打包扫描。
+这次曾把 study 源码降至 1,124,220 字节；2026-11-01 恢复本地副本后 study 为 1,485,461 字节，源码预算按当前结构调整为 1.45 MiB（容差到 1,484,800 字节）仍不足，实际测试输入显示需 1.48 MiB 量级，后续应以新消费链或真实微信验证驱动调整。
 
-`test-katex-upload-syntax.js` 现检查主包、exam、formulas 的 18 个 vendor 文件及六个
-study 转发入口。`test-katex-vendor-runtime.js` 在四个独立进程验证旧入口和新入口；
-新增 `node --test tests/test-katex-main-vendor.js` 固定迁移前 vendor 哈希，检查同步转发与
-打包边界，并对三分包六种加载顺序逐包比较迁移前后的公式 HTML 和完整富文本节点。
+历史测试曾有主包 vendor 哈希与六转发入口检查；2026-11-01 改为 exam/formulas 2份副本语法/一致性检查，vendor runtime 覆盖 study/exam/formulas 3份副本，`test-katex-main-vendor.js` 已删除。
 比较包括默认/natural 布局、复杂矩阵、无效 LaTeX 和中文；不要求 study 与 exam 节点相同。
-质量、运行时与边界回归均已接入 reliability。
+质量与运行时回归已接入 reliability；加载顺序对照脚本保留，但其主包 vendor 专用边界测试已删除。
 
 当前迁移仅有 Node 与源码体积证据；微信开发者工具重新编译、编译包扫描、模拟器、
 Android/iOS 真机及服务器上传尚未验证，不能复用历史结果作为本次验收。

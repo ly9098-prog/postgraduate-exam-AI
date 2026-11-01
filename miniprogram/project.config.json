@@ -219,14 +219,7 @@
     "showES6CompileOption": false,
     "minifyWXML": true,
     "babelSetting": {
-      "ignore": [
-        "vendor/katex/katex-core.js",
-        "vendor/katex/katex-part-150.js",
-        "vendor/katex/katex-part-187.js",
-        "vendor/katex/katex-part-64.js",
-        "vendor/katex/katex-part-970.js",
-        "vendor/katex/katex.min.js"
-      ],
+      "ignore": [],
       "disablePlugins": [],
       "outputPath": ""
     },

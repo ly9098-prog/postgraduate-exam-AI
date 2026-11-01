@@ -44,7 +44,7 @@ try {
   assert.equal(summary.media.length, 2, 'explicitly excluded media must not be counted')
   assert.throws(() => checkBudgets(summary), /Aggregate media budget exceeded/)
   assert.throws(() => checkBudgets({ packages: { __APP__: { bytes: 2 * 1024 * 1024 } }, media: [], mediaBytes: 0 }), /Source package budget/)
-  assert.throws(() => checkBudgets({ packages: { 'subpackages/study': { bytes: 1.3 * 1024 * 1024 } }, media: [], mediaBytes: 0 }), /Source package budget/)
+  assert.throws(() => checkBudgets({ packages: { 'subpackages/study': { bytes: 1.5 * 1024 * 1024 } }, media: [], mediaBytes: 0 }), /Source package budget/)
   assert.throws(() => collectPackageSizes(fixture, appConfig, { packOptions: { include: [{ type: 'file', value: 'app.js' }] } }), /include rules/)
 } finally {
   // Only delete the temporary fixture created by this test.
@@ -54,19 +54,13 @@ try {
 const miniRoot = path.resolve(__dirname, '..')
 const readJson = name => JSON.parse(fs.readFileSync(path.join(miniRoot, name), 'utf8'))
 const config = readJson('project.config.json')
-const vendorPrefix = 'vendor/katex/'
-const expected = [
-  'katex-core.js', 'katex-part-150.js', 'katex-part-187.js',
-  'katex-part-64.js', 'katex-part-970.js', 'katex.min.js',
-].map(name => vendorPrefix + name)
-assert.deepEqual([...config.setting.babelSetting.ignore].sort(), [...expected].sort(),
-  'enhanced-compilation exclusions must stay limited to the six prebuilt KaTeX files')
+assert.deepEqual(config.setting.babelSetting.ignore, [],
+  'no prebuilt main-package vendor files remain after the main KaTeX runtime removal')
 assert.equal(config.setting.es6, true, 'business code still needs ES6 compilation')
 assert.equal(config.setting.enhance, true, 'business code still needs enhanced compilation')
 assert.equal(config.setting.minified, true)
 assert.equal(config.setting.ignoreCodeQuality, undefined, 'quality checks must not be bypassed')
-for (const file of expected) assert.ok(fs.existsSync(path.join(miniRoot, file)))
-// Skipping Babel is safe only when the vendor also satisfies upload grammar.
+// Remaining subpackage vendor copies still satisfy upload grammar.
 require('./test-katex-upload-syntax')
 const app = readJson('app.json')
 assert.equal(app.usingComponents['app-dialog'], '/components/app-dialog/index')
