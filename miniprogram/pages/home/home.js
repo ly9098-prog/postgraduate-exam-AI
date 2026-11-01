@@ -1256,12 +1256,12 @@ Page({
       this.openHubTaskByData(this.data.hubPrimaryTask)
       return
     }
-    if (task.route === 'pomodoro') {
-      const params = this.data.primaryTaskParams || {}
-      const query = Object.keys(params)
-        .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
-        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
-        .join('&')
+    const params = this.data.primaryTaskParams || {}
+    const query = Object.keys(params)
+      .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
+      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
+      .join('&')
+    if (this.data.primaryTaskRoute === 'pomodoro') {
       wx.navigateTo({ url: `/pages/pomodoro/pomodoro${query ? '?' + query : ''}` })
       return
     }
