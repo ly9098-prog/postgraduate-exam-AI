@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from logging import Logger
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +45,9 @@ async def invoke_and_review_analysis(
             cached_response=request.cached_response,
         )
     )
+    # Provider failures and preserved caches are already complete API responses.
+    if isinstance(invocation, dict):
+        return invocation, None
     review = await _review_invocation(request, invocation, image_data_urls, inputs)
     return invocation, review
 
@@ -81,6 +82,8 @@ async def resolve_reviewed_analysis_outcome(
     invocation: Any,
     review: Any,
 ) -> dict:
+    if isinstance(invocation, dict):
+        return invocation
     runtime = invocation.runtime
     return await _resolve_outcome(
         request,

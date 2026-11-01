@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.services.ai import provider_invocation
+from app.services.ai.analysis_availability import AnalysisUnavailableError
 from app.services.ai.provider_invocation import (
     ProviderInvocationInput,
     invoke_analysis_provider,
@@ -47,6 +49,15 @@ def payload(**overrides):
     )
     values.update(overrides)
     return ProviderInvocationInput(**values)
+
+
+@pytest.fixture(autouse=True)
+def verified_runtime(monkeypatch):
+    monkeypatch.setattr(
+        provider_invocation,
+        "require_runtime_verified",
+        AsyncMock(),
+    )
 
 
 @pytest.mark.asyncio
@@ -92,10 +103,12 @@ async def test_non_auth_failure_returns_typed_response_without_failover():
 async def test_auth_failure_quarantines_and_tries_fallback_once():
     fallback = runtime(config_id=12, model="analysis-fallback")
     item = payload(
-        chat=AsyncMock(side_effect=[
-            RuntimeError("invalid_api_key"),
-            {"content": "fallback-ok", "model": "analysis-fallback"},
-        ]),
+        chat=AsyncMock(
+            side_effect=[
+                RuntimeError("invalid_api_key"),
+                {"content": "fallback-ok", "model": "analysis-fallback"},
+            ]
+        ),
         resolve_runtime=AsyncMock(return_value=fallback),
     )
 
@@ -133,10 +146,12 @@ async def test_auth_failure_without_fallback_preserves_failure_response():
 async def test_fallback_auth_failure_quarantines_fallback_model_too():
     fallback = runtime(config_id=12, model="analysis-fallback")
     item = payload(
-        chat=AsyncMock(side_effect=[
-            RuntimeError("invalid_api_key"),
-            RuntimeError("403 forbidden"),
-        ]),
+        chat=AsyncMock(
+            side_effect=[
+                RuntimeError("invalid_api_key"),
+                RuntimeError("403 forbidden"),
+            ]
+        ),
         resolve_runtime=AsyncMock(return_value=fallback),
     )
 
@@ -178,3 +193,32 @@ async def test_timeout_and_fallback_timeout_return_retryable_response():
         "failure_model": "timeout",
     }
     second.quarantine_runtime.assert_awaited_once_with(second.runtime)
+
+
+@pytest.mark.asyncio
+async def test_unverified_model_returns_availability_without_provider_call(monkeypatch):
+    state = {
+        "status": "unavailable",
+        "enabled": False,
+        "reason": "configuration",
+        "message": "AI 服务配置或权限异常，等待管理员处理",
+        "retry_after_ms": 300000,
+    }
+    monkeypatch.setattr(
+        provider_invocation,
+        "require_runtime_verified",
+        AsyncMock(side_effect=AnalysisUnavailableError(state)),
+    )
+    item = payload()
+
+    outcome = await invoke_analysis_provider(item)
+
+    assert outcome == {
+        "error_code": "ai_service_unavailable",
+        "retryable": False,
+        "failure_model": "availability",
+        "availability": state,
+    }
+    item.chat.assert_not_awaited()
+    item.resolve_runtime.assert_not_awaited()
+    item.quarantine_runtime.assert_not_awaited()

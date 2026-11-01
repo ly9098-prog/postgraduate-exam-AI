@@ -263,3 +263,106 @@ Layer 4 规则（`repair_questions` 内）：
 两份测试均加入固定CI清单。既有`test-408-ai-teacher.js`修复旧练习结果页内联API位置假设，改查现有适配层及固定版本controller；原整体展开断言改为当前复盘卡片三类手势绑定和更多动作默认收起检查，未修改UI。原`test-408-feature-integration.js`在本轮前即因storage中的旧studyStrategy源码位置失败，原文件/运行时均未改，记录至SHR-03门禁治理；不据本轮测试声称所有小程序脚本均通过。
 
 精确测试、源码冻结、独立审查与提交状态见[结果清单](refactor-results/miniprogram-ai-retention-2026-10-30.json)。本项结论仅用于当前消费者结构处置；真实JWT/微信、多模态/外部模型、PostgreSQL/Redis并发、完整worker与生产仍在最终环境验收阶段，不由本地HTTP/SQLite/替身结果替代。
+
+## 17. 错题详情 AI 失败后持续加载修复（2026-11-01）
+
+用户提供的日志显示：19:42:00 发起强制生成，模型请求在 277 ms 内收到 HTTP 403，
+没有可用备用模型；接口随后在约 495 ms 因 `'dict' object has no attribute 'result'`
+异常结束，客户端却继续提交恢复任务并查询状态，至少持续到 19:43:15。
+错题详情请求本身耗时 20 ms，日志不足以支持“模型生成慢”的结论。
+
+- `invoke_prepared_analysis` 的成功结果是 `ProviderInvocationResult`，失败或保留缓存时
+  返回已组装好的响应字典。`analysis_review_invocation` 现识别该字典并直接传递到终态，
+  跳过仅适用于模型成功结果的 review/runtime 读取；外层 finally 仍负责释放租约。
+  鉴权、限流、暂态故障、超时及重新生成失败保留缓存均遵守此边界。
+- 小程序原先对所有请求异常无差别入队并执行 44 次状态轮询，仅轮询间隔就累计
+  180 秒。现首次生成和重新生成共用纯规则 `_shouldRecoverAiRequest`：
+  传输响应丢失或 HTTP 408/502/504 保留恢复，明确 HTTP 失败立即结束加载。
+  重新生成失败时保留旧卡片、解析和生成时间；规则通过 Page 的能力参数传入，
+  保持子模块不直接依赖传输层的架构约束。
+- 回归覆盖真实 provider 调用编排、失败响应 schema、缓存保留、租约释放，以及
+  隔离 FastAPI/SQLite 中的真实 `analyze_error` 服务链；模型、额度和缓存基础设施
+  使用合成替身。小程序通过真实 Page 包装验证 HTTP 失败零恢复/零轮询及断网恢复。
+  测试扩展在既有 CI 清单文件内，无新增测试文件。
+
+403 是上游鉴权或权限拒绝，日志未包含可判断具体原因的供应商响应体，不能据此断定
+一定是 API Key 错误。实际生成恢复仍需核对 Admin 中对应模型的凭据、Base URL
+和服务调用权限。本次代码验证不等于真实模型、微信真机或生产部署验收。
+
+## 18. 错题 AI 共享健康门禁与自动探测（2026-11-01）
+
+在 §17 修复“明确失败后继续加载”的基础上，新增面向错题 AI 分析与 AI 老师的
+共享可用性门禁。目标不是把所有模型错误永久转成前端错误，而是只在额度不足、
+鉴权/权限、模型配置、限流或暂态故障使当前候选模型不可验证时停止新的模型调用；
+已有分析和对话继续可读。
+
+- 后端新增 `model_health`、`analysis_availability`、`analysis_admin_health`。
+  健康状态按 `model_config_id + config_fingerprint` 存入 Redis，所有用户共享；
+  配置内容或凭据变更会自然切换到新的指纹，不继承旧配置的成功状态。
+- 页面首次检查或成功状态过期时执行一次真实 `chat/completions` 探测。成功状态
+  共享 30 秒；临时故障退避 `30/60/120/300` 秒；额度、鉴权或模型不存在冷却
+  5 分钟。并发请求通过 Redis 锁合并为一次探测，避免每个用户同时打上游模型。
+- `resolve_available_runtime` 会按现有分析模型顺序寻找可用候选。已有健康备用模型
+  时优先复用，不因主模型故障阻断全部用户；只有候选均不可用或正在探测时才禁用。
+  页面查询还会单独检查当前用户 token 额度，`user_quota` 不改变全局模型健康状态。
+- 后端首次探测返回 `checking` 时携带 `retry_after_ms=2000`，前端按 2 秒重查；页面网络
+  传输自身超过 5 秒时只结束检查动画，保留禁用状态并继续自动重查，不把仍在进行的探测
+  当成业务失败。成功状态由后端共享 30 秒。
+- `provider_invocation` 在业务请求前再次验证当前 runtime。未通过时返回
+  `ai_service_unavailable` 和同一 `availability` 状态，不发业务模型请求；真实
+  调用中的额度、鉴权、限流和暂态异常继续记录到共享状态。额度不再混同普通限流。
+- 错题分析缓存命中仍直接返回，不因全局禁用丢失历史内容；生成或强制重新生成不可用
+  时保留旧解析并标记 `cache_preserved`。AI 老师通过同一门禁检查，不可用时返回
+  HTTP 503 的结构化 `detail.code=ai_service_unavailable`；小程序老师面板直接展示
+  该结构化原因，已有老师结果不被清除。
+- 管理员更新会影响错题 AI 路由的已保存模型字段后立即强制探测。只有
+  `POST /ai-models/test-connection` 携带相同 `model_id`，且 Base URL、API Key、
+  模型名、Provider 与能力集均匹配已保存配置时，测试结果才更新共享健康状态；
+  未保存表单修改不能解锁用户功能。管理员测试与错题分析使用同一候选解析链，
+  不会出现测试通过但实际分析选中另一套模型顺序的情况。
+- 小程序详情页加载时调用 availability API，检查动画最多 5 秒；超时只结束动画，
+  action 继续禁用并按 `retry_after_ms` 自动重查。success 后恢复“生成/重新生成/
+  AI 老师”，失败时显示简短原因，已有卡片、解析、老师和普通错题功能不删除。
+- 新增后端可用性回归已登记到 `.github/workflows/ci.yml` 静态测试清单及
+  `.github/workflows/reliability.yml` 的固定 reliability 清单。
+
+验证边界：后端 AI 定向回归 `1083 passed`，包含共享状态、备用模型、额度/鉴权
+分类、缓存保留、availability API 和老师 503；Ruff（项目已登记的
+I001/F401/N818 债务除外）、compileall 与 diff-check 通过；formatter 仅报告
+`ai_service.py` 既有空行差异，未在部署后改写该文件以保持源码 SHA 一致。小程序全量
+`node --test tests/*.js` 为 `2557 passed`，5 个渲染 fixture 共 31 项通过。
+这些测试使用替身或临时缓存，不等于真实微信开发者工具、真机、生产 Redis 或真实
+上游模型成功链路验收。部署和生产探针结果另见
+[结构化结果](refactor-results/wrong-detail-ai-availability-2026-11-01.json)。
+
+## 19. 可用性实现的内聚与耦合复核（2026-11-02）
+
+按 `docs/development/coding-style.md` 与 `development-workflow.md` 对 §18 新增代码
+进行复核，并修复以下职责与行为问题：
+
+- Admin 模型 CRUD 保留在 `admin_ai_config_service`，连接诊断移至
+  `admin_ai_model_test_service`；原服务由 882 行降至 626 行。连接测试模块 325 行，
+  按目标解析、凭据读取、Embedding/Paddle 分支和 Chat 探测划分小函数。
+- `connection_probe` 177 行，共用 URL 校验和最小 Chat 探测；额度错误标记集中在
+  `app.ai.provider_error_signals`，传输层与错误分类层复用，避免重复维护。
+- Admin 探测使用公开 `list_analysis_candidates`，不再调用可用性模块的私有函数。
+  配置提交后的探测为 best-effort，数据库查询或健康存储故障记录 warning，
+  不改变已经完成的保存结果；实际等待时长用于 Admin 测试延迟。
+- 真实业务请求遇到 `model_not_found` 时写入共享配置错误状态并冷却 5 分钟。
+  非取消探测异常保留日志；`ai_service` 使用 `dataclasses.replace` 构造新准备对象，
+  请求和端口构造由小函数承接，主入口只负责门禁与编排。
+- 小程序检查中只更新五个可用性字段，不复制整个 Page data。结构化失败状态直接
+  应用并保留重试计划；未携带 availability 的普通失败才刷新健康状态。
+  禁用状态的静默定时重查持续按冷却时间排程，直到探测成功；API 错误适配只提升
+  `ai_service_unavailable`，不泛化接受其他端点的 detail code。
+
+本批新增模块均小于 800 行、新增函数均小于 50 行。既有 `ai_teacher_408_service`
+1244 行、`ai_service.evaluate_cached_error_analysis` 及 Admin CRUD 长函数不在本批新增
+重构范围，不宣称整个 AI 领域已满足所有文件/函数预算。匹配缓存失败响应的原地补充
+是既有兼容契约，本次保留。
+
+验证：后端相关回归 1435 项通过，小程序全量 2564 项通过，5 个渲染 fixture 共 31 项
+通过；错题详情边界、页面预算、compileall、workflow YAML 和 diff-check 通过。
+运行代码 Ruff 正确性检查通过；唯一保留的严格 lint 债务是 `ai_service.py` 的 21 个
+既有兼容导入 F401，变更文件债务计数未增加，新增模块严格 Ruff 通过。
+真实生产模型调用、微信工具编译与真机链路仍未验证，部署证据另记。

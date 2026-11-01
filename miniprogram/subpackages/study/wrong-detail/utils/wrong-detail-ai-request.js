@@ -57,6 +57,13 @@ aiRetryable: !(result && result.retryable === false),
 
 function onTapAiAnalysis(page, { showToast }) {
 if (page.data.aiLoading || page.data.aiRegenerating) return
+if (page.data.aiAvailabilityEnabled !== true) {
+showToast({ title: page.data.aiAvailabilityMessage || 'AI 服务暂不可用', icon: 'none' })
+if (page.data.aiAvailabilityStatus !== 'checking' && page._refreshAiAvailability) {
+page._refreshAiAvailability({ force: true, silent: true })
+}
+return
+}
 const wqId = page._currentWqId || (page.data.wq && page.data.wq.id)
 if (!wqId) {
 showToast({ title: '缺少错题ID', icon: 'none' })

@@ -1,16 +1,11 @@
-import asyncio
-import json
 import logging
 import time
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import OpenAICompatibleAPIError, llm
 from app.core.admin_security import AdminPrincipal
-from app.core.config import settings
-from app.core.log_context import get_trace_headers
 from app.core.secret_crypto import (
     SecretDecryptionError,
     SecretEncryptionError,
@@ -27,10 +22,8 @@ from app.schemas.admin_ai_config import (
     AdminAiModelConfigResponse,
 )
 from app.services.admin_audit_service import write_admin_audit
-from app.services.safe_remote_fetch import (
-    UnsafeRemoteURLError,
-    request_remote_bytes,
-    validate_remote_url,
+from app.services.ai.connection_probe import (
+    validated_api_base_url as _validated_api_base_url,
 )
 
 # ---------------------------------------------------------------------------
@@ -206,25 +199,6 @@ def _reset_vector_runtime_cache() -> None:
         pass
 
 
-def _validated_api_base_url(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().rstrip("/")
-    if not normalized:
-        return None
-    parsed = urlsplit(normalized)
-    if parsed.query or parsed.fragment:
-        raise ValueError("API Base URL 不能包含查询参数或片段")
-    try:
-        validate_remote_url(
-            normalized,
-            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
-        )
-    except UnsafeRemoteURLError as exc:
-        raise ValueError(f"API Base URL 不安全或不可用: {exc}") from exc
-    return normalized
-
-
 def _same_origin(left: str, right: str) -> bool:
     try:
         l = urlsplit(left)
@@ -259,7 +233,7 @@ async def _seed_configs_if_empty(db: AsyncSession):
     _clear_config_cache()
 
 
-async def _seed_models_if_empty(db: AsyncSession):
+async def seed_models_if_empty(db: AsyncSession):
     result = await db.execute(select(AdminAiModelConfig).limit(1))
     if result.scalar_one_or_none() is not None:
         return
@@ -308,7 +282,7 @@ def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
 
 
 async def list_models(db: AsyncSession) -> list[AdminAiModelConfigResponse]:
-    await _seed_models_if_empty(db)
+    await seed_models_if_empty(db)
     await _ensure_env_key_synced(db)
     result = await db.execute(
         select(AdminAiModelConfig)
@@ -650,330 +624,3 @@ def _coerce_value(raw: str):
     except (ValueError, TypeError):
         pass
     return raw
-
-
-# ---------------------------------------------------------------------------
-# Test connection
-# ---------------------------------------------------------------------------
-
-
-async def test_model_connection(
-    api_base_url: str,
-    api_key: str | None,
-    model_name: str,
-    model_id: int | None = None,
-    db: AsyncSession | None = None,
-    provider: str | None = None,
-    feature: str | None = None,
-    features: list[str] | None = None,
-) -> dict:
-    """对给定模型配置发起一次最小连通性测试，返回诊断结果。
-
-    凭据优先级：
-    1. 请求明确提交了非空、非掩码的临时 API Key；
-    2. 提供了 model_id：从数据库解密已保存 Key；
-    3. 项目明确支持的环境变量 fallback；
-    4. 都没有则返回安全的 auth_error。
-
-    - OpenAI-compatible Chat 模型：按 SDK base_url 语义调用 /chat/completions
-    - PaddleOCR-VL：提交极小图片测试其专用 OCR 接口
-    """
-
-    # 确定 provider / features：优先参数，其次 DB
-    effective_provider = provider
-    effective_features: list[str] = features if features else []
-    if feature and feature not in effective_features:
-        effective_features.append(feature)
-
-    # Key priority 1: explicit temp key from request
-    effective_api_key = (api_key or "").strip() or None
-
-    # Key priority 2: from DB via model_id (only if no explicit key provided)
-    if effective_api_key is None and model_id is not None and db is not None:
-        model = await db.get(AdminAiModelConfig, model_id)
-        if model is not None and model.deleted_at is not None:
-            return {
-                "success": False,
-                "status": "model_not_found",
-                "message": f"模型配置 #{model_id} 已删除，请重新选择模型",
-                "latency_ms": 0,
-            }
-        if model is not None:
-            # model_id is primarily used to reuse the encrypted saved secret.
-            # Keep the request's Base URL / model name / provider so the Admin
-            # form can test unsaved edits before persisting them.
-            if not effective_provider:
-                effective_provider = model.provider
-            if not effective_features:
-                effective_features = (
-                    model.features
-                    if model.features
-                    else ([model.feature] if model.feature else [])
-                )
-
-            if model.api_key_encrypted:
-                try:
-                    effective_api_key = decrypt_secret(model.api_key_encrypted)
-                except (SecretDecryptionError, SecretEncryptionError):
-                    # DB key not decryptable — do NOT fall back to env
-                    return {
-                        "success": False,
-                        "status": "auth_error",
-                        "message": "数据库中保存的 API Key 无法解密，请检查加密配置或重新保存凭据",
-                        "latency_ms": 0,
-                    }
-        else:
-            await _seed_models_if_empty(db)
-            await db.flush()
-            model = await db.get(AdminAiModelConfig, model_id)
-            if model is not None and model.deleted_at is not None:
-                return {
-                    "success": False,
-                    "status": "model_not_found",
-                    "message": f"模型配置 #{model_id} 已删除，请重新选择模型",
-                    "latency_ms": 0,
-                }
-            if model is not None:
-                if not effective_provider:
-                    effective_provider = model.provider
-                if not effective_features:
-                    effective_features = (
-                        model.features
-                        if model.features
-                        else ([model.feature] if model.feature else [])
-                    )
-                if model.api_key_encrypted:
-                    try:
-                        effective_api_key = decrypt_secret(model.api_key_encrypted)
-                    except (SecretDecryptionError, SecretEncryptionError):
-                        return {
-                            "success": False,
-                            "status": "auth_error",
-                            "message": "数据库中保存的 API Key 无法解密",
-                            "latency_ms": 0,
-                        }
-
-    try:
-        api_base_url = _validated_api_base_url(api_base_url) or ""
-    except ValueError as exc:
-        return {
-            "success": False,
-            "status": "network_error",
-            "message": str(exc),
-            "latency_ms": 0,
-        }
-
-    # Key priority 3: no key available
-    if not effective_api_key:
-        return {
-            "success": False,
-            "status": "auth_error",
-            "message": "未提供 API Key，请在上方输入后测试，或先保存模型配置",
-            "latency_ms": 0,
-        }
-
-    # Embedding 模型测试：走 /embeddings，而不是 chat/completions。
-    if "embedding" in effective_features:
-        from app.services.vector_config_service import test_embedding_connection
-
-        result = await test_embedding_connection(
-            api_base_url=api_base_url,
-            api_key=effective_api_key,
-            model=model_name,
-            dim=None,
-            timeout=15,
-        )
-        return {
-            "success": result.success,
-            "status": result.status,
-            "message": result.message,
-            "latency_ms": result.latency_ms,
-            "model_returned": model_name if result.success else None,
-        }
-
-    # PaddleOCR-VL 特殊处理：不调用 chat/completions
-    _provider_norm = (effective_provider or "").strip().lower().replace("_", "-")
-    _is_paddleocr = (
-        "vision" in effective_features
-        or _provider_norm == "paddle"
-        or _provider_norm.startswith("paddleocr")
-    )
-    if _is_paddleocr:
-        return await _test_paddleocr_vl_connection(api_base_url, effective_api_key)
-
-    # 通用 Chat 模型测试
-    return await _test_chat_connection(
-        api_base_url, effective_api_key, model_name, provider=effective_provider
-    )
-
-
-async def _test_chat_connection(
-    api_base_url: str,
-    api_key: str,
-    model_name: str,
-    *,
-    provider: str | None = None,
-) -> dict:
-    """Use the same adaptive OpenAI-compatible client as production traffic.
-
-    The previous test path sent a fixed ``max_tokens + temperature`` payload, so
-    a model could pass/fail differently from the real wrong-question request.
-    Reusing ``llm.chat`` makes the admin "测试连接" exercise URL construction,
-    token-field translation and optional reasoning/temperature negotiation too.
-    """
-    base = _validated_api_base_url(api_base_url) or ""
-    start = time.time()
-    try:
-        result = await llm.chat(
-            [{"role": "user", "content": "Reply with OK only."}],
-            temperature=0.0,
-            model=model_name,
-            api_key=api_key,
-            base_url=base,
-            provider=provider or "openai_compatible",
-            # A connection probe should not reject a healthy slow relay merely
-            # because it cannot answer inside the old 15-second diagnostic cap.
-            # Keep it below common front-proxy/browser request ceilings while
-            # giving reasoning/relay models enough time to return a tiny reply.
-            timeout=55.0,
-            max_tokens=8,
-            prefer_direct_answer=True,
-            connection_probe=True,
-        )
-        elapsed = int(result.get("duration_ms") or ((time.time() - start) * 1000))
-        returned_model = str(result.get("model") or model_name)
-        message = f"连接成功，模型「{returned_model}」响应正常"
-        if int(result.get("compatibility_retries") or 0) > 0:
-            message += "；已自动适配该接口的 OpenAI-compatible 参数格式"
-        return {
-            "success": True,
-            "status": "ok",
-            "message": message,
-            "latency_ms": elapsed,
-            "model_returned": returned_model or None,
-        }
-    except TimeoutError:
-        return {
-            "success": False,
-            "status": "timeout",
-            "message": "连接模型超时，请检查第三方接口可用性或模型响应速度",
-            "latency_ms": int((time.time() - start) * 1000),
-        }
-    except OpenAICompatibleAPIError as exc:
-        elapsed = int((time.time() - start) * 1000)
-        if exc.status_code in (401, 403):
-            return {
-                "success": False,
-                "status": "auth_error",
-                "message": f"API Key 无效或无权限访问 (HTTP {exc.status_code})",
-                "latency_ms": elapsed,
-            }
-        if exc.status_code == 404 or exc.error_kind == "model_not_found":
-            return {
-                "success": False,
-                "status": "model_not_found",
-                "message": f"模型「{model_name}」不存在，请检查模型名称是否正确",
-                "latency_ms": elapsed,
-            }
-        return {
-            "success": False,
-            "status": "unknown_error",
-            "message": f"接口返回异常状态码 {exc.status_code}",
-            "latency_ms": elapsed,
-        }
-    except UnsafeRemoteURLError as exc:
-        return {
-            "success": False,
-            "status": "network_error",
-            "message": f"请求失败: {str(exc)[:160]}",
-            "latency_ms": int((time.time() - start) * 1000),
-        }
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        return {
-            "success": False,
-            "status": "format_error",
-            "message": f"接口返回格式不符合 OpenAI Chat Completions 规范: {str(exc)[:120]}",
-            "latency_ms": int((time.time() - start) * 1000),
-        }
-    except RuntimeError as exc:
-        message = str(exc)
-        if "OpenAI-compatible API response" in message:
-            status = "format_error"
-            detail = "接口返回格式不符合 OpenAI Chat Completions 规范"
-        else:
-            status = "network_error"
-            detail = f"请求失败: {message[:160]}"
-        return {
-            "success": False,
-            "status": status,
-            "message": detail,
-            "latency_ms": int((time.time() - start) * 1000),
-        }
-    except Exception as exc:
-        return {
-            "success": False,
-            "status": "network_error",
-            "message": f"请求失败: {str(exc)[:160]}",
-            "latency_ms": int((time.time() - start) * 1000),
-        }
-
-
-async def _test_paddleocr_vl_connection(
-    api_base_url: str,
-    api_key: str,
-) -> dict:
-    """测试 PaddleOCR-VL 连接，不跟随携带凭据的重定向。"""
-    base = _validated_api_base_url(api_base_url) or ""
-    url = urljoin(base + "/", "/api/v2/ocr/jobs")
-
-    start = time.time()
-    try:
-        remote = await asyncio.to_thread(
-            request_remote_bytes,
-            url,
-            method="GET",
-            max_bytes=1024 * 1024,
-            timeout=15.0,
-            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
-            follow_redirects=False,
-            headers={
-                **get_trace_headers(),
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-            },
-        )
-        elapsed = int((time.time() - start) * 1000)
-
-        if remote.status in (401, 403):
-            return {
-                "success": False,
-                "status": "auth_error",
-                "message": f"API Key 无效或无权限访问 (HTTP {remote.status})",
-                "latency_ms": elapsed,
-            }
-
-        if remote.status in {301, 302, 303, 307, 308}:
-            return {
-                "success": False,
-                "status": "network_error",
-                "message": "服务返回重定向；为防止凭据泄露，测试请求不会跟随重定向",
-                "latency_ms": elapsed,
-            }
-
-        return {
-            "success": True,
-            "status": "ok",
-            "message": (
-                f"连接成功（HTTP {remote.status}），API Key 通过基本校验，"
-                f"服务端响应时延 {elapsed}ms"
-            ),
-            "latency_ms": elapsed,
-        }
-    except Exception as exc:
-        elapsed = int((time.time() - start) * 1000)
-        return {
-            "success": False,
-            "status": "network_error",
-            "message": f"请求失败: {str(exc)[:160]}",
-            "latency_ms": elapsed,
-        }

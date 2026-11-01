@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.ai.provider_error_signals import has_quota_error_marker
 from app.core.ai_runtime_guard import AIResourceRejectedError, ai_runtime_guard
 from app.core.config import settings
 from app.core.log_context import get_trace_headers, log_event
@@ -227,6 +228,8 @@ def _looks_like_parameter_rejection(status: int, raw: str) -> bool:
 def _classify_http_error_kind(status: int, raw: str) -> str | None:
     """Reduce an upstream body to a non-sensitive diagnostic category."""
     text = _compatibility_error_text(raw)
+    if has_quota_error_marker(text):
+        return "quota"
     if status in {401, 403}:
         return "auth"
     if status == 429:

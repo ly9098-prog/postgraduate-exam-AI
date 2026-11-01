@@ -138,10 +138,11 @@ def test_metadata_reads_can_fail_even_when_auth_kind_would_short_circuit(point, 
 @pytest.mark.parametrize(
     "signals,expected",
     [
-        ([True], "ai_provider_auth_failed"),
-        ([False, True], "ai_provider_rate_limited"),
-        ([False, False, True], "ai_provider_transient"),
-        ([False, False, False], "ai_provider_error"),
+        ([True], "ai_provider_quota_exceeded"),
+        ([False, True], "ai_provider_auth_failed"),
+        ([False, False, True], "ai_provider_rate_limited"),
+        ([False, False, False, True], "ai_provider_transient"),
+        ([False, False, False, False], "ai_provider_error"),
     ],
 )
 def test_text_predicate_results_have_one_truth_test_per_evaluated_branch(
@@ -170,9 +171,10 @@ def test_text_predicate_results_have_one_truth_test_per_evaluated_branch(
 @pytest.mark.parametrize(
     "kind,comparisons",
     [
-        ("auth", ["auth"]),
-        ("rate_limit", ["auth", "rate_limit"]),
-        ("transient", ["auth", "rate_limit", "transient"]),
+        ("quota", ["quota"]),
+        ("auth", ["quota", "auth"]),
+        ("rate_limit", ["quota", "auth", "rate_limit"]),
+        ("transient", ["quota", "auth", "rate_limit", "transient"]),
     ],
 )
 def test_typed_kind_comparison_truth_is_evaluated_once(kind, comparisons):
@@ -204,6 +206,7 @@ def test_typed_kind_comparison_truth_is_evaluated_once(kind, comparisons):
     assert (
         output[0]
         == {
+            "quota": "ai_provider_quota_exceeded",
             "auth": "ai_provider_auth_failed",
             "rate_limit": "ai_provider_rate_limited",
             "transient": "ai_provider_transient",

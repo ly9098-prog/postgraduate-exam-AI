@@ -17,6 +17,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.ai.prompts import build_error_analysis
+from app.services.ai.analysis_availability import (
+    AnalysisUnavailableError,
+    note_failure,
+    require_runtime_verified,
+)
 from app.services.ai.provider_exception import classify_ai_provider_exception
 
 Chat = Callable[..., Awaitable[dict]]
@@ -61,8 +66,13 @@ async def invoke_analysis_provider(
     invoke_started = time.monotonic()
     try:
         result = await _invoke_runtime(payload, runtime)
-    except TimeoutError:
-        return _timeout_failure(payload, int((time.monotonic() - invoke_started) * 1000))
+    except TimeoutError as exc:
+        await note_failure(runtime, exc)
+        return _timeout_failure(
+            payload, int((time.monotonic() - invoke_started) * 1000)
+        )
+    except AnalysisUnavailableError as exc:
+        return _availability_failure(payload, exc)
     except Exception as exc:
         return await _failure_or_failover(payload, runtime, attempted_model_ids, exc)
     return ProviderInvocationResult(result, runtime)
@@ -75,6 +85,7 @@ def _attempted_model_ids(runtime) -> set[int]:
 
 
 async def _invoke_runtime(payload: ProviderInvocationInput, selected_runtime):
+    await require_runtime_verified(selected_runtime)
     messages = build_error_analysis(
         payload.question,
         payload.wrong_answer,
@@ -102,10 +113,11 @@ async def _failure_or_failover(
     attempted_model_ids: set[int],
     exc: Exception,
 ) -> dict:
+    await note_failure(runtime, exc)
     error_code, retryable, failure_model = classify_ai_provider_exception(
         exc, visual=payload.visual
     )
-    if error_code != "ai_provider_auth_failed":
+    if error_code not in {"ai_provider_auth_failed", "ai_provider_quota_exceeded"}:
         _log_provider_failure(payload, runtime, exc, error_code, retryable)
         return payload.failure_response(
             error_code=error_code,
@@ -183,7 +195,9 @@ def _auth_failure_without_fallback(
     )
 
 
-def _log_auth_failover(payload: ProviderInvocationInput, runtime, fallback_runtime) -> None:
+def _log_auth_failover(
+    payload: ProviderInvocationInput, runtime, fallback_runtime
+) -> None:
     payload.logger.warning(
         "ai.error_analysis.auth_failover wq_id=%s from_model_config_id=%s "
         "to_model_config_id=%s from_model=%s to_model=%s",
@@ -201,12 +215,26 @@ async def _invoke_fallback(
     failover_started = time.monotonic()
     try:
         result = await _invoke_runtime(payload, fallback_runtime)
-    except TimeoutError:
+    except TimeoutError as exc:
+        await note_failure(fallback_runtime, exc)
         elapsed_timeout_ms = int((time.monotonic() - failover_started) * 1000)
         return _failover_timeout_failure(payload, fallback_runtime, elapsed_timeout_ms)
+    except AnalysisUnavailableError as exc:
+        return _availability_failure(payload, exc)
     except Exception as exc:
         return await _fallback_failure(payload, fallback_runtime, exc)
     return ProviderInvocationResult(result, fallback_runtime)
+
+
+def _availability_failure(
+    payload: ProviderInvocationInput, exc: AnalysisUnavailableError
+) -> dict:
+    return payload.failure_response(
+        error_code="ai_service_unavailable",
+        retryable=False,
+        failure_model="availability",
+        availability=exc.state,
+    )
 
 
 def _timeout_failure(payload: ProviderInvocationInput, elapsed_timeout_ms: int) -> dict:
@@ -248,6 +276,7 @@ def _failover_timeout_failure(
 async def _fallback_failure(
     payload: ProviderInvocationInput, runtime, exc: Exception
 ) -> dict:
+    await note_failure(runtime, exc)
     error_code, retryable, failure_model = classify_ai_provider_exception(
         exc, visual=payload.visual
     )

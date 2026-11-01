@@ -134,6 +134,7 @@ async def chat_with_db_model(
     response_format: dict[str, Any] | None = None,
     extra_body: dict[str, Any] | None = None,
     prefer_direct_answer: bool = False,
+    runtime: LLMRuntimeConfig | None = None,
 ) -> dict[str, Any] | None:
     """Resolve a configured compatible model and invoke it.
 
@@ -141,11 +142,12 @@ async def chat_with_db_model(
     API errors are intentionally raised so the caller can choose its existing
     fallback/rollback behaviour.
     """
-    runtime = await resolve_llm_runtime_config(
-        db,
-        feature=feature,
-        capability=capability,
-    )
+    if runtime is None:
+        runtime = await resolve_llm_runtime_config(
+            db,
+            feature=feature,
+            capability=capability,
+        )
     if runtime is None:
         return None
     return await llm.chat(

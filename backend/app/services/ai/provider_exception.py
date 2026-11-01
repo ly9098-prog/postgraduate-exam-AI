@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from app.ai.provider_error_signals import QUOTA_ERROR_MARKERS
+
 
 def classify_ai_provider_exception(
     exc: Exception, *, visual: bool
@@ -13,6 +15,8 @@ def classify_ai_provider_exception(
     error_kind = str(getattr(exc, "error_kind", "") or "")
     typed_retryable = getattr(exc, "retryable", None)
     status = _typed_status(exc, text)
+    if _is_quota_failure(text, error_kind):
+        return ("ai_provider_quota_exceeded", False, "fallback")
     if _is_auth_failure(text, error_kind, status):
         return ("ai_provider_auth_failed", False, "fallback")
     if _is_rate_limit_failure(text, error_kind, status):
@@ -29,6 +33,12 @@ def classify_ai_provider_exception(
     # deterministic 4xx forever.
     retryable = True if typed_retryable is None else bool(typed_retryable)
     return ("ai_provider_error", retryable, "fallback")
+
+
+def _is_quota_failure(text: str, error_kind: str) -> bool:
+    if error_kind == "quota":
+        return True
+    return _contains_any(text, QUOTA_ERROR_MARKERS)
 
 
 def _is_auth_failure(text: str, error_kind: str, status: int | None) -> bool:

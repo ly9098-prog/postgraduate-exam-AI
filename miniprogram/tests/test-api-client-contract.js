@@ -252,6 +252,53 @@ test('request maps errors, toasts and auth redirect only once', async () => {
   assert.equal(calls.relaunches.length, 2)
 })
 
+test('request preserves only the structured availability detail for disabled AI', async () => {
+  reset(authed(), {
+    routes: {
+      'GET /ai/error-analysis/availability': {
+        statusCode: 503,
+        data: {
+          detail: {
+            code: 'ai_service_unavailable',
+            status: 'unavailable',
+            enabled: false,
+            reason: 'quota',
+            message: 'AI 服务额度不足，暂不可用',
+            retry_after_ms: 300000,
+            secret: 'must-not-leak',
+          },
+        },
+        header: {},
+      },
+    },
+  })
+  await assert.rejects(api.get('/ai/error-analysis/availability'), error => {
+    assert.equal(error.code, 'ai_service_unavailable')
+    assert.equal(error.detail.code, 'ai_service_unavailable')
+    assert.equal(error.detail.reason, 'quota')
+    assert.equal(error.detail.retry_after_ms, 300000)
+    assert.equal(error.detail.secret, undefined)
+    return true
+  })
+})
+
+test('request does not promote unrelated detail.code into a client error code', async () => {
+  reset(authed(), {
+    routes: {
+      'GET /ai/error-analysis/availability': {
+        statusCode: 422,
+        data: { detail: { code: 'some_service_error' } },
+        header: {},
+      },
+    },
+  })
+  await assert.rejects(api.get('/ai/error-analysis/availability'), error => {
+    assert.equal(error.code, 422)
+    assert.equal(error.detail, undefined)
+    return true
+  })
+})
+
 test('proactive refresh keeps its threshold, dedup and login bypass rules', async () => {
   reset(authed({ token_expires_at: Math.floor(Date.now() / 1000) + 60 }), {
     routes: { 'POST /auth/refresh': { statusCode: 200, data: {

@@ -78,10 +78,11 @@ function _finishRequest(context) {
     // 后端响应只用于机器判断和调试快照；展示文案完全由前端按 HTTP 状态生成。
     const errorCode = _extractErrorCode(res.data, res.statusCode)
     const safeMeta = _safeErrorMeta(res.data, res.header)
+    const availability = _safeAiAvailabilityDetail(res.data)
     throw new ApiError(_safeHttpMessage(res.statusCode), {
       code: errorCode,
       statusCode: res.statusCode,
-      detail: safeMeta,
+      detail: availability ? { ...safeMeta, ...availability } : safeMeta,
       requestId: safeMeta && safeMeta.requestId,
       traceId: safeMeta && safeMeta.traceId,
       raw: undefined,
@@ -89,6 +90,27 @@ function _finishRequest(context) {
   }
 
   return res.data
+}
+
+function _safeAiAvailabilityDetail(data) {
+  const detail = data && data.detail
+  if (!detail || typeof detail !== 'object' || detail.code !== 'ai_service_unavailable') {
+    return null
+  }
+  const result = { code: 'ai_service_unavailable' }
+  if (['checking', 'available', 'unavailable'].includes(detail.status)) {
+    result.status = detail.status
+  }
+  if (typeof detail.enabled === 'boolean') result.enabled = detail.enabled
+  if (typeof detail.reason === 'string' && /^[a-z][a-z0-9_]{1,63}$/.test(detail.reason)) {
+    result.reason = detail.reason
+  }
+  if (typeof detail.message === 'string') result.message = detail.message.slice(0, 160)
+  const retryAfter = Number(detail.retry_after_ms)
+  if (Number.isFinite(retryAfter)) {
+    result.retry_after_ms = Math.min(3600000, Math.max(1000, Math.trunc(retryAfter)))
+  }
+  return result
 }
 
 async function request(method, url, data = {}, options = {}) {

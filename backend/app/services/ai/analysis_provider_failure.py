@@ -23,6 +23,7 @@ def build_provider_failure_response(
         retryable: bool,
         failure_model: str,
         duration_ms: int = 0,
+        availability: dict | None = None,
     ) -> dict:
         old_cache = cached_response(
             wrong_question,
@@ -35,13 +36,18 @@ def build_provider_failure_response(
             old_cache["cache_preserved"] = True
             old_cache["error_code"] = error_code
             old_cache["retryable"] = retryable
+            if availability is not None:
+                old_cache["availability"] = availability
             return old_cache
-        return provider_failure_response(
+        response = provider_failure_response(
             error_code=error_code,
             retryable=retryable,
             failure_model=failure_model,
             duration_ms=duration_ms,
             image_data_urls=image_data_urls,
         )
+        if availability is not None:
+            response["availability"] = availability
+        return response
 
     return failure_response

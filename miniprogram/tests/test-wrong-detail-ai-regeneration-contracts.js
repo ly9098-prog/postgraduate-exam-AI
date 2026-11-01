@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const { fixture, deferred } = require('./helpers/wrong-detail-ai-recovery-fixture')
+const { ApiError } = require('../utils/api-error')
 const plain = value => JSON.parse(JSON.stringify(value))
 
 function setup() {
@@ -299,4 +300,93 @@ test('timeout restores old result only with old cards and preserves timeout/fail
     assert.deepEqual(plain(f.calls.at(-1)[1]),
       { title: oldCards ? title + '，已保留历史解析' : title, icon: 'none' })
   }
+})
+
+test('HTTP regeneration failures immediately stop the skeleton and preserve existing analysis', async () => {
+  for (const statusCode of [401, 403, 409, 429, 500, 503]) {
+    for (const oldCards of [null, { previous: true }]) {
+      const f = setup(), { page } = f
+      const oldResult = { content: 'previous analysis' }
+      page.data.aiCards = oldCards
+      page._aiResult = oldResult
+      page._aiGenerationMarker = 'previous'
+      f.api.post = async () => { throw new ApiError('request failed', { statusCode }) }
+      page._enqueueAiRecovery = () => { f.calls.push(['enqueue']); return Promise.resolve(true) }
+      page._pollPersistedAiAnalysis = async () => { f.calls.push(['poll']); return null }
+
+      await page.regenerateAiAnalysis()
+
+      assert.equal(page.data.aiRegenerating, false, `HTTP ${statusCode}`)
+      assert.equal(page.data.aiSkeletonVisible, false)
+      assert.equal(page.data.aiCards, oldCards)
+      assert.equal(page._aiResult, oldResult)
+      assert.equal(page._aiGenerationMarker, 'previous')
+      assert.match(oldCards ? page.data.aiInlineNotice : page.data.aiErrorText, /失败/)
+      assert.equal(f.calls.filter(call => ['enqueue', 'poll'].includes(call[0])).length, 0,
+        `HTTP ${statusCode} must not retry regeneration`)
+    }
+  }
+})
+
+test('availability failure during regeneration preserves old analysis and does not retry', async () => {
+  const f = setup(), { page } = f
+  page._scheduleAiAvailabilityRetry = () => {}
+  page.data.aiAvailabilityEnabled = true
+  const oldCards = { previous: true }, oldResult = { content: 'old' }
+  page.data.aiCards = oldCards
+  page._aiResult = oldResult
+  page._aiGenerationMarker = 'old'
+  f.api.post = async () => { throw new ApiError('request failed', {
+    statusCode: 503,
+    detail: {
+      code: 'ai_service_unavailable', status: 'unavailable', enabled: false,
+      reason: 'configuration', message: 'AI 服务配置或权限异常，等待管理员处理',
+      retry_after_ms: 300000,
+    },
+  }) }
+  page._enqueueAiRecovery = () => { f.calls.push(['enqueue']); return Promise.resolve(true) }
+  page._pollPersistedAiAnalysis = async () => { f.calls.push(['poll']); return null }
+  await page.regenerateAiAnalysis()
+  assert.equal(page.data.aiAvailabilityEnabled, false)
+  assert.equal(page.data.aiAvailabilityReason, 'configuration')
+  assert.equal(page.data.aiCards, oldCards)
+  assert.equal(page._aiResult, oldResult)
+  assert.equal(f.calls.filter(call => ['enqueue', 'poll'].includes(call[0])).length, 0)
+})
+
+test('regeneration fallback and preserved cache refresh only without shared state', async () => {
+  for (const cachePreserved of [false, true]) {
+    for (const shared of [null, { enabled: false, status: 'unavailable', reason: 'quota' }]) {
+      const { page } = setup()
+      const applied = [], refreshed = []
+      page._applyAiAvailability = state => applied.push(state)
+      page._refreshAiAvailability = options => refreshed.push(options)
+      const result = {
+        model: 'timeout', from_fallback: true,
+        cache_preserved: cachePreserved, content: cachePreserved ? 'old' : '',
+      }
+      if (shared) result.availability = shared
+
+      await page._applyRegenerateResult(result, 12, 7, '', null, null)
+
+      assert.equal(applied.length, shared ? 1 : 0)
+      assert.equal(refreshed.length, shared ? 0 : 1)
+      if (shared) assert.equal(applied[0], shared)
+    }
+  }
+})
+
+test('structured regeneration error applies shared state without an extra refresh', async () => {
+  const { page } = setup()
+  const shared = { enabled: false, status: 'unavailable', reason: 'configuration' }
+  const applied = [], refreshed = []
+  page._availabilityFromAiError = () => shared
+  page._applyAiAvailability = state => applied.push(state)
+  page._refreshAiAvailability = options => refreshed.push(options)
+
+  await page._handleRegenerateRecovery(
+    new ApiError('blocked', { statusCode: 503 }), 12, 7, '', null, null)
+
+  assert.deepEqual(applied, [shared])
+  assert.deepEqual(refreshed, [])
 })

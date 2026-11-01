@@ -32,6 +32,11 @@ from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.services import error_diagnosis_service
+from app.services.ai.analysis_availability import (
+    AnalysisUnavailableError,
+    note_failure,
+    require_available_runtime,
+)
 from app.services.ai_learning_service import check_token_limit, record_token_usage
 
 logger = logging.getLogger(__name__)
@@ -1149,6 +1154,7 @@ async def run_teacher_action(
         )
         return {**base, **fallback, "tokens_used": 0, "from_fallback": True}
 
+    teacher_runtime = await require_available_runtime(db)
     try:
         result = await chat_with_db_model(
             db,
@@ -1159,8 +1165,12 @@ async def run_teacher_action(
             max_tokens=1400,
             response_format={"type": "json_object"},
             prefer_direct_answer=True,
+            runtime=teacher_runtime,
         )
-    except Exception:
+    except AnalysisUnavailableError:
+        raise
+    except Exception as exc:
+        await note_failure(teacher_runtime, exc)
         logger.warning(
             "408 teacher call failed uid=%s qid=%s action=%s",
             user_id,

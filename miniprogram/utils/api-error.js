@@ -50,6 +50,10 @@ function _extractErrorCode(data, statusCode) {
     if (data.detail && typeof data.detail === 'object' && typeof data.detail.error_code === 'string') {
       return data.detail.error_code
     }
+    if (data.detail && typeof data.detail === 'object' &&
+        data.detail.code === 'ai_service_unavailable') {
+      return data.detail.code
+    }
     if (typeof data.detail === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/.test(data.detail)) {
       return data.detail
     }

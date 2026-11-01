@@ -65,8 +65,13 @@ function fixture(options = {}) {
     _syncWqCacheAi(id, normalized, generatedAt) {
       calls.push(['syncCache', id, normalized, generatedAt])
     },
+    _refreshAiAvailability() {},
   })
   page.data.wq = { id: 12, marker: 'initial' }
+  // Existing contract tests exercise an already-verified AI model. Availability
+  // tests explicitly switch this flag off to verify the disabled path.
+  page.data.aiAvailabilityEnabled = true
+  page.data.aiAvailabilityStatus = 'available'
   return { page, methods: page, definition, context, api, calls, sleeps }
 }
 

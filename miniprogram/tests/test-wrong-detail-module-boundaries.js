@@ -12,12 +12,12 @@ const page = fs.readFileSync(path.join(root, PAGE), 'utf8')
 const modules = Object.fromEntries(MODULES.map(name =>
   [name, fs.readFileSync(path.join(root, DIRECTORY, name), 'utf8')]))
 
-test('wrong-detail page and nineteen modules preserve budgets and teacher ports', () => {
+test('wrong-detail page and twenty modules preserve budgets and teacher ports', () => {
   const result = scanWrongDetail()
   assert.deepEqual(result.errors, [])
   assert.equal(result.pageLines, PAGE_CEILING)
-  assert.equal(result.modules, 19)
-  assert.equal(result.teacherPorts, 22)
+  assert.equal(result.modules, 20)
+  assert.equal(result.teacherPorts, 26)
 })
 
 test('page wrappers and lazy teacher assembly cannot drift', () => {

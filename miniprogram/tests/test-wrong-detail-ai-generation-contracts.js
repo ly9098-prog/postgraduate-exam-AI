@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const { fixture, deferred } = require('./helpers/wrong-detail-ai-recovery-fixture')
+const { ApiError } = require('../utils/api-error')
 const plain = value => JSON.parse(JSON.stringify(value))
 
 function setup() {
@@ -229,4 +230,219 @@ test('stale generation error only logs and error handler rejection propagates', 
   page._requestAiAnalysis = async () => { throw new Error('request failed') }
   page._handleAiAnalysisError = async () => { throw fatal }
   await assert.rejects(page.loadAiAnalysis(12), error => error === fatal)
+})
+
+test('explicit HTTP failures end loading without recovery jobs or status polling', async () => {
+  for (const statusCode of [401, 403, 404, 409, 422, 429, 500, 503]) {
+    const f = setup(), { page } = f
+    const error = new ApiError('request failed', { statusCode })
+    f.api.post = async () => { throw error }
+    page._enqueueAiRecovery = () => { f.calls.push(['enqueue']); return Promise.resolve(true) }
+    page._pollPersistedAiAnalysis = async () => { f.calls.push(['poll']); return null }
+
+    await page.loadAiAnalysis(12)
+
+    assert.equal(page.data.aiLoading, false, `HTTP ${statusCode}`)
+    assert.equal(page.data.aiFallback, true, `HTTP ${statusCode}`)
+    assert.equal(page.data.aiInlineNotice, '')
+    assert.match(page.data.aiErrorText, /失败/)
+    assert.equal(f.calls.filter(call => ['enqueue', 'poll'].includes(call[0])).length, 0,
+      `HTTP ${statusCode} must not recover a completed failure`)
+  }
+})
+
+test('lost responses and gateway timeouts retain persisted-result recovery', async () => {
+  for (const statusCode of [0, 408, 502, 504]) {
+    const f = setup(), { page } = f
+    f.api.post = async () => { throw new ApiError('request failed', { statusCode }) }
+    page._enqueueAiRecovery = () => { f.calls.push(['enqueue']); return Promise.resolve(true) }
+    page._pollPersistedAiAnalysis = async () => {
+      f.calls.push(['poll'])
+      return { normalized: { content: 'recovered' }, generatedAt: 'new' }
+    }
+
+    await page.loadAiAnalysis(12)
+
+    assert.equal(page.data.aiLoading, false)
+    assert.equal(page.data.aiFallback, false)
+    assert.equal(page._aiResult.content, 'recovered')
+    assert.equal(f.calls.filter(call => call[0] === 'enqueue').length, 1)
+    assert.equal(f.calls.filter(call => call[0] === 'poll').length, 1)
+  }
+})
+
+const availability = require('../subpackages/study/wrong-detail/utils/wrong-detail-ai-availability')
+
+function availabilityPage() {
+  const data = { aiAvailabilityEnabled: false, aiAvailabilityMessage: 'blocked' }
+  const page = {
+    _alive: true, data,
+    _aiAvailabilitySeq: 0, _aiAvailabilityRetryTimer: null,
+    _clearAiAvailabilityRetry() {
+      if (this._aiAvailabilityRetryTimer) clearTimeout(this._aiAvailabilityRetryTimer)
+      this._aiAvailabilityRetryTimer = null
+    },
+    _scheduleAiAvailabilityRetry() {},
+    setData(patch) { Object.assign(data, patch) },
+  }
+  return page
+}
+
+test('availability maps disabled state and all three user-facing reasons', () => {
+  const page = availabilityPage()
+  for (const [state, reason] of [
+    [{ status: 'checking', enabled: false, message: '正在检查 AI 服务' }, 'checking'],
+    [{ status: 'unavailable', enabled: false, reason: 'quota', message: 'AI 服务额度不足，暂不可用' }, 'quota'],
+    [{ status: 'unavailable', enabled: false, reason: 'user_quota', message: '今日 AI 使用额度已用尽，可先查看已有解析' }, 'user_quota'],
+  ]) {
+    assert.equal(availability._applyAvailability(page, state, { silent: true }), false)
+    assert.equal(page.data.aiAvailabilityEnabled, false)
+    assert.equal(page.data.aiAvailabilityReason, reason)
+    assert.equal(page.data.aiAvailabilityMessage, state.message)
+  }
+})
+
+test('availability checking patch stays scoped to availability fields', () => {
+  const patch = availability._checkingState()
+  assert.deepEqual(Object.keys(patch).sort(), [
+    'aiAvailabilityChecking',
+    'aiAvailabilityEnabled',
+    'aiAvailabilityMessage',
+    'aiAvailabilityReason',
+    'aiAvailabilityStatus',
+  ])
+})
+
+test('availability success enables both analysis and teacher without changing existing cards', () => {
+  const page = availabilityPage()
+  page.data.aiCards = { existing: true }
+  assert.equal(availability._applyAvailability(page, {
+    status: 'available', enabled: true, reason: '', message: '', retry_after_ms: 30000,
+  }, { silent: true }), true)
+  assert.equal(page.data.aiAvailabilityEnabled, true)
+  assert.equal(page.data.aiAvailabilityMessage, '')
+  assert.deepEqual(page.data.aiCards, { existing: true })
+})
+
+test('checking responses schedule a short retry instead of leaving the page stuck', () => {
+  const page = availabilityPage()
+  const delays = []
+  page._scheduleAiAvailabilityRetry = delay => delays.push(delay)
+  availability._applyAvailability(page, {
+    status: 'checking', enabled: false, reason: 'checking',
+    message: '正在检查 AI 服务', retry_after_ms: 2000,
+  }, { silent: true })
+  assert.deepEqual(delays, [2000])
+})
+
+test('silent failed checks retain cooldown retries until a later successful probe', () => {
+  const page = availabilityPage()
+  const delays = []
+  page._scheduleAiAvailabilityRetry = delay => delays.push(delay)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    assert.equal(availability._applyAvailability(page, {
+      status: 'unavailable', enabled: false, reason: 'quota',
+      retry_after_ms: 300000,
+    }, { silent: true }), false)
+  }
+  assert.deepEqual(delays, [300000, 300000, 300000])
+
+  assert.equal(availability._applyAvailability(page, {
+    status: 'available', enabled: true, reason: '', retry_after_ms: 30000,
+  }, { silent: true }), true)
+  assert.deepEqual(delays, [300000, 300000, 300000])
+})
+
+test('availability timeout ends the five-second check but keeps action disabled', async () => {
+  const page = availabilityPage()
+  page._aiAvailabilitySeq = 0
+  page._alive = true
+  const pending = new Promise(() => {})
+  const result = await availability._refreshAiAvailability(page, {
+    requestClient: { get: () => pending }, force: true, silent: true,
+  })
+  assert.equal(result, false)
+  assert.equal(page.data.aiAvailabilityChecking, false)
+  assert.equal(page.data.aiAvailabilityEnabled, false)
+  assert.equal(page.data.aiAvailabilityMessage, 'AI 服务仍在检查，完成后将自动更新')
+  page._alive = false
+  availability._clearAiAvailabilityState(page)
+})
+
+test('availability transport failure is separate from a confirmed backend model failure', async () => {
+  const page = availabilityPage()
+  page._aiAvailabilitySeq = 0
+  page._alive = true
+  const result = await availability._refreshAiAvailability(page, {
+    requestClient: { get: async () => { throw new Error('offline') } },
+    force: true,
+    silent: true,
+  })
+  assert.equal(result, false)
+  assert.equal(page.data.aiAvailabilityReason, 'status_unavailable')
+  assert.equal(page.data.aiAvailabilityMessage, '暂时无法检查 AI 服务，请稍后重试')
+  page._alive = false
+  availability._clearAiAvailabilityState(page)
+})
+
+test('backend model failure does not trigger generation recovery or polling', async () => {
+  const f = setup(), { page } = f
+  page._scheduleAiAvailabilityRetry = () => {}
+  page.data.aiAvailabilityEnabled = true
+  const error = new ApiError('request failed', {
+    statusCode: 503,
+    detail: {
+      code: 'ai_service_unavailable', status: 'unavailable', enabled: false,
+      reason: 'quota', message: 'AI 服务额度不足，暂不可用', retry_after_ms: 300000,
+    },
+  })
+  f.api.post = async () => { throw error }
+  page._enqueueAiRecovery = () => { f.calls.push(['enqueue']); return Promise.resolve(true) }
+  page._pollPersistedAiAnalysis = async () => { f.calls.push(['poll']); return null }
+  await page.loadAiAnalysis(12)
+  assert.equal(page.data.aiLoading, false)
+  assert.equal(page.data.aiAvailabilityEnabled, false)
+  assert.equal(page.data.aiAvailabilityReason, 'quota')
+  assert.equal(f.calls.filter(call => ['enqueue', 'poll'].includes(call[0])).length, 0)
+})
+
+test('user quota reason keeps global health semantics and teacher calls disabled', () => {
+  const page = availabilityPage()
+  availability._applyAvailability(page, {
+    status: 'unavailable', enabled: false, reason: 'user_quota',
+    message: '今日 AI 使用额度已用尽，可先查看已有解析', retry_after_ms: 30000,
+  }, { silent: true })
+  assert.equal(page.data.aiAvailabilityReason, 'user_quota')
+  assert.equal(page.data.aiAvailabilityMessage, '今日 AI 使用额度已用尽，可先查看已有解析')
+})
+
+test('fallback refreshes availability only when the result has no shared state', async () => {
+  for (const shared of [null, { enabled: false, status: 'unavailable', reason: 'quota' }]) {
+    const { page } = setup()
+    const applied = [], refreshed = []
+    page._applyAiAvailability = state => applied.push(state)
+    page._refreshAiAvailability = options => refreshed.push(options)
+    const result = { model: 'timeout', from_fallback: true }
+    if (shared) result.availability = shared
+
+    await page._applyAiAnalysisResult(result, 12, 7, '')
+
+    assert.equal(applied.length, shared ? 1 : 0)
+    assert.equal(refreshed.length, shared ? 0 : 1)
+    if (shared) assert.equal(applied[0], shared)
+  }
+})
+
+test('structured generation error applies shared state without refreshing it again', async () => {
+  const { page } = setup()
+  const shared = { enabled: false, status: 'unavailable', reason: 'quota' }
+  const applied = [], refreshed = []
+  page._availabilityFromAiError = () => shared
+  page._applyAiAvailability = state => applied.push(state)
+  page._refreshAiAvailability = options => refreshed.push(options)
+
+  await page._handleAiAnalysisError(new ApiError('blocked', { statusCode: 503 }), 12, 7, '')
+
+  assert.deepEqual(applied, [shared])
+  assert.deepEqual(refreshed, [])
 })

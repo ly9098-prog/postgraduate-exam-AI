@@ -13,6 +13,7 @@ from app.models.wrong_question import WrongQuestion
 from app.schemas.ai import (
     AiAnalysisStatusResponse,
     AiFeedbackRequest,
+    AiModelAvailabilityResponse,
     AiPrewarmRequest,
     AiPrewarmResponse,
     AiRecoveryRequest,
@@ -45,6 +46,16 @@ from app.services import ai_service as svc
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/ai")
+
+
+@router.get("/error-analysis/availability", response_model=AiModelAvailabilityResponse)
+async def error_analysis_availability(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.ai.analysis_availability import availability_for_user
+
+    return await availability_for_user(db, current_user.id)
 
 
 async def _get_wrong_question_for_answer_ai(
@@ -411,6 +422,8 @@ async def ai_teacher_408(
     current_user: User = Depends(get_current_user),
 ):
     """执行一个固定 408 教学动作。考试进行中 fail-closed。"""
+    from app.services.ai.analysis_availability import AnalysisUnavailableError
+
     try:
         result = await ai_teacher_408_service.run_teacher_action(
             db,
@@ -422,6 +435,11 @@ async def ai_teacher_408(
             exam_attempt_id=data.exam_attempt_id,
             user_answer=data.user_answer,
         )
+    except AnalysisUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ai_service_unavailable", **exc.state},
+        ) from exc
     except ai_teacher_408_service.AIExamInProgressError as e:
         raise HTTPException(
             status_code=409,

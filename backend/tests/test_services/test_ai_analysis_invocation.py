@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import logging
+from dataclasses import fields
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from app.schemas.ai import AiResponse
+from app.services.ai import analysis_orchestration, analysis_review_invocation
 from app.services.ai.analysis_invocation import (
     AnalysisInvocationRequest,
     invoke_prepared_analysis,
 )
 from app.services.ai.provider_invocation import ProviderInvocationResult
+from tests.test_services.analysis_orchestration_support import harness
 
 
 def request(**overrides):
@@ -102,3 +108,87 @@ async def test_provider_failure_preserves_matching_force_cache(monkeypatch):
         "error_code": "ai_provider_timeout",
         "retryable": True,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "error_code", "retryable"),
+    [
+        (RuntimeError("HTTP 403 Forbidden"), "ai_provider_auth_failed", False),
+        (RuntimeError("HTTP 401 Unauthorized"), "ai_provider_auth_failed", False),
+        (RuntimeError("HTTP 429 Too Many Requests"), "ai_provider_rate_limited", True),
+        (
+            RuntimeError("API Error: 503 Service Unavailable"),
+            "ai_provider_transient",
+            True,
+        ),
+        (TimeoutError(), "ai_provider_timeout", True),
+    ],
+)
+@pytest.mark.parametrize("preserve_cache", [False, True])
+async def test_provider_failure_reaches_api_response_without_review_and_releases_lease(
+    monkeypatch, failure, error_code, retryable, preserve_cache
+):
+    h = harness(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.ai.provider_invocation.require_runtime_verified",
+        AsyncMock(),
+    )
+    old_cache = {
+        "content": {"mistake_diagnosis": "previous analysis"},
+        "model": "cached",
+        "from_cache": True,
+        "tokens_used": 0,
+        "duration_ms": 0,
+        "generated_at": "2026-11-01T00:00:00+00:00",
+    }
+    item = request(
+        runtime=SimpleNamespace(
+            model_config_id=11,
+            provider="synthetic",
+            model_name="analysis",
+            api_key="test-only",
+            base_url="https://example.test/v1",
+        ),
+        chat=AsyncMock(side_effect=failure),
+        resolve_runtime=AsyncMock(return_value=None),
+        quarantine_runtime=AsyncMock(),
+        logger=logging.getLogger(__name__),
+        cached_response=lambda *_args, **_kwargs: old_cache if preserve_cache else None,
+    )
+    for field in fields(item):
+        setattr(h.request, field.name, getattr(item, field.name))
+    h.request.effective_force = True
+    h.request.parse_content = Mock(
+        side_effect=AssertionError("must not review a failure")
+    )
+    h.inputs.context = item.context
+    h.inputs.model_timeout_sec = item.model_timeout_sec
+    h.inputs.expected_answer_check = None
+    h.inputs.answer_grounding = None
+    monkeypatch.setattr(
+        analysis_orchestration,
+        "invoke_and_review_analysis",
+        analysis_review_invocation.invoke_and_review_analysis,
+    )
+    monkeypatch.setattr(
+        analysis_orchestration,
+        "resolve_reviewed_analysis_outcome",
+        analysis_review_invocation.resolve_reviewed_analysis_outcome,
+    )
+
+    response = await analysis_orchestration.execute_locked_analysis(h.request)
+
+    api_response = AiResponse(session_type="error_analysis", **response)
+    assert api_response.error_code == error_code
+    assert api_response.retryable is retryable
+    assert api_response.cache_preserved is preserve_cache
+    assert api_response.from_fallback is not preserve_cache
+    assert api_response.tokens_used == 0
+    if preserve_cache:
+        assert response is old_cache
+        assert api_response.content == {"mistake_diagnosis": "previous analysis"}
+        assert api_response.generated_at == "2026-11-01T00:00:00+00:00"
+    item.chat.assert_awaited_once()
+    h.request.parse_content.assert_not_called()
+    assert [name for name, *_ in h.events] == ["begin", "cache", "inputs", "finish"]

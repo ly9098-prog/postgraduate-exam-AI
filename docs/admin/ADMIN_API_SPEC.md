@@ -417,7 +417,25 @@ POST   /v1/auth/refresh
 - `api_key="****"` 时视为不修改（保留原值）。
 - 传入非掩码 api_key 时使用 Fernet 加密存储（依赖环境变量 `AI_CONFIG_ENCRYPT_KEY`；未配置时以明文存储并记录警告）。
 - 设为 `is_default=true` 时自动清除其他模型的 default 标志。
+- 更新模型名称、Provider、API Key、Base URL、能力、启用/默认状态等会影响错题 AI
+  路由的字段后，服务端立即强制重新探测该已保存模型；探测结果写入按配置 ID 与配置
+  指纹隔离的共享健康状态。
+- 保存事务先提交，再以 best-effort 方式发起探测；查询或共享健康存储异常会记录
+  warning，不将已经成功的保存响应改成失败，也不会据此解除禁用。
 - 写入审计日志 `action=ai_model_config.update, severity=normal`。
+
+**POST `/ai-models/test-connection` 与错题 AI 的关系**：
+- 请求携带 `model_id`，且 Base URL、API Key、模型名、Provider、`features` 与已保存
+  配置完全一致时，测试结果同时更新错题 AI 共享健康状态。
+- 带 `model_id` 的请求省略 API Key 或传入掩码时，服务端使用该已保存模型的凭据；
+  只有解析后的完整配置匹配才更新共享健康。未保存的表单修改或参数不一致的测试
+  只返回诊断结果，不解锁小程序的错题 AI 分析与 AI 老师。
+- 只有测试通过才解除禁用；额度不足、鉴权/权限失败和模型不存在会保持禁用并进入
+  5 分钟冷却。
+- 服务端测试连接与错题分析共用同一条候选模型解析链；测试请求必须匹配已保存配置，
+  避免管理员测试结果与用户实际模型路由不一致。小程序可用性查询在探测中返回
+  `status=checking`；Admin 测试连接会等待探测完成，超过约 60 秒按超时处理，
+  `latency_ms` 记录实际耗时。
 
 **Seed 默认模型**：
 | name | display_name | provider |

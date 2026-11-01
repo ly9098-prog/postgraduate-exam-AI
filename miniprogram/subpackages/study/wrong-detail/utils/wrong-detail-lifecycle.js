@@ -31,6 +31,7 @@ function _initWrongDetailState(page, { setRenderGuardPage }) {
     page._bottomActionsLastActiveAt = 0
     page._masterUndoInFlight = false
     page._pendingMasterUndo = null
+    if (page._initAiAvailabilityState) page._initAiAvailabilityState()
   }
 
 function _initWrongDetailFromOptions(page, options) {
@@ -68,10 +69,14 @@ function _resolveQuestionIds(options, currentId, deps) {
 
 function onShow(page) {
 if (page._alive && page.data.wq) page._showBottomActions()
+if (page._alive && page.data.wq && page._refreshAiAvailability) {
+  page._refreshAiAvailability({ force: true, silent: true })
+}
 }
 
 function onHide(page) {
 page._clearBottomActionsTimer()
+if (page._clearAiAvailabilityRetry) page._clearAiAvailabilityRetry()
 }
 
 function onPageScroll(page) {
@@ -139,6 +144,7 @@ page._teacherCache = null
 page._teacherInflight = null
 page._teacherFeedbackCache = null
 page._activeTeacherCacheKey = ''
+if (page._clearAiAvailabilityState) page._clearAiAvailabilityState()
 page._aiGenerationMarker = ''
 resetRenderGuard()
 }

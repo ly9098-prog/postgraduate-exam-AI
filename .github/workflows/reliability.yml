@@ -184,6 +184,8 @@ jobs:
             backend/tests/unit/test_local_runtime_and_outbox_backoff.py
             backend/tests/unit/test_task_observability.py
             backend/tests/unit/test_ai_resource_governance.py
+            backend/tests/test_services/test_ai_model_availability.py
+            backend/tests/test_api/test_admin_ai_config_health.py
             backend/tests/contract/test_openapi_contract.py
             backend/tests/integration/test_practice_answer_projection.py
             backend/tests/integration/test_answer_projection_reconciliation.py

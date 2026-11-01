@@ -7,6 +7,7 @@ import pytest
 from app.services.ai import provider_exception as module
 
 OUTCOMES = {
+    "quota": ("ai_provider_quota_exceeded", False, "fallback"),
     "auth": ("ai_provider_auth_failed", False, "fallback"),
     "rate": ("ai_provider_rate_limited", True, "fallback"),
     "transient": ("ai_provider_transient", True, "fallback"),
@@ -16,6 +17,7 @@ OUTCOMES = {
     "other": ("ai_provider_error", False, "fallback"),
 }
 KINDS = [
+    ("quota", "quota"),
     ("auth", "auth"),
     ("rate_limit", "rate"),
     ("transient", "transient"),
@@ -39,6 +41,10 @@ STATUSES = [
     (None, "other"),
 ]
 TEXTS = [
+    ("INSUFFICIENT_QUOTA", "quota"),
+    ("INSUFFICIENT_BALANCE", "quota"),
+    ("EXCEEDED YOUR CURRENT QUOTA", "quota"),
+    ("余额不足", "quota"),
     ("INVALID_API_KEY", "auth"),
     ("QUOTA EXCEEDED", "rate"),
     ("CONNECTION RESET", "transient"),
@@ -79,6 +85,11 @@ def test_typed_status_text_and_visual_priority_cross_product():
         "authentication",
         "unauthorized",
         "forbidden",
+        "insufficient_quota",
+        "insufficient_balance",
+        "exceeded your current quota",
+        "余额不足",
+        "欠费",
         "rate limit",
         "rate_limit",
         "too many requests",
@@ -96,8 +107,15 @@ def test_typed_status_text_and_visual_priority_cross_product():
     ],
 )
 def test_each_historical_text_signal_returns_the_full_tuple(text):
-    categories = ["auth"] * 5 + ["rate"] * 4 + ["transient"] * 5 + ["vision"] * 5
+    categories = (
+        ["quota"] * 5 + ["auth"] * 5 + ["rate"] * 4 + ["transient"] * 5 + ["vision"] * 5
+    )
     words = [
+        "insufficient_quota",
+        "insufficient_balance",
+        "exceeded your current quota",
+        "余额不足",
+        "欠费",
         "invalid_api_key",
         "invalid api-key",
         "authentication",
@@ -164,7 +182,7 @@ def test_typed_signal_skips_its_text_predicate_and_later_branches(
         ProviderError(error_kind=signal), visual=True
     )
     assert result == OUTCOMES[expected]
-    assert len(calls) == {"auth": 0, "rate_limit": 1, "transient": 2}[signal]
+    assert len(calls) == {"auth": 1, "rate_limit": 2, "transient": 3}[signal]
 
 
 @pytest.mark.parametrize(
@@ -247,7 +265,8 @@ def test_failure_predicates_keep_original_module_lookup_live(monkeypatch):
 
     def first_predicate(text, tokens):
         calls.append(("old", tokens))
-        monkeypatch.setattr(module, "_contains_any", next_predicate)
+        if len(calls) == 2:
+            monkeypatch.setattr(module, "_contains_any", next_predicate)
         return False
 
     monkeypatch.setattr(module, "_contains_any", first_predicate)
@@ -255,7 +274,7 @@ def test_failure_predicates_keep_original_module_lookup_live(monkeypatch):
         module.classify_ai_provider_exception(ProviderError(), visual=False)
         == OUTCOMES["rate"]
     )
-    assert [name for name, _ in calls] == ["old", "new"]
+    assert [name for name, _ in calls] == ["old", "old", "new"]
 
 
 def test_retryability_is_not_coerced_in_a_recognized_branch():

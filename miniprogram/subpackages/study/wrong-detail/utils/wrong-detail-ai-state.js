@@ -12,11 +12,19 @@ err && err.raw && err.raw.errMsg,
 return message.includes('timeout') || message.includes('timed out')
 }
 
+function _shouldRecoverAiRequest(err) {
+const statusCode = Number(err && err.statusCode) || 0
+// A lost transport/gateway response can leave generation running on the server.
+return statusCode === 0 || statusCode === 408 || statusCode === 502 || statusCode === 504
+}
+
 function _generationMarker(wq) {
 return String((wq && wq.ai_analysis_generated_at) || '')
 }
 
 function _fallbackMessage(model, errorCode, retryable) {
+if (errorCode === 'ai_service_unavailable') return 'AI 服务暂时不可用，请稍后重试'
+if (errorCode === 'ai_provider_quota_exceeded') return 'AI 服务额度不足，暂不可用'
 if (errorCode === 'ai_provider_auth_failed') return 'AI 分析服务鉴权失败，请联系管理员检查模型 API Key'
 if (errorCode === 'ai_model_unconfigured') return 'AI 分析模型尚未正确配置，请联系管理员检查模型设置'
 if (errorCode === 'ai_provider_rate_limited') return 'AI 服务当前繁忙，请稍后重试'
@@ -85,4 +93,4 @@ source: 'question',
 return null
 }
 
-module.exports = { _aiPollDelayMs, _isTimeoutError, _generationMarker, _fallbackMessage, _isWqMastered, _normalizeAiResult, _hasStoredAnalysisValue, _resolvePreferredAnalysis }
+module.exports = { _aiPollDelayMs, _isTimeoutError, _shouldRecoverAiRequest, _generationMarker, _fallbackMessage, _isWqMastered, _normalizeAiResult, _hasStoredAnalysisValue, _resolvePreferredAnalysis }

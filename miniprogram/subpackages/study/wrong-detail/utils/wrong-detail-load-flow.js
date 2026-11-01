@@ -14,6 +14,7 @@ async function loadData(page, wqId, { requestClient }) {
       if (!data) return
       page.setData(data)
       page._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
+      if (page._refreshAiAvailability) page._refreshAiAvailability({ force: true })
       page._checkLoadedRenderInvariant(data)
     } catch (e) {
       page._handleLoadDataError(e, loadSeq)
@@ -67,6 +68,9 @@ function _buildLoadedDataFields(page, wq, currentQuestion, wrongQuestions, raw, 
       diagnosisSyncing: false, teacherLoadingAction: '', teacherLastAction: '',
       teacherResult: null, teacherSheetVisible: false, teacherErrorText: '',
       teacherFeedbackSent: '', teacherActionsExpanded: false,
+      aiAvailabilityChecking: true, aiAvailabilityEnabled: false,
+      aiAvailabilityStatus: 'checking', aiAvailabilityReason: 'checking',
+      aiAvailabilityMessage: '正在检查 AI 服务',
     }
   }
 

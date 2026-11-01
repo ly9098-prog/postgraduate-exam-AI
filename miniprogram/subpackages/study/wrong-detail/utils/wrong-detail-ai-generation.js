@@ -17,6 +17,9 @@ async function loadAiAnalysis(page, wqId, { _generationMarker }) {
 
 async function _applyAiAnalysisResult(page, result, wqId, requestId, baselineGeneratedAt, { _normalizeAiPayload, _hasAiContent }) {
     const normalized = _normalizeAiPayload(result)
+    if (result && result.availability && page._applyAiAvailability) {
+      page._applyAiAvailability(result.availability)
+    }
     const hasContent = _hasAiContent(normalized)
     const model = (result && result.model) || ''
     const fromFallback = !!(result && result.from_fallback)
@@ -33,6 +36,7 @@ async function _applyAiAnalysisResult(page, result, wqId, requestId, baselineGen
     if (fromFallback) {
       page._resetAiLoadingState()
       page.setData(Object.assign({ aiFallback: true }, page._analysisFailureState(model, result)))
+      _refreshAvailabilityAfterFailure(page, !!(result && result.availability))
       return
     }
     if (!hasContent) {
@@ -55,9 +59,10 @@ function _commitAiAnalysisSuccess(page, result, normalized, wqId, { _normalizeAi
     })
   }
 
-async function _handleAiAnalysisError(page, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError }) {
+async function _handleAiAnalysisError(page, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError, _shouldRecoverAiRequest }) {
     console.error('加载 AI 分析失败', e)
-    if (page._isCurrentAiRequest(requestId, wqId)) {
+    const availability = _applyAvailabilityFromError(page, e)
+    if (page._isCurrentAiRequest(requestId, wqId) && _shouldRecoverAiRequest(e)) {
       page.setData({ aiInlineNotice: 'AI 正在继续生成，完成后会自动显示' })
       page._enqueueAiRecovery(wqId, false, '')
       const recovered = await page._pollPersistedAiAnalysis(wqId, requestId, {
@@ -69,7 +74,20 @@ async function _handleAiAnalysisError(page, e, wqId, requestId, baselineGenerate
       const msg = _isTimeoutError(e) ? 'AI 分析生成超时，请稍后重试' : 'AI 分析生成失败，请稍后重试'
       page._resetAiLoadingState()
       page.setData({ aiFallback: true, aiErrorText: msg })
+      _refreshAvailabilityAfterFailure(page, availability)
     }
   }
+
+function _applyAvailabilityFromError(page, error) {
+    if (!page._availabilityFromAiError) return null
+    const availability = page._availabilityFromAiError(error)
+    if (availability && page._applyAiAvailability) page._applyAiAvailability(availability)
+    return availability
+}
+
+function _refreshAvailabilityAfterFailure(page, handled) {
+    if (handled) return
+    if (page._refreshAiAvailability) page._refreshAiAvailability({ force: true, silent: true })
+}
 
 module.exports = { loadAiAnalysis, _applyAiAnalysisResult, _commitAiAnalysisSuccess, _handleAiAnalysisError }

@@ -42,10 +42,14 @@ function fixture() {
     return module.exports
   }
   load(path.join(root, 'wrong-detail.js'))
-  const makePage = () => Object.assign({}, definition, {
-    data: clone(definition.data),
-    setData(patch) { Object.assign(this.data, patch) },
-  })
+  const makePage = () => {
+    const page = Object.assign({}, definition, {
+      data: clone(definition.data),
+      setData(patch) { Object.assign(this.data, patch) },
+    })
+    page.data.aiAvailabilityEnabled = true
+    return page
+  }
   return { rules: context.rules, page: makePage(), makePage, calls, api, config, context }
 }
 
@@ -177,4 +181,32 @@ test('teacher error cannot write view state after unload', async () => {
   reject(new Error('network'))
   await pending
   assert.equal(writes, 0)
+})
+
+test('teacher availability failure disables actions and shows the exact reason', async () => {
+  const { page, api, calls } = fixture()
+  page._alive = true
+  page.data.wq = { id: 1, question_id: 7 }
+  page._teacherCacheKeyForWrong = () => 'availability-key'
+  page._scheduleAiAvailabilityRetry = () => {}
+  api.post = async () => {
+    throw new (require('../utils/api-error').ApiError)('request failed', {
+      statusCode: 503,
+      detail: {
+        code: 'ai_service_unavailable', status: 'unavailable', enabled: false,
+        reason: 'configuration', message: 'AI 服务配置或权限异常，等待管理员处理',
+        retry_after_ms: 300000,
+      },
+    })
+  }
+
+  await page.run408TeacherAction({
+    currentTarget: { dataset: { action: 'explain_correct' } },
+  })
+
+  assert.equal(page.data.aiAvailabilityEnabled, false)
+  assert.equal(page.data.aiAvailabilityReason, 'configuration')
+  assert.equal(page.data.teacherErrorText, 'AI 服务配置或权限异常，等待管理员处理')
+  assert.equal(page.data.teacherLoadingAction, '')
+  assert.equal(page.data.teacherResult, null)
 })

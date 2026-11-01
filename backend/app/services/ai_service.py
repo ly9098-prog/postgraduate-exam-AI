@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,8 +32,22 @@ from app.ai.prompts import (
     build_study_advice,
     build_visual_evidence_probe,
 )
-from app.services.ai.analysis_responses import quota_exceeded_response
-from app.services.ai_learning_service import check_token_limit
+from app.core.config import settings
+from app.models.admin import QuestionVersion
+from app.models.ai_chat import AiChat
+from app.models.question import Question
+from app.models.wrong_question import WrongQuestion
+from app.services.ai.advice_snapshot import (
+    advice_fallback_response,
+    advice_success_response,
+    build_advice_snapshot,
+    parse_advice_content,
+)
+from app.services.ai.analysis_cache import (
+    _analysis_input_signature,
+    _analysis_model_signature,
+    build_cached_error_analysis_response,
+)
 from app.services.ai.analysis_content import (
     _ANALYSIS_WRAPPER_KEYS,
     _canonical_answer_check_list,  # noqa: F401 — historical public import
@@ -50,19 +65,19 @@ from app.services.ai.analysis_content import (
     is_valid_ai_analysis,
     parse_error_analysis_content,
 )
-from app.services.ai.analysis_cache import (
-    _analysis_input_signature,
-    _analysis_model_signature,
-    build_cached_error_analysis_response,
+from app.services.ai.analysis_execution import (  # noqa: F401 — historical public import
+    begin_analysis_generation,
+    finish_analysis_generation,
+    prepare_locked_analysis_inputs,
+    review_locked_analysis_cache,
 )
-from app.services.ai.visual_ack_retry import (
-    ACK_MAIN_BUDGET_MS,
-    retry_visual_ack,
-    should_retry_visual_ack,
+from app.services.ai.analysis_invocation import (  # noqa: F401 — historical public import
+    AnalysisInvocationRequest,
+    invoke_prepared_analysis,
 )
-from app.services.ai.analysis_persistence import (
-    persist_repaired_analysis,
-    persist_valid_analysis,
+from app.services.ai.analysis_orchestration import (
+    AnalysisOrchestrationRequest,
+    execute_locked_analysis,
 )
 from app.services.ai.analysis_outcomes import (
     build_analysis_usage,
@@ -70,39 +85,24 @@ from app.services.ai.analysis_outcomes import (
     valid_analysis_outcome,
     visual_ack_failure_outcome,
 )
-from app.services.ai.analysis_execution import (  # noqa: F401 — historical public import
-    begin_analysis_generation,
-    finish_analysis_generation,
-    prepare_locked_analysis_inputs,
-    review_locked_analysis_cache,
-)
-from app.services.ai.analysis_result_review import (  # noqa: F401 — historical public import
-    resolve_analysis_outcome,
-    review_analysis_result,
-)
-from app.services.ai.analysis_invocation import (  # noqa: F401 — historical public import
-    AnalysisInvocationRequest,
-    invoke_prepared_analysis,
+from app.services.ai.analysis_persistence import (
+    persist_repaired_analysis,
+    persist_valid_analysis,
 )
 from app.services.ai.analysis_preparation import (
     AnalysisPreparationRequest,
     prepare_analysis,
 )
-from app.services.ai.analysis_orchestration import (
-    AnalysisOrchestrationRequest,
-    execute_locked_analysis,
-)
 from app.services.ai.analysis_responses import (
     generation_in_progress_response,
     grounding_repaired_response,
+    quota_exceeded_response,
     valid_analysis_response,
     visual_ack_failed_response,
 )
-from app.services.ai.advice_snapshot import (
-    advice_fallback_response,
-    advice_success_response,
-    build_advice_snapshot,
-    parse_advice_content,
+from app.services.ai.analysis_result_review import (  # noqa: F401 — historical public import
+    resolve_analysis_outcome,
+    review_analysis_result,
 )
 from app.services.ai.prewarm_execution import (
     PrewarmExecutionRequest,
@@ -110,6 +110,11 @@ from app.services.ai.prewarm_execution import (
 )
 from app.services.ai.provider_exception import classify_ai_provider_exception
 from app.services.ai.revision_guard import check_analysis_revision_drift
+from app.services.ai.visual_ack_retry import (
+    ACK_MAIN_BUDGET_MS,
+    retry_visual_ack,
+    should_retry_visual_ack,
+)
 from app.services.ai.visual_cache import (
     MAX_VISUAL_IMAGES,
     _analysis_cache_age_ms,
@@ -124,11 +129,7 @@ from app.services.ai.visual_cache import (
     ai_analysis_generated_at,
     is_ai_analysis_fresh,  # noqa: F401 — historical public import
 )
-from app.core.config import settings
-from app.models.admin import QuestionVersion
-from app.models.ai_chat import AiChat
-from app.models.question import Question
-from app.models.wrong_question import WrongQuestion
+from app.services.ai_learning_service import check_token_limit
 from app.services.knowledge_point_service import load_question_kps
 from app.services.safe_remote_fetch import request_remote_bytes
 
@@ -154,53 +155,89 @@ async def _analyze_error_with_lease(
     preparation: Any,
 ) -> dict:
     from app.core.cache import cache
+    from app.services.ai.analysis_availability import resolve_available_runtime
 
-    return await execute_locked_analysis(
-        AnalysisOrchestrationRequest(
-            db=db,
-            user_id=user_id,
-            wrong_question=preparation.wrong_question,
-            question=preparation.question,
-            answer_grounding=preparation.answer_grounding,
-            stored_visual_sources=preparation.visual_sources,
-            requires_visual=preparation.requires_visual,
-            knowledge_points=preparation.knowledge_points,
-            runtime=preparation.runtime,
-            input_signature=preparation.input_signature,
-            model_signature=preparation.model_signature,
-            effective_force=preparation.force,
-            timeout_sec=_analysis_timeout_sec(preparation.force),
-            lock_grace_sec=ERROR_ANALYSIS_LOCK_GRACE_SECONDS,
-            generating=_generating,
-            cache=cache,
-            logger=logger,
-            prepare_visual_inputs=_prepare_visual_inputs,
-            build_context=build_error_context,
-            build_prompt_grounding=grounding_prompt_payload,
-            build_expected_answer_check=grounding_verification_payload,
-            input_signature_builder=_analysis_input_signature,
-            cached_response=build_cached_error_analysis_response,
-            cache_age=_analysis_cache_age_ms,
-            chat=llm.chat,
-            resolve_runtime=_resolve_healthy_analysis_runtime,
-            quarantine_runtime=_quarantine_analysis_runtime_auth,
-            parse_content=parse_error_analysis_content,
-            validate_content=is_valid_ai_analysis,
-            extract_evidence=_extract_visual_evidence,
-            build_usage=build_analysis_usage,
-            validate_answer_check=_validate_answer_check,
-            diagnosis_contradicts_grounding=diagnosis_contradicts_grounding,
-            evidence_is_valid=_visual_evidence_is_valid,
-            should_retry_visual_ack=should_retry_visual_ack,
-            retry_visual_ack=retry_visual_ack,
-            model_signature_builder=_analysis_model_signature,
-            max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
-            timeout_guard_sec=ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS,
-            visual_ack_failure=visual_ack_failure_outcome,
-            grounding_repair=grounding_repair_outcome,
-            valid_outcome=valid_analysis_outcome,
-        )
+    runtime, state = await resolve_available_runtime(db)
+    if runtime is None:
+        return _unavailable_analysis_response(preparation, state)
+    prepared = replace(
+        preparation,
+        runtime=runtime,
+        model_signature=_analysis_model_signature(runtime),
     )
+    return await execute_locked_analysis(
+        _analysis_orchestration_request(db, user_id, prepared, cache)
+    )
+
+
+def _unavailable_analysis_response(preparation: Any, state: dict) -> dict:
+    cached = build_any_cached_error_analysis_response(preparation.wrong_question)
+    return {
+        **(cached or quota_exceeded_response()),
+        "error_code": "ai_service_unavailable",
+        "retryable": False,
+        "cache_preserved": bool(cached),
+        "availability": state,
+    }
+
+
+def _analysis_orchestration_request(
+    db: AsyncSession,
+    user_id: int,
+    prepared: Any,
+    cache: Any,
+) -> AnalysisOrchestrationRequest:
+    return AnalysisOrchestrationRequest(
+        db=db,
+        user_id=user_id,
+        wrong_question=prepared.wrong_question,
+        question=prepared.question,
+        answer_grounding=prepared.answer_grounding,
+        stored_visual_sources=prepared.visual_sources,
+        requires_visual=prepared.requires_visual,
+        knowledge_points=prepared.knowledge_points,
+        runtime=prepared.runtime,
+        input_signature=prepared.input_signature,
+        model_signature=prepared.model_signature,
+        effective_force=prepared.force,
+        timeout_sec=_analysis_timeout_sec(prepared.force),
+        lock_grace_sec=ERROR_ANALYSIS_LOCK_GRACE_SECONDS,
+        generating=_generating,
+        cache=cache,
+        logger=logger,
+        **_analysis_orchestration_ports(),
+    )
+
+
+def _analysis_orchestration_ports() -> dict[str, Any]:
+    return {
+        "prepare_visual_inputs": _prepare_visual_inputs,
+        "build_context": build_error_context,
+        "build_prompt_grounding": grounding_prompt_payload,
+        "build_expected_answer_check": grounding_verification_payload,
+        "input_signature_builder": _analysis_input_signature,
+        "cached_response": build_cached_error_analysis_response,
+        "cache_age": _analysis_cache_age_ms,
+        "chat": llm.chat,
+        "resolve_runtime": _resolve_healthy_analysis_runtime,
+        "quarantine_runtime": _quarantine_analysis_runtime_auth,
+        "parse_content": parse_error_analysis_content,
+        "validate_content": is_valid_ai_analysis,
+        "extract_evidence": _extract_visual_evidence,
+        "build_usage": build_analysis_usage,
+        "validate_answer_check": _validate_answer_check,
+        "diagnosis_contradicts_grounding": diagnosis_contradicts_grounding,
+        "evidence_is_valid": _visual_evidence_is_valid,
+        "should_retry_visual_ack": should_retry_visual_ack,
+        "retry_visual_ack": retry_visual_ack,
+        "model_signature_builder": _analysis_model_signature,
+        "max_tokens": _ERROR_ANALYSIS_MAX_TOKENS,
+        "timeout_guard_sec": ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS,
+        "visual_ack_failure": visual_ack_failure_outcome,
+        "grounding_repair": grounding_repair_outcome,
+        "valid_outcome": valid_analysis_outcome,
+    }
+
 
 # 第三方 Relay / reasoning 模型可能健康地超过 50 秒，因此服务端不能继续
 # 使用旧的 48/50 秒硬截断。微信小程序 wx.request 本身最多约 60 秒，所以
@@ -246,6 +283,15 @@ async def _is_analysis_runtime_auth_quarantined(runtime) -> bool:
     if not key:
         return False
     from app.core.cache import cache
+    from app.services.ai.model_health import public_state, read_health
+
+    try:
+        health = await read_health(runtime)
+    except Exception:
+        logger.warning("ai.analysis.health_read_failed", exc_info=True)
+        return True
+    if health:
+        return not public_state(health)["enabled"]
 
     return bool(await cache.get(key))
 

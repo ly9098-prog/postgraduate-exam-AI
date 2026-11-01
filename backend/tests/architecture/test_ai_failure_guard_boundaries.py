@@ -14,12 +14,14 @@ CALLS = {
         "str(exc or '').lower",
         "getattr",
         "_typed_status",
+        "_is_quota_failure",
         "_is_auth_failure",
         "_is_rate_limit_failure",
         "_is_transient_failure",
         "_looks_like_vision_rejection",
         "bool",
     },
+    "_is_quota_failure": {"_contains_any"},
     "_is_auth_failure": {"_contains_any"},
     "_is_rate_limit_failure": {"_contains_any"},
     "_is_transient_failure": {"_contains_any"},
@@ -58,6 +60,7 @@ LOCALS = {
         "retryable",
     },
     "_is_auth_failure": set(),
+    "_is_quota_failure": set(),
     "_is_rate_limit_failure": set(),
     "_is_transient_failure": set(),
     "_typed_status": {"raw", "status", "match"},
@@ -87,7 +90,11 @@ FUNCTIONS = {
     },
 }
 IMPORTS = {
-    "provider_exception": {"__future__": {"annotations"}, "re": {None}},
+    "provider_exception": {
+        "__future__": {"annotations"},
+        "re": {None},
+        "app.ai.provider_error_signals": {"QUOTA_ERROR_MARKERS"},
+    },
     "revision_guard": {
         "__future__": {"annotations"},
         "datetime": {"UTC", "datetime"},

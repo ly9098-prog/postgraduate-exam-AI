@@ -662,9 +662,88 @@ AI 错题分析。
   "from_fallback": false,
   "tokens_used": 150,
   "model": "qwen-plus (示例，实际由 admin_ai_model_configs 决定)",
-  "duration_ms": 2000
+  "duration_ms": 2000,
+  "availability": null
 }
 ```
+
+模型鉴权失败、限流或生成超时通过 HTTP 200 的业务响应表示：
+`from_fallback=true`，并携带 `error_code`、`retryable`；这类响应表示本次生成已经失败，
+客户端应结束加载并展示错误。强制重新生成失败且存在匹配的历史缓存时，
+返回 `cache_preserved=true`、`force_regenerated=false`，保留历史内容和生成时间。
+`model="generating"` 表示已有生成请求占用租约，客户端可继续轮询结果。
+
+当错题 AI 被共享模型健康门禁禁用时，响应可携带 `availability`：
+
+```json
+{
+  "error_code": "ai_service_unavailable",
+  "retryable": false,
+  "cache_preserved": true,
+  "availability": {
+    "status": "unavailable",
+    "enabled": false,
+    "reason": "configuration",
+    "message": "AI 服务配置或权限异常，等待管理员处理",
+    "retry_after_ms": 300000
+  }
+}
+```
+
+`status` 为 `checking | available | unavailable`。共享原因包括 `quota`、
+`configuration`、`transient`、`unconfigured`、`status_unavailable`；个人额度原因
+为 `user_quota`。该状态只阻止新的 AI 分析、重新生成和 AI 老师调用，不删除或隐藏
+已有分析、对话和普通错题内容。
+
+### GET `/ai/error-analysis/availability`
+
+查询当前用户能否使用错题 AI 分析与 AI 老师。加载错题详情时调用；首次请求或缓存
+过期时会触发后端模型探测。成功状态共享 30 秒，临时故障按
+`30/60/120/300` 秒退避，额度、鉴权或模型配置错误冷却 5 分钟。探测仍在进行时返回
+`status=checking`，客户端应按 `retry_after_ms`（当前为 2000 毫秒）短轮询；页面
+传输超时只结束等待动画，不应将检查中误判为业务调用失败。
+
+```json
+{
+  "status": "available",
+  "enabled": true,
+  "reason": "",
+  "message": "",
+  "retry_after_ms": 30000
+}
+```
+
+管理员更新绑定的 LLM 模型配置后会立即强制重新探测。只有测试已保存且参数完全匹配
+的模型配置，才会更新共享健康状态；未保存表单的测试不会解锁用户功能。
+
+`GET /ai/error-analysis/status/{wrong_question_id}` 只查询已持久化的结果，
+返回 `ready`、`content`、`generated_at`；`ready=false` 本身不能证明后台仍在生成。
+`POST /ai/error-analysis/recover` 接受错题 ID、`force_regenerate` 及可选
+`baseline_generated_at`，返回 `queued`。小程序仅在网络响应丢失或 HTTP 408/502/504
+时启动恢复与轮询；明确的 HTTP 4xx、500、503 等失败直接结束加载。
+
+### POST `/ai/408-teacher`
+
+执行服务端冻结的 408 AI 老师动作。请求不接受自由 Prompt，只接受
+`question_id`、固定 `action` 及可选版本/诊断/考试上下文。模型健康检查不通过时返回
+HTTP 503：
+
+```json
+{
+  "detail": {
+    "code": "ai_service_unavailable",
+    "status": "unavailable",
+    "enabled": false,
+    "reason": "configuration",
+    "message": "AI 服务配置或权限异常，等待管理员处理",
+    "retry_after_ms": 300000
+  }
+}
+```
+
+小程序保留并展示已有老师结果，但禁用新的老师动作；管理员修复模型配置并且探测
+成功后自动恢复。页面在老师面板内直接展示 `message` 或结构化原因，避免把所有禁用
+情况折叠成通用网络错误。
 
 ### POST `/ai/study-advice`
 

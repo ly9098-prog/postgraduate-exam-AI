@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.services import ai_teacher_408_service as svc
+from app.services.ai import analysis_availability
 
 
 @pytest.fixture
@@ -77,10 +78,17 @@ def prepared_teacher(monkeypatch):
     state.quota = AsyncMock(side_effect=quota)
     state.provider = AsyncMock(side_effect=provider)
     state.usage = AsyncMock(side_effect=usage)
+    state.runtime = object()
     monkeypatch.setattr(svc, "build_408_teacher_prompt", prompt)
     monkeypatch.setattr(svc, "check_token_limit", state.quota)
     monkeypatch.setattr(svc, "chat_with_db_model", state.provider)
     monkeypatch.setattr(svc, "record_token_usage", state.usage)
+    monkeypatch.setattr(
+        svc,
+        "require_available_runtime",
+        AsyncMock(return_value=state.runtime),
+    )
+    monkeypatch.setattr(svc, "note_failure", AsyncMock())
     return state
 
 
@@ -109,6 +117,7 @@ async def test_teacher_uses_server_fact_and_records_usage_before_parsing(
         "max_tokens": 1400,
         "response_format": {"type": "json_object"},
         "prefer_direct_answer": True,
+        "runtime": state.runtime,
     }
     context = state.contexts[0]
     assert context["question"]["question_version_id"] == 11
@@ -165,6 +174,30 @@ async def test_teacher_fallbacks_preserve_usage_and_action_boundaries(
     else:
         state.usage.assert_not_awaited()
         assert result["tokens_used"] == 0
+    assert svc.note_failure.await_count == (1 if scenario == "exception" else 0)
+
+
+@pytest.mark.asyncio
+async def test_teacher_unavailable_blocks_before_provider_call(prepared_teacher):
+    state = prepared_teacher
+    unavailable = {
+        "status": "unavailable",
+        "enabled": False,
+        "reason": "quota",
+        "message": "AI service quota exhausted",
+        "retry_after_ms": 300000,
+    }
+    svc.require_available_runtime.side_effect = (
+        analysis_availability.AnalysisUnavailableError(unavailable)
+    )
+
+    with pytest.raises(analysis_availability.AnalysisUnavailableError):
+        await svc.run_teacher_action(
+            state.db, user_id=3, question_id=7, action="core_concept"
+        )
+
+    state.provider.assert_not_awaited()
+    state.usage.assert_not_awaited()
 
 
 @pytest.mark.asyncio

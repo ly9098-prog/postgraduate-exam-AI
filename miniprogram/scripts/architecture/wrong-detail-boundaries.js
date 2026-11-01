@@ -13,6 +13,7 @@ const MODULES = ['teacher-action-controller.js', 'wrong-detail-ai-state.js',
   'wrong-detail-navigation-data.js', 'wrong-detail-navigation-flow.js',
   'wrong-detail-ai-recovery.js', 'wrong-detail-ai-generation.js',
   'wrong-detail-ai-regeneration.js', 'wrong-detail-ai-request.js',
+  'wrong-detail-ai-availability.js',
   'wrong-detail-diagnosis-flow.js', 'wrong-detail-load-flow.js',
   'wrong-detail-lifecycle.js', 'wrong-detail-master-flow.js', 'wrong-detail-master-undo.js', 'wrong-detail-remove-flow.js',
   'wrong-detail-render-safety.js', 'wrong-detail-teacher-interaction.js']
@@ -47,7 +48,7 @@ const AI_GENERATION_DELEGATES = {
   "loadAiAnalysis": "async loadAiAnalysis(wqId) {\nreturn aiGeneration.loadAiAnalysis(this, wqId, { _generationMarker })\n}",
   "_applyAiAnalysisResult": "async _applyAiAnalysisResult(result, wqId, requestId, baselineGeneratedAt) {\nreturn aiGeneration._applyAiAnalysisResult(this, result, wqId, requestId, baselineGeneratedAt, { _normalizeAiPayload: value => _normalizeAiPayload(value), _hasAiContent: value => _hasAiContent(value) })\n}",
   "_commitAiAnalysisSuccess": "_commitAiAnalysisSuccess(result, normalized, wqId) {\nreturn aiGeneration._commitAiAnalysisSuccess(this, result, normalized, wqId, { _normalizeAiResult: value => _normalizeAiResult(value) })\n}",
-  "_handleAiAnalysisError": "async _handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt) {\nreturn aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError })\n}"
+  "_handleAiAnalysisError": "async _handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt) {\nreturn aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError, _shouldRecoverAiRequest: error => aiState._shouldRecoverAiRequest(error) })\n}"
 }
 const AI_REGENERATION_DELEGATES = {
   "regenerateAiAnalysis": "async regenerateAiAnalysis() {\nreturn aiRegeneration.regenerateAiAnalysis(this, { _generationMarker })\n}",
@@ -58,7 +59,7 @@ const AI_REGENERATION_DELEGATES = {
   "_handleRegenerateEmpty": "_handleRegenerateEmpty(oldCards) {\nreturn aiRegeneration._handleRegenerateEmpty(this, oldCards, { showToast: options => wx.showToast(options) })\n}",
   "_commitRegenerateSuccess": "_commitRegenerateSuccess(result, normalized, wqId) {\nreturn aiRegeneration._commitRegenerateSuccess(this, result, normalized, wqId, { _normalizeAiResult: value => _normalizeAiResult(value), showToast: options => wx.showToast(options) })\n}",
   "_handleRegenerateError": "_handleRegenerateError(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {\nreturn aiRegeneration._handleRegenerateError(this, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)\n}",
-  "_handleRegenerateRecovery": "async _handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {\nreturn aiRegeneration._handleRegenerateRecovery(this, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { showToast: options => wx.showToast(options) })\n}",
+  "_handleRegenerateRecovery": "async _handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {\nreturn aiRegeneration._handleRegenerateRecovery(this, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { _shouldRecoverAiRequest: error => aiState._shouldRecoverAiRequest(error), showToast: options => wx.showToast(options) })\n}",
   "_handleRegenerateTimeout": "_handleRegenerateTimeout(e, oldCards, oldResult) {\nreturn aiRegeneration._handleRegenerateTimeout(this, e, oldCards, oldResult, { _isTimeoutError, showToast: options => wx.showToast(options) })\n}"
 }
 const AI_REQUEST_DELEGATES = {
@@ -68,6 +69,15 @@ const AI_REQUEST_DELEGATES = {
   "_enqueueAiRecovery": "async _enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt) {\nreturn aiRequest._enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt, { postRecovery: (payload, options) => api.post('/ai/error-analysis/recover', payload, options) })\n}",
   "_analysisFailureState": "_analysisFailureState(model, result) {\nreturn aiRequest._analysisFailureState(model, result, { _fallbackMessage })\n}",
   "onTapAiAnalysis": "onTapAiAnalysis() {\nreturn aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options) })\n}"
+}
+const AI_AVAILABILITY_DELEGATES = {
+  "_initAiAvailabilityState": "_initAiAvailabilityState() { return aiAvailability._initAiAvailabilityState(this) }",
+  "_applyAiAvailability": "_applyAiAvailability(state) { return aiAvailability._applyAvailability(this, state) }",
+  "_availabilityFromAiError": "_availabilityFromAiError(error) { return aiAvailability._availabilityFromError(error) }",
+  "_scheduleAiAvailabilityRetry": "_scheduleAiAvailabilityRetry(delay) { return aiAvailability._scheduleAiAvailabilityRetry(this, delay) }",
+  "_clearAiAvailabilityRetry": "_clearAiAvailabilityRetry() { return aiAvailability._clearAiAvailabilityRetry(this) }",
+  "_refreshAiAvailability": "async _refreshAiAvailability(options) { return aiAvailability._refreshAiAvailability(this, Object.assign({ requestClient: api }, options)) }",
+  "_clearAiAvailabilityState": "_clearAiAvailabilityState() { return aiAvailability._clearAiAvailabilityState(this) }"
 }
 const DIAGNOSIS_DELEGATES = {
   "openDiagnosisSheet": "openDiagnosisSheet() {\nreturn diagnosisFlow.openDiagnosisSheet(this)\n}",
@@ -156,6 +166,7 @@ const DELEGATES = {
   ...LOAD_DELEGATES,
   ...DIAGNOSIS_DELEGATES,
   ...AI_REQUEST_DELEGATES,
+  ...AI_AVAILABILITY_DELEGATES,
   ...AI_REGENERATION_DELEGATES,
   ...AI_GENERATION_DELEGATES,
   ...AI_RECOVERY_DELEGATES,
@@ -171,6 +182,8 @@ const TEACHER_PORTS = {
   "getAiLoading": "getAiLoading: () => page.data.aiLoading",
   "getAiRegenerating": "getAiRegenerating: () => page.data.aiRegenerating",
   "getTeacherLoadingAction": "getTeacherLoadingAction: () => page.data.teacherLoadingAction",
+  "getAiAvailabilityEnabled": "getAiAvailabilityEnabled: () => page.data.aiAvailabilityEnabled === true",
+  "getAiAvailabilityMessage": "getAiAvailabilityMessage: () => page.data.aiAvailabilityMessage",
   "getWq": "getWq: () => page.data.wq",
   "getErrorDiagnosis": "getErrorDiagnosis: () => page.data.errorDiagnosis",
   "setData": "setData: patch => page.setData(patch)",
@@ -189,7 +202,9 @@ const TEACHER_PORTS = {
   "postTeacher": "postTeacher: payload => api.post('/ai/408-teacher', payload, { timeout: AI_REQUEST_TIMEOUT_MS })",
   "normalizeResult": "normalizeResult: raw => aiTeacher408.normalizeResult(raw)",
   "presentResult": "presentResult: normalized => presentTeacherResult(normalized)",
-  "errorMessage": "errorMessage: error => aiTeacher408.errorMessage(error, api)"
+  "errorMessage": "errorMessage: error => aiTeacher408.errorMessage(error, api)",
+  "getAvailabilityFromError": "getAvailabilityFromError: error => page._availabilityFromAiError(error)",
+  "applyAvailability": "applyAvailability: state => page._applyAiAvailability(state)"
 }
 
 function compact(source) { return source.replace(/\s+/g, '') }

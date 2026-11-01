@@ -18,6 +18,13 @@ async function runImpl(options, event) {
     options.setData({ teacherSheetVisible: true })
     return
   }
+  if (!options.getAiAvailabilityEnabled()) {
+    options.showToast({
+      title: options.getAiAvailabilityMessage() || 'AI 服务暂不可用',
+      icon: 'none',
+    })
+    return
+  }
   const wq = options.getWq() || {}
   const diagnosis = options.getErrorDiagnosis() || {}
   const questionId = Number(wq.question_id || wq.questionId || 0)
@@ -83,6 +90,15 @@ async function performTeacherRequest(options, action, ctx) {
     options.setData({ teacherLoadingAction: '', teacherResult: presented })
   } catch (error) {
     if (requestSeq !== options.getRequestSequence() || !options.isAlive()) return
+    const availability = options.getAvailabilityFromError(error)
+    if (availability) {
+      options.applyAvailability(availability)
+      options.setData({
+        teacherLoadingAction: '',
+        teacherErrorText: availability.message || options.errorMessage(error),
+      })
+      return
+    }
     options.setData({ teacherLoadingAction: '', teacherErrorText: options.errorMessage(error) })
   } finally {
     if (options.getInflight(ctx.cacheKey) === requestPromise) options.deleteInflight(ctx.cacheKey)

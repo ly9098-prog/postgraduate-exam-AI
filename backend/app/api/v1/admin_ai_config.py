@@ -20,8 +20,9 @@ from app.services.admin_ai_config_service import (
     list_models,
     patch_configs,
     patch_model,
-    test_model_connection,
 )
+from app.services.admin_ai_model_test_service import test_model_connection
+from app.services.ai.analysis_admin_health import probe_saved_model
 
 router = APIRouter(prefix="/api/admin/v1", tags=["admin-ai-config"])
 
@@ -50,6 +51,17 @@ async def update_model(
     try:
         result = await patch_model(db, model_id, data, current_admin)
         await db.commit()
+        if data.model_fields_set & {
+            "name",
+            "provider",
+            "api_key",
+            "api_base_url",
+            "features",
+            "feature",
+            "is_enabled",
+            "is_default",
+        }:
+            await probe_saved_model(db, model_id)
         return result
     except ValueError as exc:
         await db.rollback()
@@ -127,7 +139,7 @@ async def test_connection(
     _=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    """对给定模型配置发起一次最小连通性测试，不保存任何状态。"""
+    """测试连接；仅与已保存配置一致的测试共享错题 AI 健康状态。"""
     result = await test_model_connection(
         api_base_url=data.api_base_url,
         api_key=data.get_api_key_value(),

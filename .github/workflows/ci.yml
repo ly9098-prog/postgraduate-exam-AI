@@ -331,6 +331,8 @@ jobs:
             tests/test_services/test_ai_analysis_content_recursion.py \
             tests/test_services/test_ai_analysis_execution.py \
             tests/test_services/test_ai_analysis_invocation.py \
+            tests/test_services/test_ai_model_availability.py \
+            tests/test_api/test_admin_ai_config_health.py \
             tests/test_services/test_ai_analysis_outcomes.py \
             tests/test_services/test_ai_analysis_publication_contract.py \
             tests/test_services/test_ai_analysis_publication_ports.py \

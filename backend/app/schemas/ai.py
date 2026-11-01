@@ -1,3 +1,5 @@
+from typing import Literal
+
 from app.schemas.base import BaseModel
 
 
@@ -8,6 +10,14 @@ class ErrorAnalysisRequest(BaseModel):
 
 class StudyAdviceRequest(BaseModel):
     subject_id: int | None = None
+
+
+class AiModelAvailabilityResponse(BaseModel):
+    status: Literal["checking", "available", "unavailable"]
+    enabled: bool
+    reason: str
+    message: str
+    retry_after_ms: int
 
 
 class AiResponse(BaseModel):
@@ -25,6 +35,7 @@ class AiResponse(BaseModel):
     error_code: str | None = None
     retryable: bool | None = None
     generated_at: str | None = None
+    availability: AiModelAvailabilityResponse | None = None
 
 
 class AiRecoveryRequest(BaseModel):

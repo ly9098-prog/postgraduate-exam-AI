@@ -21,6 +21,9 @@ from app.models.question import Question
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion
 from app.services import ai_prewarm_worker, ai_service, ai_teacher_408_service
+from app.services.ai import analysis_availability
+from app.services.ai_service import analyze_error as real_analyze_error
+from tests.test_services.test_ai_analysis_execution import Cache
 from tests.test_services.test_exam_attempt_semantics import _make_database
 
 ANALYSIS = {
@@ -340,4 +343,134 @@ async def test_status_without_persisted_analysis_stays_not_ready(ai_client, anal
         "ready": False,
         "content": None,
         "generated_at": None,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "error_code", "retryable"),
+    [
+        (RuntimeError("API Error: 403 Forbidden"), "ai_provider_auth_failed", False),
+        (RuntimeError("API Error: 429"), "ai_provider_rate_limited", True),
+        (TimeoutError(), "ai_provider_timeout", True),
+    ],
+)
+async def test_provider_failures_return_typed_http_response_through_real_analysis_service(
+    ai_client, monkeypatch, failure, error_code, retryable
+):
+    async with ai_client.factory() as db:
+        row = await db.get(WrongQuestion, 1)
+        row.question_version_id = 3
+        row.wrong_answer = "A"
+        row.ai_analysis = None
+        await db.commit()
+    runtime = SimpleNamespace(
+        model_config_id=11,
+        provider="synthetic",
+        model_name="analysis",
+        api_key="test-only",
+        base_url="https://example.test/v1",
+    )
+    resolver = AsyncMock(side_effect=[runtime, None])
+    chat = AsyncMock(side_effect=failure)
+    quarantine = AsyncMock()
+    cache = Cache()
+    monkeypatch.setattr(ai_service, "analyze_error", real_analyze_error)
+    monkeypatch.setattr(ai_service, "_resolve_healthy_analysis_runtime", resolver)
+    monkeypatch.setattr(ai_service, "_analysis_model_signature", lambda _: "synthetic")
+    monkeypatch.setattr(ai_service, "_quarantine_analysis_runtime_auth", quarantine)
+    monkeypatch.setattr(ai_service, "check_token_limit", AsyncMock(return_value=True))
+    monkeypatch.setattr(ai_service, "_generating", set())
+    monkeypatch.setattr(ai_service.llm, "chat", chat)
+    monkeypatch.setattr("app.core.cache.cache", cache)
+    monkeypatch.setattr(
+        analysis_availability,
+        "resolve_available_runtime",
+        AsyncMock(
+            return_value=(
+                runtime,
+                {
+                    "status": "available",
+                    "enabled": True,
+                    "reason": "",
+                    "message": "",
+                    "retry_after_ms": 30000,
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.ai.provider_invocation.require_runtime_verified",
+        AsyncMock(),
+    )
+
+    response = await ai_client.client.post(
+        "/api/v1/ai/error-analysis",
+        json={"wrong_question_id": 1, "force_regenerate": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_type"] == "error_analysis"
+    assert body["from_fallback"] is True
+    assert body["error_code"] == error_code
+    assert body["retryable"] is retryable
+    chat.assert_awaited_once()
+    assert [call[0] for call in cache.calls] == ["acquire", "release"]
+    assert ai_service._generating == set()
+    status = await ai_client.client.get("/api/v1/ai/error-analysis/status/1")
+    assert status.status_code == 200 and status.json()["ready"] is False
+    async with ai_client.factory() as db:
+        assert (await db.get(WrongQuestion, 1)).ai_analysis is None
+
+
+@pytest.mark.asyncio
+async def test_analysis_availability_exposes_shared_model_state(ai_client, monkeypatch):
+    state = {
+        "status": "unavailable",
+        "enabled": False,
+        "reason": "quota",
+        "message": "AI 服务额度不足，暂不可用",
+        "retry_after_ms": 300000,
+    }
+    monkeypatch.setattr(
+        analysis_availability,
+        "availability_for_user",
+        AsyncMock(return_value=state),
+    )
+
+    response = await ai_client.client.get("/api/v1/ai/error-analysis/availability")
+
+    assert response.status_code == 200
+    assert response.json() == state
+
+
+@pytest.mark.asyncio
+async def test_teacher_unavailable_returns_structured_503(ai_client, monkeypatch):
+    state = {
+        "status": "unavailable",
+        "enabled": False,
+        "reason": "configuration",
+        "message": "AI 服务配置或权限异常，等待管理员处理",
+        "retry_after_ms": 300000,
+    }
+
+    async def unavailable(*_args, **_kwargs):
+        raise analysis_availability.AnalysisUnavailableError(state)
+
+    monkeypatch.setattr(
+        ai_teacher_408_service,
+        "run_teacher_action",
+        unavailable,
+    )
+
+    response = await ai_client.client.post(
+        "/api/v1/ai/408-teacher",
+        json={"question_id": 1, "action": "core_concept"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "code": "ai_service_unavailable",
+        **state,
     }

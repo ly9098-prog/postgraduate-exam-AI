@@ -18,6 +18,7 @@ const QUESTION_SWITCH_IN_MS = 170
 const QUESTION_SWITCH_WATCHDOG_MS = 35000
 const QUESTION_SWITCH_ANIM_WATCHDOG_MS = 5000
 const aiState = require('./utils/wrong-detail-ai-state')
+const aiAvailability = require('./utils/wrong-detail-ai-availability')
 const { _aiPollDelayMs, _isTimeoutError, _generationMarker, _fallbackMessage, _isWqMastered } = aiState
 const { processWqData } = require('./utils/wrong-detail-question-view')
 const { buildTeacherActionPageCapabilities } = require('./utils/wrong-detail-teacher-page-adapter')
@@ -130,6 +131,7 @@ wrongQuestions: [],
 runnerProgressPercent: 0,
 skeletonOptions: [1, 2, 3, 4],
 aiSkeletonSections: [1, 2, 3],
+aiAvailabilityChecking: true, aiAvailabilityEnabled: false, aiAvailabilityStatus: 'checking', aiAvailabilityReason: 'checking', aiAvailabilityMessage: '正在检查 AI 服务',
 },
 _alive: false,
 _aiRequestId: 0,
@@ -148,15 +150,12 @@ _bottomActionsLastActiveAt: 0,
   onLoad(options) {
 return lifecycle.onLoad(this, options)
 },
-
   _initWrongDetailState() {
 return lifecycle._initWrongDetailState(this, { setRenderGuardPage })
 },
-
   _initWrongDetailFromOptions(options) {
 return lifecycle._initWrongDetailFromOptions(this, options)
 },
-
   _resolveQuestionIds(options, currentId) {
 return lifecycle._resolveQuestionIds(options, currentId, { get platform() { return wx } })
 },
@@ -187,27 +186,21 @@ return lifecycle.onUnload(this, { resetRenderGuard })
   async loadData(wqId) {
 return loadFlow.loadData(this, wqId, { requestClient: api })
 },
-
   _loadDataInitialPatch() {
 return loadFlow._loadDataInitialPatch()
 },
-
   _buildLoadedDataPatch(wq, wqId, loadSeq) {
 return loadFlow._buildLoadedDataPatch(this, wq, wqId, loadSeq, { _processWqData: (wq, safeMode) => _processWqData(wq, safeMode), _generationMarker })
 },
-
   _buildLoadedDataFields(wq, currentQuestion, wrongQuestions, raw, totalQ) {
 return loadFlow._buildLoadedDataFields(this, wq, currentQuestion, wrongQuestions, raw, totalQ, { _isWqMastered, errorDiagnosis })
 },
-
   _applyPreferredAnalysisToData(data, wq) {
 return loadFlow._applyPreferredAnalysisToData(this, data, wq, { _resolvePreferredAnalysis: wq => _resolvePreferredAnalysis(wq), _hasAiContent: value => _hasAiContent(value), _normalizeAiResult: value => _normalizeAiResult(value) })
 },
-
   _checkLoadedRenderInvariant(data) {
 return loadFlow._checkLoadedRenderInvariant(this, data)
 },
-
   _handleLoadDataError(e, loadSeq) {
 return loadFlow._handleLoadDataError(this, e, loadSeq)
 },
@@ -245,6 +238,13 @@ return teacherInteraction._teacherCacheKeyForWrong(wq, diagnosis, action)
     }
     return this._teacherActionCtl
   },
+  _initAiAvailabilityState() { return aiAvailability._initAiAvailabilityState(this) },
+  _applyAiAvailability(state) { return aiAvailability._applyAvailability(this, state) },
+  _availabilityFromAiError(error) { return aiAvailability._availabilityFromError(error) },
+  _scheduleAiAvailabilityRetry(delay) { return aiAvailability._scheduleAiAvailabilityRetry(this, delay) },
+  _clearAiAvailabilityRetry() { return aiAvailability._clearAiAvailabilityRetry(this) },
+  async _refreshAiAvailability(options) { return aiAvailability._refreshAiAvailability(this, Object.assign({ requestClient: api }, options)) },
+  _clearAiAvailabilityState() { return aiAvailability._clearAiAvailabilityState(this) },
 close408TeacherSheet() {
 return teacherInteraction.close408TeacherSheet(this)
 },
@@ -273,7 +273,7 @@ return aiGeneration._commitAiAnalysisSuccess(this, result, normalized, wqId, { _
 },
 
   async _handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt) {
-return aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError })
+return aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError, _shouldRecoverAiRequest: error => aiState._shouldRecoverAiRequest(error) })
 },
   async regenerateAiAnalysis() {
 return aiRegeneration.regenerateAiAnalysis(this, { _generationMarker })
@@ -308,7 +308,7 @@ return aiRegeneration._handleRegenerateError(this, e, wqId, requestId, baselineG
 },
 
   async _handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {
-return aiRegeneration._handleRegenerateRecovery(this, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { showToast: options => wx.showToast(options) })
+return aiRegeneration._handleRegenerateRecovery(this, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { _shouldRecoverAiRequest: error => aiState._shouldRecoverAiRequest(error), showToast: options => wx.showToast(options) })
 },
 
   _handleRegenerateTimeout(e, oldCards, oldResult) {

@@ -3,6 +3,8 @@ return {
         getAiLoading: () => page.data.aiLoading,
         getAiRegenerating: () => page.data.aiRegenerating,
         getTeacherLoadingAction: () => page.data.teacherLoadingAction,
+        getAiAvailabilityEnabled: () => page.data.aiAvailabilityEnabled === true,
+        getAiAvailabilityMessage: () => page.data.aiAvailabilityMessage,
         getWq: () => page.data.wq,
         getErrorDiagnosis: () => page.data.errorDiagnosis,
         setData: patch => page.setData(patch),
@@ -31,6 +33,8 @@ return {
         normalizeResult: raw => aiTeacher408.normalizeResult(raw),
         presentResult: normalized => presentTeacherResult(normalized),
         errorMessage: error => aiTeacher408.errorMessage(error, api),
+        getAvailabilityFromError: error => page._availabilityFromAiError(error),
+        applyAvailability: state => page._applyAiAvailability(state),
       }
 }
 
