@@ -115,6 +115,9 @@
 | 文档 / 入口 | 当前事实 |
 |------|------|
 | `docs/architecture/SYSTEM_ARCHITECTURE.md` | 2026-09-02 总体架构与运行时状态 |
+| `docs/architecture/AI_ANALYSIS_COMPATIBILITY.md` §18–19 | 错题AI共享健康门禁、真实模型探测、额度/鉴权禁用、管理员解锁与小程序提示 |
+| `docs/project/PRODUCTION_AI_ANALYSIS_AVAILABILITY_DEPLOY_2026-11-01.md` | 错题AI可用性门禁后端生产部署、备份、健康检查与真实模型验收边界 |
+| `docs/project/PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md` | 错题AI内聚/耦合复核、提交与三个后端角色再部署，含备份与限定验证 |
 | `docs/admin/ADMIN_API_SPEC.md` | Admin API v2.9，包含 system/tasks/backup 端点与批量答案补录端点 |
 | `docs/admin/RBAC_RULES.md` | JWT 隔离签名域与 `system:*` 权限 |
 | `docs/project/ROLE_DEPLOYMENT.md` | `local_import` / `cloud_api` 角色拆分与生产约束 |

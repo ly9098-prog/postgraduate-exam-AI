@@ -366,3 +366,7 @@ I001/F401/N818 债务除外）、compileall 与 diff-check 通过；formatter �
 运行代码 Ruff 正确性检查通过；唯一保留的严格 lint 债务是 `ai_service.py` 的 21 个
 既有兼容导入 F401，变更文件债务计数未增加，新增模块严格 Ruff 通过。
 真实生产模型调用、微信工具编译与真机链路仍未验证，部署证据另记。
+
+本轮代码已提交 `9742993a`，并于2026-11-02 03:17（Asia/Shanghai）完成三个后端角色部署，
+运行的18份源码逐容器与提交一致，限定健康/schema检查通过，见
+[本轮部署记录](../project/PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md)。

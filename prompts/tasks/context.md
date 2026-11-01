@@ -1,9 +1,11 @@
 # 重构与最终环境验收交接摘要
 
-更新：2026-11-01（Asia/Shanghai）。最新验收证据基线为 `307a8df9`（该证据提交时本地 `origin/main` 引用 ahead 7，未推送）；整体ENV-BLOCKED（最终验收未完成），代码已达到继续隔离验收标准；当前轮专用合成身份/角色续验及清理完成，并复核ENV-02/03/05既有证据与当前源码一致。最终门禁未全关。旧交接快照保留；修复快照在 `~/.cache/postgraduate-ai/acceptance/2026-11-01-env02-fixes/before/`。
+更新：2026-11-02（Asia/Shanghai）。最新验收证据基线为 `307a8df9`（该证据提交时本地 `origin/main` 引用 ahead 7，未推送）；整体ENV-BLOCKED（最终验收未完成），代码已达到继续隔离验收标准；当前轮专用合成身份/角色续验及清理完成，并复核ENV-02/03/05既有证据与当前源码一致。最终门禁未全关。旧交接快照保留；修复快照在 `~/.cache/postgraduate-ai/acceptance/2026-11-01-env02-fixes/before/`。
 
 ## 当前任务与授权
 
+- 当前请求：按 `docs/development/` 复核 §358 新代码的内聚性与耦合性，不符则修复、提交并部署。§359完成本轮职责拆分、异常边界及前端刷新修复，代码已提交 `9742993a`，后端于 2026-11-02 03:17 部署完成；微信端由用户手动发布。
+- 上一请求：首页四科掌握概览四张卡全部显示无数据；§357已定位并修复成长快照应用链回归，微信工具编译/模拟器/真机仍待验。
 - 用户要求修复小程序报错、操控微信开发者工具验收刷题/错题链路，并继续ENV-01..06；生产明确参考 `docs/project/DEPLOY_PLAN.md`。
 - 有限结构条目已经终态，§336六项业务缺陷与§337–340安全/部署历史保留。入口：`current_task.md` → `current_task/closure-ledger.md`，不再无界拆分。
 - 2026-11-01用户授权“修复这些发现的问题”：§347修复Admin登录成功、单题审核通过审计及上传阶段取消/迟响应归属；使用原合成验收数据库的独立副本验证。该批当时未授权或执行生产操作，后续按用户明确要求完成4个本地提交，未推送或上传小程序。
@@ -12,6 +14,12 @@
 
 ## 已完成
 
+- §359：完成 development 内聚/耦合复核和修复。Admin CRUD 882→626 行，连接诊断独立325行；共享探测/URL校验/额度标记，公开候选入口，提交后探测best-effort且记录异常，模型不存在共享冷却，准备对象不可变替换。前端只更新可用性字段，结构化失败去重、普通失败刷新，静默检查持续重试直到恢复；保留JSON格式错误分类。后端1435项/小程序2564项/fixture5/31通过，Ruff正确性及债务不增、format、compileall、YAML和边界通过。代码提交 `9742993a`；2026-11-02 03:17（Asia/Shanghai）部署 app/worker/scheduler，18份源码逐容器匹配、重启/启动错误0，内部ready200、公网健康200，81表/71序列/384索引/V19及保护服务配置不变。服务器备份 `/data/backups/ai_health_review_20261102T030950`，详见[部署记录](../../docs/project/PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md)。未调用真实模型、未改模型配置、未推送；微信端手动发布和真实设备验收仍待完成，既有长文件/长函数不宣称全量合规。
+
+- §358：错题详情 AI 可用性问题按用户确认的探测方案完成：按 `model_config_id + config_fingerprint` 将真实模型探测结果写入 Redis，成功共享 30 秒，临时故障 `30/60/120/300` 秒退避，额度/鉴权/模型不存在冷却 5 分钟；健康备用模型继续可用。首次分析、重新生成和 AI 老师通过同一门禁，已有分析/老师结果/题库解析保留；老师禁用返回 HTTP 503 结构化原因并直接展示在面板。管理员保存相关配置会强制重探，只有与已保存配置完全匹配的测试连接才能解锁。小程序加载/`onShow` 检查可用性，检查动画上限 5 秒，后端 `checking` 按 2 秒重试；明确 HTTP 失败不再进入旧恢复轮询。后端 AI 回归 1083 项、小程序全量 2557 项、5 个渲染 fixture 31 项通过，Ruff（项目登记的 I001/F401/N818 债务除外）、compileall/diff-check 通过；formatter 仅报告 `ai_service.py` 既有空行差异，未在部署后改写该文件以保持源码 SHA 一致。已部署 app/worker/scheduler 三个后端角色（23:38，Asia/Shanghai），运行源码 SHA 一致、重启 0、启动错误匹配 0，内部 ready 200、公网 live/health/login 200；81 表/71 序列/384 索引及 V19 迁移未变，Admin/PG/Redis/nginx 未重建。服务器证据 `/data/backups/wrong_detail_ai_availability_20261101T231332`，详见[部署记录](../../docs/project/PRODUCTION_AI_ANALYSIS_AVAILABILITY_DEPLOY_2026-11-01.md)和[结构化结果](../../docs/architecture/refactor-results/wrong-detail-ai-availability-2026-11-01.json)。未调用真实生产模型、未修改 Admin 模型配置；此前 403 仍可能需核对凭据/Base URL/权限，微信工具/真机与完整 ENV 验收未完成。
+- §357：首页四科掌握概览全空定位到`12d1968e`拆分回归。`loadGrowthSnapshot()`成功/异常守卫均写反，成功响应也不进入`_applyGrowthResponses()`；`_buildGrowthContext()`漏传`plan`并引用未声明变量，`ReferenceError`又被反向守卫静默吞掉。现已恢复“仅过期返回”并显式传入`plan`；接口协议、统计查询和掌握度映射未改。按编码规范将成长请求、掌握度、展示投影、快照编排、动画和页面控制下沉为6个`pages/home/utils/growth-*.js`模块，原画布方法下沉到`home-canvas.js`，四接口改用命名响应，`home.js`由1450行降至793行并纳入800行中央预算。先RED后GREEN，新测试7项通过并加入reliability固定清单，页面预算3项、408集成、v6 UI、Study UI、API客户端14项、存储边界14项、包体/媒体预算、主包体积及Node语法通过。见[结果](../../docs/architecture/refactor-results/home-mastery-growth-load-fix-2026-11-01.json)和[缺陷记录](../../docs/project/BUGS_HISTORY.md)。未做微信工具编译/模拟器/真机，未提交/推送/部署，ENV状态不变。
+- §356：2026-11-01 20:41:35按用户明确授权部署一个后端运行文件，app/worker/scheduler新镜像及运行源码SHA一致；三个角色重启0/启动错误匹配0、内部ready200、app健康，公网live/health/首页/login200。首轮探针漏带生产Host误判400并回滚，补齐Host后重试成功；保留原日志，不放宽可信主机校验。81表名称/schema/OID及完整schema不变，V19未迁移，PG/Redis/nginx/Admin容器及配置不变；当前PG/RDB备份、旧源码及三个回滚镜像保留。见[AI后端部署记录](../../docs/project/PRODUCTION_AI_ANALYSIS_DEPLOY_2026-11-01.md)和[结构化结果](../../docs/architecture/refactor-results/wrong-detail-ai-production-deploy-2026-11-01.json)。微信由用户手动发布，真实模型403尚未解决，ENV状态不变。
+- §355：模型277 ms返回403且无备用模型后，失败字典被当作成功结果复核导致500；小程序又对该明确失败入队并轮询，44次间隔共180秒。现后端直返完整失败/缓存保留响应，首次生成和重新生成仅对网络响应丢失或408/502/504恢复，明确HTTP失败立即结束加载并保留旧解析。599项后端、174项错题详情Node、43项渲染不变性及31项fixture回归通过，严格Ruff/format/compileall通过；自审完成，独立审查、真实模型、微信工具编译/真机未执行。源码基线`3f25d7fc`，新修改未提交；后端后续按§356部署，结果`docs/architecture/refactor-results/wrong-detail-ai-loading-fix-2026-11-01.json`。实际生成仍需核对Admin模型配置的凭据/Base URL/服务权限，ENV状态不变。
 - §354：用户明确要求更新运行版本，已构建并替换app/worker/scheduler/Admin，nginx检查/reload完成；新镜像后端源码SHA匹配既有验收版本，新Admin BUILD_ID及“取消上传”JS资源已在公网验证。内部ready200、公网live/health/首页/login200，四服务重启0/启动错误匹配0；PG/Redis/nginx未重启，81表OID及830个恢复后schema对象一致，迁移仍V19，配置哈希不变。当前PG/RDB备份、四旧镜像回滚标签保留；无迁移或业务源码改动。见[运行更新记录](../../docs/project/PRODUCTION_RUNTIME_UPDATE_2026-11-01.md)和[结构化结果](../../docs/architecture/refactor-results/production-runtime-update-2026-11-01.json)，不等于完整ENV-06验收。
 - §353：用户确认保留新增工作区变化后，按此前授权同步2个后端、2个Admin运行文件。四文件哈希匹配此前ENV-02验收版本；旧服务器文件备份于 `/data/backups/source_sync_20261101T053249Z_co6jr670/`，同步后SHA一致、checksum dry-run差异0。仅服务器源码同步，未构建/重启，运行镜像尚未包含修复；不上传测试、离线脚本或环境配置。详见[操作记录](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)§353补记。
 - §352：按用户授权先备份、持锁复核17表为0行后删除；用户要求回滚后，已限定恢复17表、12序列及默认值/索引/约束，其他64表名称/schema/OID不变，迁移头未改。完整schema前后830段无缺失/新增，829段逐字一致，1段等价数组cast通过10种判定检查；12序列状态与备份一致。公网live/health/首页200。当前PG备份及证据在生产 `/data/backups/postgres/pre_drop_empty_20261101T051459Z_jondm9/`。未重启或同步代码；checksum dry-run确认2个后端和2个Admin运行文件存在差异，代码同步仍待处理。见[恢复记录](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)。
@@ -43,9 +51,9 @@
 | ENV-03 | PASS-ISOLATED | 限定隔离技术检查通过；仍受前序最终门禁约束 |
 | ENV-04 | BLOCKED | 实测启用AI配置0、OCR8080不可达、测试存储变量为空，缺受控AI/OCR、存储、HTTPS/WS网关 |
 | ENV-05 | PASS-ISOLATED | 限定隔离技术检查通过；仍受前序最终门禁约束 |
-| ENV-06 | BLOCKED | 前序未全关，完整生产业务及PG+Redis恢复未完成；§352已有17表恢复，§354已更新四服务运行镜像并验证健康/源码/新资源，不能替代最终验收 |
+| ENV-06 | BLOCKED | 前序未全关，完整生产业务及PG+Redis恢复未完成；§352已有17表恢复，§354更新四服务、§356/§358/§359更新AI后端三个角色并完成限定部署检查，不能替代最终验收 |
 
-`PASS-ISOLATED`不是按顺序关闭所有最终门禁，也不授权生产。生产匿名live200/dashboard200/users-me403只是先前本轮公网预检，未重新核对完整生产镜像/ready/业务。现有部署≠最终验收通过。
+`PASS-ISOLATED`不是按顺序关闭所有最终门禁，也不授权生产。§354/§356/§358/§359已按各自明确授权核对运行镜像、内部ready及限定公网健康；未完成真实外部模型、微信发布后链路或生产账号业务验收。现有部署≠最终验收通过。
 
 ## 证据与运行资源
 
@@ -59,7 +67,7 @@
 
 ## 下一步与保护
 
-- 优先解决ENV-01专用身份/HTTPS/真机与ENV-04受控外部能力，再进入ENV-06。§352生产17张表已恢复，不继续删表；§354已按明确授权更新四服务运行镜像，当前备份/回滚镜像保留。生产完整业务及PG/Redis恢复未在本次限定部署验证中完成；停止扩展生产操作，后续依具体验收范围与授权处理。
+- 小程序§358可用性禁用提示、§355恢复边界和§357成长修复均需微信开发者工具重新编译并由用户手动发布；模拟器/真机业务验收仍未完成。实际AI生成仍需核对Admin模型配置的凭据/Base URL/权限；本轮未主动调用真实模型或修改配置。优先解决ENV-01专用身份/HTTPS/真机与ENV-04受控外部能力，再进入ENV-06。§352生产17张表已恢复，不继续删表；§354/§356/§358/§359已按明确授权更新运行镜像，当前备份/回滚镜像保留。生产完整业务及PG/Redis恢复未在本次限定部署验证中完成；停止扩展生产操作，后续依具体验收范围与授权处理。
 - 生产update-all不含worker；新迁移先build后用新镜像run；nginx文件bind mount换inode需force-recreate。匹配生产记录只用sync_uuid，不按本地numeric id修改生产。
-- 保留已有文档、删除和未跟踪内容；用户已确认保留`11332141`及后续`.zcodeignore`删除、`error_log.txt`新增、`nul\r`消失，不处理无关文件。`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§354后当前卷50节、四卷共348条记录；ENV阶段不变。生产删除及恢复见§352，源码同步见§353，运行部署见§354；复用哈希一致的既有业务验收，未重跑整套业务测试、推送或写系统记忆。
-- 代码图谱通过本地stdio可用，project `home-lmh-projects-postgraduate-ai`，generation `2026-10-31T09:32:18Z`，68045节点/236032边；相关刷新/队列/import/client路径已核对，无已记录缺口且metadata_match，非完整性证明。Graphify缺graph.json，显式文档读取作为回退。
+- 保留已有文档、删除和未跟踪内容；用户已确认保留`11332141`及后续`.zcodeignore`删除、`error_log.txt`新增、`nul\r`消失，不处理无关文件。`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§359后当前卷55节、四卷共353条记录；ENV阶段不变。生产删除及恢复见§352，源码同步见§353，运行部署见§354/§356/§358/§359；§359完成本次规范复核与AI可用性后端部署，未推送小程序、未改模型配置。
+- 历史代码图谱通过本地stdio可用（本次会话未暴露MCP，§359直接核对已定位源码），project `home-lmh-projects-postgraduate-ai`，generation `2026-10-31T09:32:18Z`，68045节点/236032边；相关刷新/队列/import/client路径已核对，无已记录缺口且metadata_match，非完整性证明。Graphify缺graph.json，显式文档读取作为回退。

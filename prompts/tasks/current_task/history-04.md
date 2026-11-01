@@ -1,6 +1,6 @@
 # 重构执行记录 · 第 04 卷
 
-> 原记录编号：§305–§345；41/100 批次。保留原编号和原文顺序，合并标题按覆盖编号计数。历史状态不代表当前验收结论。
+> 原记录编号：§305–§359；55/100 批次。保留原编号和原文顺序，合并标题按覆盖编号计数。历史状态不代表当前验收结论。
 
 [任务入口](../current_task.md) · [原计划](plan.md) · [上一卷](history-03.md)
 
@@ -529,3 +529,157 @@ ENV-02转PASS-ISOLATED；ENV-01 PARTIAL、ENV-03/05保留PASS-ISOLATED、ENV-04/
 新镜像app `4d46548e9c46`、worker `1e8309de17ac`、scheduler `4c26fc8b701c`、Admin `777a04714d35`；Admin BUILD_ID `Ioxstl7ZkFENgG6g-saix`。PG/Redis/nginx容器ID及启动时间未变，服务器.env/Compose/nginx文件哈希未变；81表名称/schema/OID与替换前相同，830对象与之前已验证恢复schema逐项相同，迁移仍V19。没有迁移、清库、环境覆盖、缓存/镜像/volume清理或全库恢复，不再沿用§353“仅源码同步、未上线”的当前状态。
 
 记录及脱敏结果见`docs/project/PRODUCTION_RUNTIME_UPDATE_2026-11-01.md`与`docs/architecture/refactor-results/production-runtime-update-2026-11-01.json`。现有volume归属和nginx HTTP2弃用警告不影响检查，未扩大修改。没有生产账号业务/完整ENV重验或生产PG/RDB恢复演练，ENV阶段不变；完成本次明确部署后停止扩展。自审完成，未新增独立审查或系统记忆；四卷容量100/98/100/50，共348条记录。
+
+## 三百五十五、错题详情 AI 失败后持续加载修复（2026-11-01）
+
+按用户提供的`error_log.txt`定位：19:42:00模型请求在277 ms内收到403，备用模型不可用；
+后端约495 ms后因`'dict' object has no attribute 'result'`异常结束。错题详情本身20 ms，
+客户端却提交恢复任务并轮询到至少19:43:15。原44次轮询的间隔累计180秒，造成失败后长时间加载。
+
+`analysis_review_invocation`在复核及终态解析两处识别完整响应字典，直返provider失败或保留缓存响应，
+不再访问其result/runtime；外层finally继续释放租约。小程序首次生成与重新生成共用纯规则，
+仅对传输响应丢失或HTTP 408/502/504启动恢复，明确HTTP失败立即结束加载；保留旧解析、卡片和生成时间。
+规则经Page能力参数注入，未放宽子模块依赖或源码预算门禁。
+
+回归先复现后修复：10项provider编排用例复现日志同一AttributeError，2项新增Node用例复现错误恢复；
+修复后35份相关后端文件599项通过、0失败/跳过，含真实FastAPI/SQLite的analyze_error失败链、
+缓存保留和租约释放。错题详情174项Node、公式/视觉脚本、渲染不变性43项、5个fixture的31项回归全部通过。
+修改Python严格Ruff及format、app compileall和diff-check通过；既有测试文件扩展，无新增CI清单项。
+自审完成，未执行独立agent审查。
+
+兼容说明与API文档同步；结果见`docs/architecture/refactor-results/wrong-detail-ai-loading-fix-2026-11-01.json`，
+日志/JUnit在`~/.cache/postgraduate-ai/bugfix/2026-11-01-wrong-detail-ai/`。403的具体凭据或权限原因未验证，
+真实模型、微信工具编译/真机和生产部署均未执行；Admin模型配置仍需核对，ENV状态不变。
+源码基线`3f25d7fc`，本轮未暂存/提交/推送/部署，保留原工作区变动，不写系统记忆。
+四卷容量100/98/100/51，共349条记录。
+
+## 三百五十六、错题详情 AI 后端修复生产部署（2026-11-01）
+
+用户明确要求“部署改动到服务器中”，并说明“微信端由我手动发布即可”。仅同步
+`backend/app/services/ai/analysis_review_invocation.py`，其SHA256为
+`d95cd4a56dd769f19c4165c40f81082ab28f5460a65f0dc811debb781325023e`；
+保留旧源码、旧镜像回滚标签和当前PG/RDB备份后，缓存构建app/worker/scheduler。
+三个新镜像在断网、无生产数据卷的临时容器中通过源码SHA、compileall及失败/缓存保留/空字典直返检查。
+复用SHA一致的§355后端599项/错题详情Node174项验收，本轮新跑compileall、严格Ruff和diff-check。
+
+首轮内部readiness探针漏带生产域名Host，可信主机校验返回400，脚本误判并触发旧镜像回滚；
+旧版本同样被该探针拒绝，补齐Host后live/readiness均200，确认是探针错误。保留失败记录，
+reload nginx恢复公网后修正探针，再依次更新scheduler、worker、app；未放宽可信主机配置。
+最终于2026-11-01 20:41:35（Asia/Shanghai）完成检查，第二次未触发回滚。
+
+三个角色运行源码SHA一致、重启次数0、启动错误匹配0，app健康、内部ready200；
+nginx检查/reload通过，公网live/health/首页/login均200，公网ready继续受保护403。
+81表名称/schema/OID及schema-only导出内容一致（仅忽略pg_dump随机restrict标记），
+迁移仍为V19且未执行迁移；PG/Redis/nginx/Admin容器ID/启动时间及环境/Compose/nginx配置SHA不变。
+未同步小程序、文档、测试、数据库文件或本地环境；未重建Admin。
+
+服务器备份与证据：`/data/backups/wrong_detail_ai_deploy_20261101T121401Z/`，
+PG归档23185834字节且TOC/完整解码通过，Redis RDB9727字节且redis-check-rdb通过；
+原源码、三个rollback镜像标签和`rollback-images.json`保留。仅删除本轮Redis容器内临时备份，
+未清理既有备份/镜像/缓存/volume。脱敏记录见
+`docs/project/PRODUCTION_AI_ANALYSIS_DEPLOY_2026-11-01.md`与
+`docs/architecture/refactor-results/wrong-detail-ai-production-deploy-2026-11-01.json`；
+本地证据在`~/.cache/postgraduate-ai/deploy/2026-11-01-wrong-detail-ai/`。
+
+用户手动发布微信端；未主动调用真实模型、修改模型配置或执行生产账号业务验收。
+上游403的凭据/Base URL/权限问题尚未解决，本次后端部署不代表完整AI成功链路或最终ENV验收通过。
+没有Git暂存/提交/推送，不写系统记忆，保留原工作区改动；四卷容量100/98/100/52，共350条记录。
+
+## 三百五十七、首页四科掌握概览全部无数据修复（2026-11-01）
+
+用户反馈首页四张掌握卡片全部为`-- / 数据不足 / 0/0题`。代码图谱显示首页成长请求链仍为
+`onShow → loadGrowthSnapshot → _fetchGrowthResponses → _applyGrowthResponses`，接口和统计映射
+未定位到故障；真实本地库也无法复现“有练习但后端四科统计为空”，因此继续核查前端应用层。
+
+根因集中在`12d1968e`的成长快照拆分：`loadGrowthSnapshot()`同时把成功和异常分支的新鲜度守卫写反，
+请求成功时也直接返回，从未调用`_applyGrowthResponses()`；并且`_buildGrowthContext()`签名漏掉
+`plan`，函数体仍引用外层`plan`，异步流程会抛`ReferenceError`，又被反向异常守卫静默吞掉。
+页面因此一直显示`getGrowthFallback()`生成的首屏占位四卡，而非接口真实数据。
+
+先新增`test-home-mastery-fallback.js`，RED阶段复现成功后不落`setData`及`plan is not defined`；
+修复为“仅过期响应返回”，并将`plan`显式传入上下文构建器。接口载荷、Study Hub 掌握度、
+`dashboard.subject_stats`兜底和四科准确率映射均未改变。新增测试已登记到
+`.github/workflows/reliability.yml`固定清单，避免只存在于本地。
+
+为同时满足`docs/development/coding-style.md`的200-400行典型值、800行上限和函数小于50行要求，
+继续按职责拆分而不改业务契约：`growth-client`负责四接口并发和命名响应，`growth-mastery`负责
+四科匹配/统计兜底，`growth-view`负责纯展示投影，`growth-snapshot`负责快照编排，
+`growth-animation`负责数字动画，`growth-page-controller`负责Page状态与存储边界；
+原`drawSubjectPie`能力保留并下沉到`home-canvas`。
+`home.js`从1450行降至793行，只保留生命周期、资料和导航；四接口由数组下标改为
+`{dashboard,growth,hub,plan}`，跨模块入口使用命名options/targets。首页纳入中央800行预算，
+陈旧408静态断言同步改为`primaryTaskRoute`并恢复通过。
+
+修复后新测试7项通过；页面预算3项、408集成、v6 UI、Study UI、API客户端14项、存储边界14项、
+包体/媒体预算、主包体积及Node语法检查通过，diff-check通过。所有新增源码文件均低于800行，
+新增函数均低于50行。未执行微信开发者工具重编译/模拟器交互或真机验证，也未提交、推送、部署、迁移或
+访问生产。结果见`docs/architecture/refactor-results/home-mastery-growth-load-fix-2026-11-01.json`，
+缺陷记录同步`docs/project/BUGS_HISTORY.md`；API与组件契约未变，接口/消费者映射文档已核对无需修改。
+四卷容量100/98/100/53，共351条记录。
+
+## 三百五十八、错题详情 AI 可用性门禁与探测部署（2026-11-01）
+
+用户先要求分析错题详情 AI 持续加载和响应慢的根因，随后确认采用“真实模型探测 + 失败禁用”
+方案：页面加载时先检查模型可用性，额度不足或 API Key/配置错误时禁用 AI 分析、重新生成和
+AI 老师；管理员更新已绑定模型配置后，只有匹配的测试连接通过才解除禁用。实现没有把用户个人
+额度混入全局模型健康状态，也保留了已有分析、老师结果和题目解析。
+
+后端新增 `model_health`、`analysis_availability`、`analysis_admin_health` 和
+`connection_probe`。健康状态按 `model_config_id + config_fingerprint` 存入 Redis，所有用户
+共享；成功 TTL 30 秒，临时故障按 30/60/120/300 秒退避，额度、鉴权/权限和模型不存在冷却
+5 分钟。探测使用真实 OpenAI-compatible `chat/completions`，并发通过 Redis 锁合并；健康备用
+模型优先复用，只有候选均不可验证时禁用。管理员保存相关字段后强制重探，只有
+`POST /ai-models/test-connection` 携带相同 `model_id` 和完全匹配的已保存配置时才更新健康状态。
+
+首次分析、重新生成和 AI 老师通过同一运行时门禁；明确 HTTP 失败直接结束加载，仅网络响应丢失
+或 408/502/504 保留旧恢复路径；后端 `checking` 使用 2 秒短重试，页面检查动画上限 5 秒。
+AI 老师不可用时返回 HTTP 503 的 `detail.code=ai_service_unavailable`，小程序直接展示原因并
+保留已有内容。新增页面侧 5 秒超时、自动重查、状态投影和 503 detail 白名单读取，未改变详情页
+已有渲染契约。
+
+验证结果为后端 AI 定向 1083 项、小程序全量 2557 项、5 个渲染 fixture 31 项全部通过；
+Ruff（项目登记的 I001/F401/N818 债务除外）、app compileall、架构依赖/上传定向和 diff-check
+通过；formatter 仅报告 `ai_service.py` 既有空行差异，未在部署后改写该文件以保持源码 SHA 一致。
+未调用真实生产模型，未修改管理员模型配置，也未执行微信工具编译、模拟器或真机验收。
+
+用户授权部署后端后，23:38（Asia/Shanghai）同步 16 个后端运行文件并替换 app/worker/scheduler；
+三个服务运行源码 SHA 与本地一致，重启 0、启动错误匹配 0，app healthy，带生产 Host 的内部
+ready 200，公网 live/health/login 200，公网 root 307 跳转后 200，ready 继续 403。81 张表、71 个
+序列、384 个索引及 V19 迁移未变；Admin/PG/Redis/nginx 未重建，未执行迁移。服务器备份和证据
+根为 `/data/backups/wrong_detail_ai_availability_20261101T231332`，三个 rollback 镜像标签保留。
+小程序由用户手动发布；上游 403 的凭据、Base URL 或权限原因仍可能需要在 Admin 修正，部署不等于
+真实模型成功链路或完整 ENV-06 验收。四卷容量100/98/100/54，共352条记录。
+
+## 三百五十九、错题 AI 新代码规范复核、提交与部署（2026-11-02）
+
+用户要求检查新代码是否满足 `docs/development/` 的内聚性/耦合性要求，不符合则修复，
+随后提交并部署。此次仅处理错题 AI 可用性及直接接线，保留其他脏文件；小程序由用户手动发布。
+
+Admin 模型测试从 CRUD 服务拆为 `admin_ai_model_test_service`，原服务 882→626 行，新服务
+325 行。最小 Chat 探测与 URL 校验共用 `connection_probe`，额度标记归入 AI 传输公共模块。
+Admin 健康桥接改用公开候选解析入口；提交后探测 best-effort，查询/缓存异常记录 warning，
+不把已提交的保存变成失败。模型不存在的真实业务失败写共享五分钟配置冷却；测试连接超时报告
+实际耗时。分析准备对象用 `dataclasses.replace`，入口与请求/端口构造分离。
+
+小程序 checking 只写五个字段；普通失败无 availability 时才刷新，结构化响应只应用一次，
+不清掉已经建立的重试计划；静默定时检查失败后仍继续按冷却时间重查，直到成功恢复。
+API 错误码只接收 `ai_service_unavailable`。新增失败回归先复现
+2项失败，再修复为43项通过；Admin PATCH先提交后探测、无关字段不探测、提交后查询失败仍返回
+成功以及真实模型不存在冷却均有测试。CI/reliability固定清单同步。
+
+本轮后端相关测试1435项、小程序全量2564项、渲染5 fixtures/31项通过；formatter处理测试排版后
+对应77项重跑通过。新增模块均<800行、新增函数均<50行，Ruff正确性/债务不增、运行代码格式、
+compileall、页面/详情边界、workflow YAML和diff-check通过。既有老师1244行、Admin CRUD长函数、
+缓存响应原地补充契约不扩大处理，不声称全领域预算达标。codebase-memory MCP在本会话不可用，
+对已定位文件直读核对。先前独立审查8项发现均已修复；补充审查未返回结果即停止，不宣称第二次审查完成。
+最终自审还补测并修复JSON解码异常被ValueError提前捕获的问题，保留Admin格式错误分类。
+
+代码提交 `9742993a` 后按明确授权部署。PG新备份完整解码校验、Redis RDB校验及旧源码/三个回滚
+镜像均保留；首轮备份脚本假定Redis口令未通过，核实当前内部Redis无口令且PING成功后完成备份，
+原失败证据保留。2026-11-02 03:17（Asia/Shanghai）app/worker/scheduler替换成功，18份源码SHA
+与提交逐容器一致，三个角色重启0、启动错误0，app healthy，内部ready200，公网live/health/login200。
+81表/71序列/384索引及V19迁移不变；Admin/PG/Redis/nginx容器及.env/Compose/nginx配置不变。
+没有迁移、生产模型调用、模型配置改写、推送或微信发布。服务器证据
+`/data/backups/ai_health_review_20261102T030950`，详见
+`docs/project/PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md`。
+四卷容量100/98/100/55，共353条记录；完整ENV验收状态不变。

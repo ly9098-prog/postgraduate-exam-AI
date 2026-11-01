@@ -1,0 +1,174 @@
+{
+  "started_at": "2026-11-01T12:39:52.236094+00:00",
+  "authorization": "Deploy the AI fix to the server; user will publish WeChat manually",
+  "services": {
+    "app": {
+      "container_id": "702d30f40c741ef53e85f118835f04b80a14fe752827992144ea270f6a5da9a1",
+      "image_id": "sha256:683576330bea00592d27e78dbea4f5fb4b4471de563ce128d85f27b6852dfedc",
+      "started_at": "2026-11-01T12:41:26.908795605Z",
+      "restart_count": 0,
+      "source_sha256": "d95cd4a56dd769f19c4165c40f81082ab28f5460a65f0dc811debb781325023e",
+      "startup_error_lines": 0
+    },
+    "worker": {
+      "container_id": "d6f9398d1a763ba24b49b794906f69c5caae4360c70308a89971f19782489902",
+      "image_id": "sha256:8550540c304876a930b9f994e4547e12caf2da96a7772961c5a39bac6afce61c",
+      "started_at": "2026-11-01T12:39:56.178549525Z",
+      "restart_count": 0,
+      "source_sha256": "d95cd4a56dd769f19c4165c40f81082ab28f5460a65f0dc811debb781325023e",
+      "startup_error_lines": 0
+    },
+    "scheduler": {
+      "container_id": "ce5cecc1b62c7385879b632707f08f75e9417136088f23cf45d945873d55769d",
+      "image_id": "sha256:e0353e2a987e17734d941647bfda0068e742f933423cc650cbb3f8f373b2f3c7",
+      "started_at": "2026-11-01T12:39:54.161176958Z",
+      "restart_count": 0,
+      "source_sha256": "d95cd4a56dd769f19c4165c40f81082ab28f5460a65f0dc811debb781325023e",
+      "startup_error_lines": 0
+    }
+  },
+  "baseline_file": "containers-before-retry.json",
+  "protected_containers_unchanged": true,
+  "protected_config_unchanged": true,
+  "database_table_count": 81,
+  "database_catalog_unchanged": true,
+  "migration": "v19_pomodoro_subject_allocations",
+  "database_schema_unchanged": true,
+  "public_health": [
+    {
+      "path": "/health/live",
+      "status": 200
+    },
+    {
+      "path": "/health",
+      "status": 200
+    },
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/login",
+      "status": 200
+    },
+    {
+      "path": "/health/ready",
+      "status": 403
+    }
+  ],
+  "app_health": "healthy",
+  "internal_ready": true,
+  "nginx_reloaded": true,
+  "completed_at": "2026-11-01T12:41:35.039154+00:00",
+  "status": "PASS_PRODUCTION_DEPLOYMENT",
+  "database_migration_executed": false,
+  "wechat_release": "manual_by_user",
+  "external_model_configuration_changed": false,
+  "final_attempt_rollback_executed": false,
+  "date": "2026-11-01",
+  "timezone": "Asia/Shanghai",
+  "completed_at_shanghai": "2026-11-01T20:41:35.039154+08:00",
+  "server_backup_directory": "/data/backups/wrong_detail_ai_deploy_20261101T121401Z",
+  "source_paths_deployed": [
+    "backend/app/services/ai/analysis_review_invocation.py"
+  ],
+  "local_source_head": "3f25d7fc68bb5adae3ec31aa138f90872a5fbb66",
+  "local_acceptance_reused": {
+    "result": "wrong-detail-ai-loading-fix-2026-11-01.json",
+    "backend_passed": 599,
+    "miniprogram_passed": 174,
+    "source_sha256_matches": true
+  },
+  "fresh_local_checks": {
+    "compileall_app": true,
+    "strict_ruff_backend_change": true,
+    "git_diff_check": true
+  },
+  "backup": {
+    "backup_directory": "/data/backups/wrong_detail_ai_deploy_20261101T121401Z",
+    "completed_at": "2026-11-01T12:20:40.289940+00:00",
+    "source_backup_sha256": "bff485be8d7862084edaf4caeceebcb551bb4b1a64f64a09d43d4ae45c6e1f44",
+    "backups": {
+      "postgraduate.dump": {
+        "bytes": 23185834,
+        "sha256": "b073ee8e8d201f27a85cab8a8756839d4f5623a9e2c2f4fe3fc2626a8076f4d2"
+      },
+      "redis.rdb": {
+        "bytes": 9727,
+        "sha256": "8caae3f46a766ae873999340266bcad3a0c28a73f97832cf475d0027bc8e11d7"
+      }
+    },
+    "table_count": 81,
+    "migration": "v19_pomodoro_subject_allocations",
+    "rollback_tags_saved": true,
+    "postgres_archive_fully_decoded": true,
+    "redis_rdb_validated": true,
+    "backup_retry": "Redis has no password; validated PING and used internal redis-cli directly"
+  },
+  "isolated_image_checks": {
+    "app": {
+      "image_id": "sha256:683576330bea00592d27e78dbea4f5fb4b4471de563ce128d85f27b6852dfedc",
+      "created_at": "2026-11-01T20:21:58.323888514+08:00",
+      "proof": {
+        "source_sha256": "d95cd4a56dd769f19c4165c40f81082ab28f5460a65f0dc811debb781325023e",
+        "compileall": true,
+        "failure_response_short_circuit": true,
+        "network": "none"
+      }
+    },
+    "worker": {
+      "image_id": "sha256:8550540c304876a930b9f994e4547e12caf2da96a7772961c5a39bac6afce61c",
+      "created_at": "2026-11-01T20:21:58.323888514+08:00",
+      "proof": {
+        "source_sha256": "d95cd4a56dd769f19c4165c40f81082ab28f5460a65f0dc811debb781325023e",
+        "compileall": true,
+        "failure_response_short_circuit": true,
+        "network": "none"
+      }
+    },
+    "scheduler": {
+      "image_id": "sha256:e0353e2a987e17734d941647bfda0068e742f933423cc650cbb3f8f373b2f3c7",
+      "created_at": "2026-11-01T20:21:58.323888514+08:00",
+      "proof": {
+        "source_sha256": "d95cd4a56dd769f19c4165c40f81082ab28f5460a65f0dc811debb781325023e",
+        "compileall": true,
+        "failure_response_short_circuit": true,
+        "network": "none"
+      }
+    }
+  },
+  "first_attempt": {
+    "status": "ROLLED_BACK",
+    "checked_at": "2026-11-01T12:39:51.384506+00:00",
+    "reason": "Deployment probe omitted the production Host header and received HTTP 400; both previous and new application images were affected by the probe error",
+    "previous_images_restored": true,
+    "nginx_reloaded": true,
+    "internal_ready_with_production_host": 200,
+    "public_health": [
+      {
+        "path": "/health/live",
+        "status": 200
+      },
+      {
+        "path": "/health",
+        "status": 200
+      },
+      {
+        "path": "/login",
+        "status": 200
+      }
+    ]
+  },
+  "rollback_executed_during_first_attempt": true,
+  "rollback_images": {
+    "app": "deploy-app:rollback-wrong-detail-ai-20261101T121401Z",
+    "worker": "deploy-worker:rollback-wrong-detail-ai-20261101T121401Z",
+    "scheduler": "deploy-scheduler:rollback-wrong-detail-ai-20261101T121401Z"
+  },
+  "limits": [
+    "WeChat publication will be performed manually by the user",
+    "No active production model call or authenticated user workflow acceptance",
+    "Upstream HTTP 403 credential/permission cause has not been corrected",
+    "Overall ENV acceptance status unchanged"
+  ]
+}

@@ -162,11 +162,11 @@
     "The prior upstream HTTP 403 cause may still require Admin credential, Base URL or permission correction.",
     "WeChat developer-tools compilation and device acceptance were not performed; the user will publish the miniprogram manually.",
     "This deployment is not complete ENV-01..06 acceptance.",
-    "No Git commit, push or migration was performed."
+    "The original 2026-11-01 deployment preceded Git commit; the reviewed implementation was committed and redeployed on 2026-11-02. No push or migration was performed."
   ],
   "cohesion_coupling_review": {
     "date": "2026-11-02",
-    "status": "PASS_LOCAL_PENDING_DEPLOYMENT",
+    "status": "PASS_COMMITTED_AND_PRODUCTION_DEPLOYED",
     "scope": "New wrong-detail model-health code and direct integration paths; existing unrelated debt retained",
     "changes": [
       "Separated Admin connection diagnostics from model CRUD; service reduced from 882 to 626 lines",
@@ -205,7 +205,8 @@
       "compileall": "PASS",
       "workflow_yaml": "PASS",
       "backend_duration_seconds": 125.77,
-      "tests_formatter": "PASS (9 files)"
+      "tests_formatter": "PASS (9 files)",
+      "final_http_auth_gate": "PASS: anonymous availability/Admin model endpoints return existing HTTP_403"
     },
     "existing_limitations": [
       "ai_teacher_408_service.py remains 1244 lines; this change only wires availability",
@@ -214,6 +215,9 @@
       "codebase-memory MCP unavailable in this session; exact known source paths inspected directly",
       "Real production model calls and WeChat/device acceptance are not verified"
     ],
-    "review": "Initial independent review reported 8 actionable findings, all addressed; local follow-up added regressions for refresh omissions, continued silent retries and JSON error classification. Supplementary reviewer stopped before returning findings; no second review completion claimed."
+    "review": "Initial independent review reported 8 actionable findings, all addressed; local follow-up added regressions for refresh omissions, continued silent retries and JSON error classification. Supplementary reviewer stopped before returning findings; no second review completion claimed.",
+    "source_commit": "9742993a9b89889eed51706a3f9173b4f5801964",
+    "deployment_record": "docs/architecture/refactor-results/wrong-detail-ai-health-review-deploy-2026-11-02.json",
+    "completed_at_shanghai": "2026-11-02T03:17:01.243198+08:00"
   }
 }
