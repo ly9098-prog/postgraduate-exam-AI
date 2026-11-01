@@ -13,7 +13,7 @@ test = [
     "pytest>=7.4",
     "pytest-asyncio>=0.23",
     "pytest-cov>=4.1",
-    "fakeredis==2.37.0",
+    "fakeredis[lua]==2.37.0",
     "httpx>=0.25",
     "ruff>=0.1",
     "mypy>=1.7",

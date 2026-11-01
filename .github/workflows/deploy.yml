@@ -19,6 +19,9 @@ jobs:
           pip install -r requirements.txt
           # Full test runs use pytest-only dependencies such as fakeredis.
           pip install -e ".[test]"
+          # Export tests verify CJK font loading on the runner.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-wqy-zenhei fonts-noto-cjk
       - name: Run tests
         env:
           DATABASE_URL: sqlite+aiosqlite:///./test.db
