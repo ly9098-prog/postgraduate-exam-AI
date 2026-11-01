@@ -38,6 +38,9 @@ jobs:
           pip install python-docx
           pip install -e ".[test]"
           pip freeze --exclude-editable > requirements-lock.txt
+          # PDF export tests explicitly verify WenQuanYi CJK rendering.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-wqy-zenhei
 
       - name: compileall — syntax check all Python files
         run: |
