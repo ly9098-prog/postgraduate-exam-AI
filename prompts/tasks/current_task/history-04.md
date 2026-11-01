@@ -519,3 +519,13 @@ ENV-02转PASS-ISOLATED；ENV-01 PARTIAL、ENV-03/05保留PASS-ISOLATED、ENV-04/
 先逐文件备份服务器旧源码到`/data/backups/source_sync_20261101T053249Z_co6jr670/`并核验备份SHA；rsync仅使用4文件明确清单，不删除、不上传其他测试/脚本/环境材料。2026-11-01 13:33:43确认远程SHA逐项等于本地，再次checksum dry-run为0差异。前后哈希保留在服务器source-before/source-after JSON；详见生产操作记录的§353补记。
 
 只更新服务器源码，未构建镜像、重启、替换容器、reload nginx或执行迁移，运行中的镜像尚未包含修复；不宣称源码已上线。17表恢复状态不变，ENV阶段状态不变，后续镜像部署仍按具体范围与授权处理。自审完成，无新增独立审查或系统记忆写入；四卷容量100/98/100/49，共347条记录。
+
+## 三百五十四、生产后端三角色与Admin运行版本更新（2026-11-01）
+
+用户明确要求更新实际运行版本。核对DEPLOY_PLAN、服务器Compose和运行环境，四服务环境无差异，构建/依赖/包清单哈希与本地一致；沿用production/cloud_api和INSTALL_OCR=false。先生成并校验23,185,646字节PG完整归档与8,810字节Redis RDB，保留四旧镜像rollback标签；证据目录`/data/backups/runtime_deploy_20261101T073153Z_ZKOxFn/`，不执行含过期备份删除的脚本。四修复源SHA匹配既有ENV-02验收，复用此前业务证据；本轮后端compileall和两Python严格Ruff通过，无业务代码修改。
+
+缓存构建app/worker/scheduler后顺序构建Admin，均成功；新后端镜像在无网络、无生产卷临时容器compileall通过，新Admin产物包含上传取消代码。全部镜像就绪后以显式deploy项目、no-deps/no-build/pull-never及90秒停止宽限替换四服务；15:40:08新容器启动，随后内部ready及Admin就绪，nginx -t/reload通过。15:41:42复核app healthy、四进程运行/重启0/启动错误匹配0，公网live/health/首页/login200，ready403保护保留；新Admin BUILD_ID和包含“取消上传”的JS实际由公网返回。三个后端运行角色的两修复文件SHA均匹配新版本。
+
+新镜像app `4d46548e9c46`、worker `1e8309de17ac`、scheduler `4c26fc8b701c`、Admin `777a04714d35`；Admin BUILD_ID `Ioxstl7ZkFENgG6g-saix`。PG/Redis/nginx容器ID及启动时间未变，服务器.env/Compose/nginx文件哈希未变；81表名称/schema/OID与替换前相同，830对象与之前已验证恢复schema逐项相同，迁移仍V19。没有迁移、清库、环境覆盖、缓存/镜像/volume清理或全库恢复，不再沿用§353“仅源码同步、未上线”的当前状态。
+
+记录及脱敏结果见`docs/project/PRODUCTION_RUNTIME_UPDATE_2026-11-01.md`与`docs/architecture/refactor-results/production-runtime-update-2026-11-01.json`。现有volume归属和nginx HTTP2弃用警告不影响检查，未扩大修改。没有生产账号业务/完整ENV重验或生产PG/RDB恢复演练，ENV阶段不变；完成本次明确部署后停止扩展。自审完成，未新增独立审查或系统记忆；四卷容量100/98/100/50，共348条记录。

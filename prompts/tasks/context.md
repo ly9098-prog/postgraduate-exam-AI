@@ -12,6 +12,7 @@
 
 ## 已完成
 
+- §354：用户明确要求更新运行版本，已构建并替换app/worker/scheduler/Admin，nginx检查/reload完成；新镜像后端源码SHA匹配既有验收版本，新Admin BUILD_ID及“取消上传”JS资源已在公网验证。内部ready200、公网live/health/首页/login200，四服务重启0/启动错误匹配0；PG/Redis/nginx未重启，81表OID及830个恢复后schema对象一致，迁移仍V19，配置哈希不变。当前PG/RDB备份、四旧镜像回滚标签保留；无迁移或业务源码改动。见[运行更新记录](../../docs/project/PRODUCTION_RUNTIME_UPDATE_2026-11-01.md)和[结构化结果](../../docs/architecture/refactor-results/production-runtime-update-2026-11-01.json)，不等于完整ENV-06验收。
 - §353：用户确认保留新增工作区变化后，按此前授权同步2个后端、2个Admin运行文件。四文件哈希匹配此前ENV-02验收版本；旧服务器文件备份于 `/data/backups/source_sync_20261101T053249Z_co6jr670/`，同步后SHA一致、checksum dry-run差异0。仅服务器源码同步，未构建/重启，运行镜像尚未包含修复；不上传测试、离线脚本或环境配置。详见[操作记录](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)§353补记。
 - §352：按用户授权先备份、持锁复核17表为0行后删除；用户要求回滚后，已限定恢复17表、12序列及默认值/索引/约束，其他64表名称/schema/OID不变，迁移头未改。完整schema前后830段无缺失/新增，829段逐字一致，1段等价数组cast通过10种判定检查；12序列状态与备份一致。公网live/health/首页200。当前PG备份及证据在生产 `/data/backups/postgres/pre_drop_empty_20261101T051459Z_jondm9/`。未重启或同步代码；checksum dry-run确认2个后端和2个Admin运行文件存在差异，代码同步仍待处理。见[恢复记录](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)。
 - §351（历史）：生产只读检查发现17张空表仍有代码消费者，当时未删表或创建备份；该轮“没有新代码”的本地判断已由§352服务器checksum比对补充，不能作为当前服务器同步结论。
@@ -42,7 +43,7 @@
 | ENV-03 | PASS-ISOLATED | 限定隔离技术检查通过；仍受前序最终门禁约束 |
 | ENV-04 | BLOCKED | 实测启用AI配置0、OCR8080不可达、测试存储变量为空，缺受控AI/OCR、存储、HTTPS/WS网关 |
 | ENV-05 | PASS-ISOLATED | 限定隔离技术检查通过；仍受前序最终门禁约束 |
-| ENV-06 | BLOCKED | 前序未全关，完整生产镜像/worker/业务及PG+Redis恢复未完成；§352已有当前PG备份、17表恢复与live/health/首页200，不能替代最终验收 |
+| ENV-06 | BLOCKED | 前序未全关，完整生产业务及PG+Redis恢复未完成；§352已有17表恢复，§354已更新四服务运行镜像并验证健康/源码/新资源，不能替代最终验收 |
 
 `PASS-ISOLATED`不是按顺序关闭所有最终门禁，也不授权生产。生产匿名live200/dashboard200/users-me403只是先前本轮公网预检，未重新核对完整生产镜像/ready/业务。现有部署≠最终验收通过。
 
@@ -58,7 +59,7 @@
 
 ## 下一步与保护
 
-- 优先解决ENV-01专用身份/HTTPS/真机与ENV-04受控外部能力，再进入ENV-06。§352生产17张表已恢复，不继续删表；当前PG备份与限定恢复证据不代表全库/Redis恢复或最终验收。§353后端/Admin源码同步已完成，运行镜像未更新；后续上线仍需按DEPLOY_PLAN核查具体部署范围与授权。
+- 优先解决ENV-01专用身份/HTTPS/真机与ENV-04受控外部能力，再进入ENV-06。§352生产17张表已恢复，不继续删表；§354已按明确授权更新四服务运行镜像，当前备份/回滚镜像保留。生产完整业务及PG/Redis恢复未在本次限定部署验证中完成；停止扩展生产操作，后续依具体验收范围与授权处理。
 - 生产update-all不含worker；新迁移先build后用新镜像run；nginx文件bind mount换inode需force-recreate。匹配生产记录只用sync_uuid，不按本地numeric id修改生产。
-- 保留已有文档、删除和未跟踪内容；用户已确认保留`11332141`及后续`.zcodeignore`删除、`error_log.txt`新增、`nul\r`消失，不处理无关文件。`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§353后当前卷49节、四卷共347条记录；ENV阶段不变。实际生产删除及恢复以§352为准，源码同步见§353；未重跑业务测试套件、推送或写系统记忆。
+- 保留已有文档、删除和未跟踪内容；用户已确认保留`11332141`及后续`.zcodeignore`删除、`error_log.txt`新增、`nul\r`消失，不处理无关文件。`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§354后当前卷50节、四卷共348条记录；ENV阶段不变。生产删除及恢复见§352，源码同步见§353，运行部署见§354；复用哈希一致的既有业务验收，未重跑整套业务测试、推送或写系统记忆。
 - 代码图谱通过本地stdio可用，project `home-lmh-projects-postgraduate-ai`，generation `2026-10-31T09:32:18Z`，68045节点/236032边；相关刷新/队列/import/client路径已核对，无已记录缺口且metadata_match，非完整性证明。Graphify缺graph.json，显式文档读取作为回退。

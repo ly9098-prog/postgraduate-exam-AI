@@ -23,7 +23,7 @@
 | [第 01 卷](current_task/history-01.md) | §7–§106 | 100/100 | 已封卷 |
 | [第 02 卷](current_task/history-02.md) | §107–§204 | 98/100 | 已封卷；保留合并记录完整性 |
 | [第 03 卷](current_task/history-03.md) | §205–§304 | 100/100 | 已封卷 |
-| [第 04 卷](current_task/history-04.md) | §305–§353 | 49/100 | 当前追加卷 |
+| [第 04 卷](current_task/history-04.md) | §305–§354 | 50/100 | 当前追加卷 |
 
 记录目录的追加和滚动规则见 [分卷说明](current_task/README.md)。原 §1–§6 计划正文在 `plan.md`，不计入批次记录容量。历史中的 §N 引用按原记录编号在相应卷中查找；旧状态不覆盖本入口和 `context.md`。
 
@@ -50,7 +50,8 @@
 - §351：生产PostgreSQL只读精确检查确认17张表当时为空；全部仍在当前ORM/服务/路由或worker链路中使用，属于现行schema，不是可删除孤表。未执行DROP、未改任何数据；最新可见PG备份为2026-10-16、Redis备份为2026-10-22，不满足删表前的当前回滚准备。当前没有backend/app或Admin前端新代码，不需向服务器同步；未运行rsync。
 - §352：用户明确要求删除后，新建并校验完整PG备份，单事务锁定17表复核0行、RESTRICT删除；随后按用户“回滚那些表”限定恢复17表、12序列及索引/约束，其他64表名称/schema/OID不变，迁移头未变。830个schema对象无缺失/新增，829段逐字相同、1段等价cast判定通过，序列状态匹配；公网live/health/首页200。未同步代码或重启服务，服务器checksum dry-run发现2个后端与2个Admin运行文件差异，推翻将§351本地无改动理解为服务器无差异的结论。见[生产恢复记录](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)。四卷共346条。
 - §353：用户确认保留工作区变化后，继续按既有授权同步2个后端和2个Admin运行文件；旧服务器文件已单独备份，四文件与既有ENV-02验收哈希和本地SHA一致，同步后checksum dry-run为0差异。未构建镜像、重启或迁移，运行镜像仍未包含新修复，不将源码同步视为部署上线。操作记录见[源码同步补记](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)。四卷共347条。
-- 下一项：生产17表已恢复，不继续删表；后端/Admin源码同步已完成，运行镜像未更新。最终验收仍需专用测试号/ticket、隔离AppSecret、测试HTTPS及真机/移动网络，并取得ENV-04受控能力。后续上线参照 `docs/project/DEPLOY_PLAN.md` 和具体用户授权；当前PG备份与限定恢复不等于最终ENV-06通过，2026-10-31 blocked审计保留为历史。
+- §354：用户明确要求更新运行版本，已构建并替换app/worker/scheduler/Admin，nginx配置检查和reload通过。运行后端源码SHA、新Admin BUILD_ID与公网“取消上传”JS匹配；内部ready200，公网live/health/首页/login200，四服务重启0/启动错误匹配0。PG/Redis/nginx未重启，81表OID及830恢复后schema对象不变，V19未迁移，配置不变；PG/RDB新备份和四旧镜像回滚标签保留。见[运行部署记录](../../docs/project/PRODUCTION_RUNTIME_UPDATE_2026-11-01.md)。四卷共348条，完整ENV目标未完成。
+- 下一项：生产17表已恢复，不继续删表；四服务运行版本更新已完成，停止扩展生产操作。最终验收仍需专用测试号/ticket、隔离AppSecret、测试HTTPS及真机/移动网络，并取得ENV-04受控能力；生产完整业务/PG+Redis恢复另按具体范围与授权处理。本次部署不等于最终ENV-06通过，2026-10-31 blocked审计保留为历史。
 
 ## 每轮收尾要求
 
