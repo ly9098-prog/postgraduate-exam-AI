@@ -22,7 +22,7 @@ prompts/
 | 看现在有没有指定任务 | `tasks/current_task.md` |
 | 查某次旧任务怎么写的 | `tasks/done/`、`tasks/archive/`、各主题目录 |
 
-`system/` 里仍有「只调 DeepSeek、JWT 7 天、每次会话必须读 current-task」这类旧句子。那些句子不要覆盖代码和 `docs/`。
+`system/` 已按 2026-11-02 上线后阶段口径更新开发/测试/文档原则，但仍不是最高规则；模型、JWT 有效期、目录和命令细节以代码、配置与 `docs/` 为准。
 
 ## 这次整理留在原处的原因
 

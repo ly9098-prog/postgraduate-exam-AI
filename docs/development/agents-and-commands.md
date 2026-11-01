@@ -242,7 +242,7 @@ Codex 不使用 `/` 前缀的 slash 命令；以下指令通过两种方式使�
 | 指令              | 功能                             | 用法        |
 | --------------- | ------------------------------ | --------- |
 | `制定实施计划`         | 复述需求 → 评估风险 → 逐步计划，等确认后才写代码    | 复杂功能前     |
-| `按 TDD 实现`       | 强制 TDD：RED → GREEN → 重构 → 80%+ | 新功能/Bug修复 |
+| `按 TDD 实现`       | 强制 TDD：RED → GREEN → 重构，以行为覆盖为准 | 新功能/Bug修复 |
 | `审查未提交的变更`        | 全面安全+质量审查未提交变更（内置：`codex review --uncommitted`） | 代码写完后     |
 | `全面验证代码库状态`       | 运行全面验证                         | 提交前       |
 | `对 <范围> 运行质量流水线`  | 对文件或项目范围运行质量检查                 | 发布前       |
@@ -255,19 +255,19 @@ Codex 不使用 `/` 前缀的 slash 命令；以下指令通过两种方式使�
 | ---------------- | ------ | ------------------------- |
 | `修复 Rust 构建`      | Rust   | 修复构建/借用检查/依赖              |
 | `审查 Rust 代码`      | Rust   | 所有权/生命周期/unsafe 审查        |
-| `测试 Rust 代码`      | Rust   | TDD + cargo-llvm-cov 80%+ |
+| `测试 Rust 代码`      | Rust   | TDD + cargo-llvm-cov 行为覆盖 |
 | `修复 Go 构建`        | Go     | 修复构建/vet/linter           |
 | `审查 Go 代码`        | Go     | 惯用模式/并发安全/错误处理            |
-| `测试 Go 代码`        | Go     | TDD + go test -cover 80%+ |
+| `测试 Go 代码`        | Go     | TDD + go test -cover 行为覆盖 |
 | `修复 Kotlin 构建`    | Kotlin | 修复构建/编译/依赖                |
 | `审查 Kotlin 代码`    | Kotlin | 惯用模式/空安全/协程               |
-| `测试 Kotlin 代码`    | Kotlin | TDD + Kover 80%+          |
+| `测试 Kotlin 代码`    | Kotlin | TDD + Kover 行为覆盖       |
 | `修复 C++ 构建`       | C++    | 修复构建/CMake/链接             |
 | `审查 C++ 代码`       | C++    | 内存安全/现代C++/并发             |
 | `测试 C++ 代码`       | C++    | TDD + gcov/lcov           |
 | `审查 Python 代码`     | Python | PEP8/类型提示/安全/异步正确性        |
 | `修复 Python 构建`     | pip/uv/poetry | 修复依赖/虚拟环境/类型检查      |
-| `测试 Python 代码`     | Python | TDD + pytest-cov 80%+     |
+| `测试 Python 代码`     | Python | TDD + pytest-cov 行为覆盖  |
 
 ### 多模型协作
 
@@ -310,7 +310,7 @@ Codex 不使用 `/` 前缀的 slash 命令；以下指令通过两种方式使�
 | `提取当前会话模式为 skill` | 会话模式提取 |
 | `优化草稿提示词` | 提示词优化 |
 | `管理评测驱动开发工作流` | 评测管理 |
-| `分析测试覆盖率达 80%+` | 覆盖率分析 |
+| `分析测试覆盖情况` | 覆盖率分析（本仓库不设统一百分比门禁） |
 
 ### 会话管理
 
@@ -372,7 +372,7 @@ Codex 内置多 Agent 派发工具（`spawn_agent` / `wait_agent` / `send_input`
 ```bash
 codex exec "任务指令..."                                    # 当前目录非交互执行
 codex exec -C /path/to/project "任务指令..."                # 指定项目目录
-codex exec --full-auto "任务指令..."                        # 自动批准读写（等效 bypass 审批）
+codex exec -s workspace-write "任务指令..."                 # 在 workspace-write 沙箱内执行（不绕过审批）
 codex exec -s read-only "只读分析任务..."                     # 只读沙箱执行
 codex exec --json "任务指令..."                             # JSONL 事件流输出（供编排脚本解析）
 codex review --uncommitted                                # 审查未提交变更（内置代码审查）
@@ -385,28 +385,28 @@ codex agents                                              # 查看后台/历史 
 
 ```
 多 Agent 工具 → 子 agent → 写文件 → 弹窗（无人确认） → ❌ 卡死
-codex exec --full-auto → 子进程 → 写文件 → ✅ 直接通过
+codex exec -s workspace-write → 子进程 → 写文件 → ⚠️ 受沙箱/审批策略约束
 ```
 
 ```bash
 # 顺序编排
-codex exec --full-auto "阶段1：生成 FastAPI 路由骨架..."
-codex exec --full-auto "阶段2：为阶段1产出编写 pytest 测试..."
-codex exec --full-auto "阶段3：审查前两阶段的变更..."
+codex exec -s workspace-write "阶段1：生成 FastAPI 路由骨架..."
+codex exec -s workspace-write "阶段2：为阶段1产出编写 pytest 测试..."
+codex exec -s workspace-write "阶段3：审查前两阶段的变更..."
 ```
 
 **并行（shell 层面）：**
 
 ```bash
-codex exec --full-auto "任务1：..." > /tmp/task-1.log &
-codex exec --full-auto "任务2：..." > /tmp/task-2.log &
+codex exec -s workspace-write "任务1：..." > /tmp/task-1.log &
+codex exec -s workspace-write "任务2：..." > /tmp/task-2.log &
 wait
 ```
 
 | 测试方式 | 子 agent 写文件 |
 |----------|----------------|
 | 多 Agent 工具（默认沙箱） | ⚠️ 受沙箱/审批策略限制 |
-| **codex exec --full-auto** | ✅ **正常写入** |
+| **codex exec -s workspace-write** | ⚠️ **受控沙箱内写入；仍受审批策略约束** |
 
 ### 方式三：对话内直接指令
 

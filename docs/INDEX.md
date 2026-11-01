@@ -127,8 +127,8 @@
 
 | 文档 | 作用 |
 |------|------|
-| `docs/development/coding-style.md` | 通用编码规范：不可变性、文件组织、错误处理、输入验证 |
-| `docs/development/development-workflow.md` | 特性实现流程与子 agent 分工参考 |
+| `docs/development/coding-style.md` | 通用编码规范与上线后阶段原则：模块边界、抽象、技术债、错误处理、输入验证 |
+| `docs/development/development-workflow.md` | 特性实现流程、项目阶段技术决策标准与子 agent 分工参考 |
 | `docs/development/git-workflow.md` | Git 提交消息与 PR 工作流参考 |
 | `docs/development/agents-and-commands.md` | Codex Agent 体系与常用指令参考 |
 
@@ -219,7 +219,7 @@
 | Admin RBAC / 权限变化 | `docs/admin/RBAC_RULES.md`、`docs/admin/ADMIN_API_SPEC.md`、`docs/admin/AUDIT_LOG.md` |
 | 审核流 / 题目版本变化 | `docs/admin/REVIEW_FLOW.md`、`docs/admin/DB_SCHEMA_ADMIN.md`、`docs/admin/AUDIT_LOG.md` |
 | 阶段完成 | `docs/project/CHANGELOG.md`、`docs/achieve/README.md`、对应阶段归档 |
-| 长期规则变化 | `docs/project/PROJECT_RULES.md`、根 `CLAUDE.md` 如确有必要 |
+| 长期规则变化 | 根 `AGENTS.md`、`docs/project/PROJECT_RULES.md`、根 `CLAUDE.md` 如确有必要 |
 
 ---
 

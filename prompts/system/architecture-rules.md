@@ -1,46 +1,48 @@
 # Architecture Rules — 导入管线系统
 
-> 状态：早期导入管线 Prompt，不是当前最高规则。以根目录 `AGENTS.md`、`docs/project/PROJECT_RULES.md` 和代码为准。下文里的模型、JWT 天数和目录树可能已过时。
+> 状态：早期导入管线 Prompt，不是当前最高规则。已按 2026-11-02 上线后稳定性治理口径更新；以根目录 `AGENTS.md`、`docs/project/PROJECT_RULES.md` 和代码为准。
 
 ## 分层架构
 
 ```
-输入层 (Input)        → 解析层 (Parse)        → 标准化层 (Normalize)
-                        → 修复增强层 (Repair)  → 审核入库层 (Review)
+输入层 (Input) → 解析层 (Parse) → 标准化层 (Normalize)
+               → 修复增强层 (Repair) → 审核入库层 (Review)
 ```
 
-- 每层只调用下一层的接口，不允许跨层调用
-- 每层的数据结构在 `master_plan.md` 中约定，层间依赖数据格式而非内部实现
-- 所有文件统一放在 `backend/app/features/` 目录下
+- 每层只依赖明确的下一层或稳定接口，不允许跨层直连；具体目录和入口以当前代码为准
+- 层间通过显式数据结构/契约通信，不依赖其他层的内部实现
+- 新模块按领域和职责放置，不为了“统一”把无关逻辑塞进同一目录
 
 ## OCR 与 AI 解耦
 
-- OCR 模块（stage9）和 AI 修复模块（stage6）是独立的可选插件
-- OCR 输出与 PDF 文本提取输出格式一致（`RawDocument`），可无缝替换
-- AI 修复的输出格式与 stage5 输出一致（`NormalizedQuestions`）
-- 解耦原则：主管线不 import OCR/AI 模块，通过配置开关决定是否启用
+- OCR 与 AI 修复是独立能力，通过配置/画像开关控制，不互相隐式依赖
+- OCR 只负责文本提取；AI 只负责修复、补全或结构化增强
+- 主管线不直接 import 可选 OCR/AI 实现，通过现有服务边界装配
+- 降级必须可观测并记录原因，不能静默吞掉失败
 
 ## Pipeline 设计
 
-- 单个入口函数 `process_question_pipeline(raw, source_type, source)` 
-- 内部按阶段依次调用：extract → analyze → split → match → normalize → validate
-- 每步返回中间结果，调用方可选择断点续传
-- Pipeline 不处理并发，同步执行（大文件在 `BackgroundTasks` 中异步触发）
+- 保持现有 pipeline 入口和阶段顺序：extract → analyze → split → match → normalize → validate
+- 每步返回可检查的中间结果；断点续传、检查点和工件恢复沿用现有实现
+- CPU 密集或大文件任务进入现有队列/worker，不在 HTTP 请求内无界同步执行
+- 阶段失败保留原始诊断和可回退状态，不能为了“跑通”绕过质量门禁
 
 ## Service 职责
 
-- `services/import_service.py`：保留对外 API 接口（上传、审核），调用 pipeline
-- `features/question_pipeline.py`：管线编排，不包含解析逻辑
-- `features/*.py`：每阶段的具体实现，不包含 HTTP/DB 知识
+- API/路由负责协议、参数校验和依赖注入，业务逻辑下沉到 service 或领域模块
+- pipeline 编排与具体解析/清洗/匹配逻辑分离
+- 领域模块不直接持有 HTTP 请求对象；数据库访问通过现有异步 ORM 和事务边界
+- 共享能力有真实复用后再提取，避免万能 service 和无边界工具模块
 
 ## DTO/Schema 规范
 
-- 所有阶段间数据格式用 `TypedDict` 定义，放在 `features/question_pipeline.py` 顶部
-- 不进 Pydantic model（避免 import 复杂度）
-- Schema 定义必须包含字段说明和示例值
+- 阶段间和 API 边界使用现有 Pydantic schema、TypedDict 或明确的数据类，不新增平行格式
+- Schema 变更保持向后兼容；不兼容变更必须记录迁移/升级路径
+- 边界数据结构应有字段说明和必要的示例/验证，不能依赖隐式字典约定
 
-## Question Schema 版本化
+## Schema 版本化与迁移
 
-- Schema 变更时在 `master_plan.md` 中更新最终 schema
-- 旧 schema 数据在管线中自动兼容（通过 `normalizer` 做向前兼容）
-- 不改数据库字段（不引入新 migration）
+- 数据库变更统一使用 Alembic，向前演进并保持审计；生产执行前先备份
+- 旧数据通过 normalizer/兼容层逐步迁移，不静默改写历史数据
+- 高风险迁移必须提供恢复/回退预案和验证证据，不依赖未演练的自动回滚
+- 不在运行时用临时 SQL 或手工改表替代正式迁移

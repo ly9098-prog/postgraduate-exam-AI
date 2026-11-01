@@ -22,7 +22,9 @@ MemoGrad / 22408AI 是面向考研场景的智能刷题与题库治理系统，�
 - OCR 纠错链路固定为 `PaddleOCR-VL → LLM 纠错（Qwen/GLM）→ rule fallback`，不可绕过质量门禁。
 - **IMPORTANT**：跨环境数据同步必须用 `sync_uuid` 匹配记录，严禁按 numeric id 直接修改生产库（本地与生产 id 已发散）。
 - `knowledge_points` 是科目归属的权威来源；`admin_ai_model_configs` 为软删除，模型 ID 必须保持稳定。
-- 先实现功能，再优化架构；能跑就比什么都强。不提前抽象，不主动加新依赖。
+- 项目已上线并进入稳定性治理阶段：优先长期稳定性、可靠性、可维护性、可扩展性和生产安全；不以“功能能运行”作为设计或交付标准。
+- 保持高内聚、低耦合与清晰的模块职责和依赖边界；抽象必须有真实复用或测试收益，新增依赖须评估安全、维护成本和回退方式；避免过度设计和无实际价值的重构。
+- 技术债务显式登记并按批次治理；既有结构按有限账本处置，不为行数盲目拆分；生产变更须单独授权。
 
 ## 检索路由规则
 
@@ -98,7 +100,7 @@ MemoGrad / 22408AI 是面向考研场景的智能刷题与题库治理系统，�
 - 后端 API 路由负责协议和参数校验，业务逻辑放在 `backend/app/services/` 或对应 feature 模块；数据库模型放在 `backend/app/models/`，schema 放在 `backend/app/schemas/`，迁移统一使用 Alembic。
 - 后端使用异步 FastAPI/SQLAlchemy 约定和现有错误、日志、配置边界。新增 Python 代码应满足 `backend/ruff.toml`；项目也在 `backend/pyproject.toml` 中声明了 Python 3.11、100 列和 Mypy 规则。
 - Public API 前缀为 `/api/v1`，Admin API 前缀为 `/api/admin/v1`。不要混用用户 JWT 与 Admin JWT，也不要绕过既有 RBAC、审计和安全校验。
-- Prompt 维护在 `prompts/`；AI 只能作为辅助，导入数据必须经过现有导入与人工确认链路。项目明确不引入 LangChain、LlamaIndex、微服务或 Kubernetes。
+- 运行时 AI Prompt 模板集中在 `backend/app/ai/prompts*.py`，Agent/开发 Prompt 在 `prompts/`；修改运行时 Prompt 须同步版本号、缓存兼容和回归测试。AI 只能作为辅助，导入数据必须经过现有导入与人工确认链路。项目明确不引入 LangChain、LlamaIndex、微服务或 Kubernetes。
 - 管理端遵循 `admin-frontend/AGENTS.md`、Next.js App Router 和 strict TypeScript 约定。修改后优先使用 `npm ci`（存在 `package-lock.json` 时）保持锁文件一致。
 - 小程序使用原生微信开发者工具工作流；保持主包/分包边界、现有渲染不变性和环境配置逻辑。由于仓库没有统一小程序 lint/test 配置，不得声称存在未确认的检查命令。
 - 配置通过 `.env.example` 了解变量名；真实 `.env`、Token、密码、AppSecret、AI/OCR 凭据和私钥不得写入文档、日志或提交。AI 模型凭据（API Key / Base URL / model name）不使用环境变量，统一存于数据库 `admin_ai_model_configs`，经 Admin API 管理，由 `AI_CONFIG_ENCRYPT_KEY` 加密；生产已不通过 `DEEPSEEK_API_KEY` 等环境变量提供 AI 凭据。

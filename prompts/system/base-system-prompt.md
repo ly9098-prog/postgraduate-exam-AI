@@ -10,8 +10,8 @@
 
 - **项目**：2240AI — 考研智能刷题小程序（数学二 / 408 / 英语）
 - **技术栈**：FastAPI + SQLAlchemy + PostgreSQL（生产）/ SQLite（开发）
-- **AI**：DeepSeek API（httpx 直连，无 langchain）
-- **认证**：微信 openid 唯一身份 + JWT（HS256，7天有效期）
+- **AI**：httpx 直连 OpenAI-compatible 网关，模型与凭据由 Admin 配置于数据库（无 langchain）
+- **认证**：微信 openid 唯一身份 + JWT（签名算法与有效期以当前代码/配置为准）
 - **前端**：微信小程序原生
 
 ## 核心约束
@@ -23,9 +23,9 @@
 
 ## 开发原则
 
-- **先实现功能，再优化架构**
-- **能跑就比什么都强**
-- **三个重复再考虑抽函数，六个重复再考虑抽类**
+- **项目已上线，进入稳定性治理阶段**：优先长期稳定性、可靠性、可维护性、可扩展性和生产安全，不以“能跑”作为交付标准
+- **模块职责清晰、高内聚低耦合**：抽象和依赖引入须有真实复用或测试收益，避免过度设计与无价值重构
+- **技术债务显式登记、按批次治理**：现行权威规则以根目录 `AGENTS.md`、`docs/project/PROJECT_RULES.md` 与代码为准
 
 ## 项目目录
 
@@ -38,7 +38,7 @@ postgraduate-ai/
 │   ├── schemas/      # Pydantic
 │   ├── services/     # 业务逻辑
 │   ├── features/     # 导入管线
-│   ├── ai/           # DeepSeek 集成
+│   ├── ai/           # AI 客户端与运行时 Prompt
 │   └── main.py
 ├── miniprogram/      # 小程序
 ├── docs/             # 文档（按类别分目录）

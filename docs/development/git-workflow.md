@@ -9,6 +9,7 @@ type: concept
 ---
 
 > 本仓库外部参考文档；原文使用 ruoyi-codex 示例，冲突时以根目录 `AGENTS.md`、`docs/COMMIT_RULES.md` 与本项目代码为准。
+> 本仓库实际提交规范（含 Conventional Commits type、显式路径暂存和禁止 AI attribution）以 `docs/COMMIT_RULES.md` 为准。
 
 # Git 工作流 — ruoyi-claude 项目
 
@@ -32,10 +33,13 @@ type: concept
 | `fix` | Bug 修复 |
 | `refactor` | 重构 |
 | `docs` | 文档 |
+| `style` | 不影响逻辑的格式/样式调整 |
 | `test` | 测试 |
-| `chore` | 杂项 |
 | `perf` | 性能 |
+| `build` | 构建/依赖/打包 |
 | `ci` | CI/CD |
+| `chore` | 维护性工作 |
+| `revert` | 回滚已有提交 |
 
 ### 规则
 - 第一行不超过 72 字符

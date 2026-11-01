@@ -7,6 +7,8 @@
 
 ## 当前阶段
 
+项目已上线运行，当前处于稳定性治理和全栈兼容重构阶段，不是 MVP 功能开发阶段。
+
 功能主线已经落地。`prompts/tasks/current_task.md` 和 `prompts/tasks/next_task.md` 都没有未完成步骤，也没有排期中的新模块。
 
 不要从本文件或 `prompts/tasks/backlog/` 里再开一套功能。下一步如果要做，是用现有 408 闭环自测，并用管理端导入补题，而不是加子系统。
