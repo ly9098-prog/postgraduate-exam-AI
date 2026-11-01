@@ -98,7 +98,8 @@ has('subpackages/knowledge/knowledge-subject/index.js', [/summarizeGroups/, /gra
 has('subpackages/knowledge/knowledge-subject/index.wxml', [/章节毕业/, /graduationLabel/])
 
 // P1: Study Hub is a true Next Best Action and can target no-data subjects by canonical code.
-has('pages/home/home.js', [/buildNextBestAction/, /route === 'pomodoro'/])
+has('pages/home/utils/growth-view.js', [/buildNextBestAction/])
+has('pages/home/home.js', [/primaryTaskRoute === 'pomodoro'/])
 has('pages/home/home.wxml', [/primaryTaskTitle/, /primaryTaskAction/, /primaryTaskKicker/, /今日刷题进度/])
 has('subpackages/study/practice/utils/practice-launch-flow.js', [/subjectCode/, /preset\.subjectCode/])
 has('pages/pomodoro/pomodoro.js', [/fromSubjectCode/, /opts && opts\.subject_code/])

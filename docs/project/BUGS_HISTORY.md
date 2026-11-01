@@ -1,5 +1,13 @@
 # Bugs History
 
+## 2026-11-01 — 首页四科掌握概览全部显示无数据（已修复）
+
+- **现象**：首页“四科掌握概览”四张卡片始终显示 `--`、`数据不足` 和 `0/0 题`，即使 `/stats/dashboard` 已返回真实练习统计；整份成长快照也没有刷新。
+- **根因**：`12d1968e` 拆分成长快照逻辑时引入两处阻断。`loadGrowthSnapshot()` 的新鲜度守卫写反，请求成功后也直接返回，不进入 `_applyGrowthResponses()`；`_buildGrowthContext()` 的签名漏掉 `plan` 参数，函数体仍引用外层 `plan`，触发 `ReferenceError`。异常分支同样把守卫写反，导致错误被静默丢弃，因此界面长期停留在首屏占位数据。
+- **处理**：恢复“仅过期响应返回”的成功/异常守卫，并将 `plan` 显式传入快照上下文。按 `docs/development/coding-style.md` 的高内聚、低耦合和 800 行上限，将成长请求、掌握度映射、展示投影、快照编排、数字动画与页面控制分别下沉到 `pages/home/utils/growth-*.js`，原 `drawSubjectPie` 页面能力下沉到 `home-canvas.js`；四接口响应改为 `{ dashboard, growth, hub, plan }` 命名对象，跨模块使用命名 options/targets，不再按数组下标或位置参数传递。`home.js` 从 1450 行降至 793 行，页面只保留生命周期、资料和导航职责。未修改 API 载荷、统计查询、掌握度映射或 WXML 数据字段。
+- **验证**：新增 `miniprogram/tests/test-home-mastery-fallback.js` 并登记到 `.github/workflows/reliability.yml` 固定清单，覆盖真实掌握度落盘、`plan` 投影、陈旧响应丢弃、动画收敛、新鲜失败日志、命名响应字段及页面体积/依赖边界，7 项通过；首页已纳入 `scripts/architecture/page-budgets.js` 的 800 行门禁，页面预算 3 项、408 集成、v6 UI、Study UI、API 客户端 14 项、存储边界 14 项及包体/媒体预算检查通过。
+- **未验证**：未执行微信开发者工具重新编译、模拟器交互或真机验证；接口未部署，也未经生产账号确认。
+
 ## 2026-09-12 — 开发者工具代码扫描仍提示主包体积超限（已修复）
 
 - **现象**：首次清理主包后，开发者工具代码扫描仍提示体积风险；实际检查发现 `study` 分包源码约 1.52MB，接近/超过部分工具按 1.5MB 执行的扫描阈值。

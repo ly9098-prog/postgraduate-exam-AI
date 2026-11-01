@@ -10,8 +10,8 @@ const {
 const root = path.resolve(__dirname, '../..')
 const relative = Object.keys(PAGES)[0]
 
-test('all governed learning, exam, review, statistics and pomodoro pages stay within budgets', () => {
-  assert.equal(Object.keys(PAGES).length, 11)
+test('all governed home, learning, exam, review, statistics and pomodoro pages stay within budgets', () => {
+  assert.equal(Object.keys(PAGES).length, 12)
   assert.deepEqual(violations(), [])
 })
 

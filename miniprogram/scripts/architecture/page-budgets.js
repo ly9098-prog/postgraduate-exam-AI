@@ -6,6 +6,7 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 
 const PAGES = {
+  'pages/home/home.js': 800,
   'pages/pomodoro/pomodoro.js': 1596,
   'subpackages/study/practice/practice.js': 542,
   'subpackages/study/practice-result/index.js': 823,
