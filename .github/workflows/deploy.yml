@@ -15,7 +15,10 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # Full test runs use pytest-only dependencies such as fakeredis.
+          pip install -e ".[test]"
       - name: Run tests
         env:
           DATABASE_URL: sqlite+aiosqlite:///./test.db

@@ -37,7 +37,7 @@ jobs:
           # Keep CI explicit until python-docx is guaranteed by the runtime dependency lock.
           pip install python-docx
           pip install -e ".[test]"
-          pip freeze > requirements-lock.txt
+          pip freeze --exclude-editable > requirements-lock.txt
 
       - name: compileall — syntax check all Python files
         run: |
