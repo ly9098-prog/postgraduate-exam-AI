@@ -511,3 +511,11 @@ ENV-02转PASS-ISOLATED；ENV-01 PARTIAL、ENV-03/05保留PASS-ISOLATED、ENV-04/
 用户随即要求“算了，回滚那些表”。只提取本次备份内17表及附属对象，在单事务恢复17表、12序列及其last_value/is_called、12默认值、23主键/唯一约束、28独立索引、19外键和12序列归属；提交前逐表0行，其他64表身份和迁移标记未变，没有全库覆盖或回灌业务行。恢复校验于13:24:45完成，完整schema前后830对象段无缺失/新增，829段逐字相同；`ck_syllabus_kp_mapping_type`仅数组cast格式由解析器规范化，7允许值/非法值/空串/NULL共10项判定一致且约束validated。12序列值与备份完全一致，公网live/health/首页200，app/PG/Redis healthy，其他服务运行。
 
 服务器源码仅做checksum dry-run：2个后端运行文件和2个Admin运行文件存在差异，另有测试/离线脚本及未部署材料。§351“本地无新改动”不代表服务器已同步。按用户最新回滚指令先完成恢复，没有执行rsync写入、构建、部署、重启、nginx reload或迁移；代码同步仍待处理。不重跑与本轮DDL无关的业务测试套件，不将有限恢复与健康检查宣称为完整ENV-06验收；六阶段状态不变。记录见`docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md`，原始SQL/结果/归档保留在服务器，未加入Git。自审完成，未新增独立审查或系统记忆；四卷容量100/98/100/48，共346条记录。
+
+## 三百五十三、保留工作区变化并同步后端与Admin源码（2026-11-01）
+
+用户确认保留`.zcodeignore`删除、`error_log.txt`新增、`nul\r`消失；继续执行此前后端/Admin有新代码则同步服务器的授权。重新checksum dry-run明确4个运行文件差异：后端`admin_auth.py`/`admin_imports.py`，Admin `batch-image/page.tsx`/`action-labels.ts`。四文件当前SHA均匹配§347已通过验收的`env02-defect-fixes-2026-11-01.json`；无本轮业务代码改动，不重复其测试套件。
+
+先逐文件备份服务器旧源码到`/data/backups/source_sync_20261101T053249Z_co6jr670/`并核验备份SHA；rsync仅使用4文件明确清单，不删除、不上传其他测试/脚本/环境材料。2026-11-01 13:33:43确认远程SHA逐项等于本地，再次checksum dry-run为0差异。前后哈希保留在服务器source-before/source-after JSON；详见生产操作记录的§353补记。
+
+只更新服务器源码，未构建镜像、重启、替换容器、reload nginx或执行迁移，运行中的镜像尚未包含修复；不宣称源码已上线。17表恢复状态不变，ENV阶段状态不变，后续镜像部署仍按具体范围与授权处理。自审完成，无新增独立审查或系统记忆写入；四卷容量100/98/100/49，共347条记录。

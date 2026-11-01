@@ -64,3 +64,20 @@ worker_credentials
 本轮服务器代码检查仅为 rsync checksum dry-run，没有执行文件同步、镜像构建、容器替换或 nginx reload。发现两个后端运行文件 `admin_auth.py` / `admin_imports.py` 和两个 Admin 运行文件 `batch-image/page.tsx` / `action-labels.ts` 与服务器源文件不同；另有测试、离线脚本及未部署材料差异，不能整份 dry-run 清单直接上传。按用户最新指令先完成表恢复，代码同步仍待处理，不能继续沿用上一轮“没有新代码”的结论。
 
 本地保留已确认的 `11332141` 和全部既有工作区变化；无业务源码改动或推送。最终 ENV 状态保持不变，生产后续操作仍以具体用户授权为边界。
+
+## 后续源码同步（§353）
+
+用户确认保留 `.zcodeignore` 删除、`error_log.txt` 新增及 `nul\r` 消失这些工作区变化后，继续执行此前“如果后端、admin前端有新代码则同步到服务器中”的授权。2026-11-01 13:33:43 完成下列 4 个已确认运行文件的服务器源码同步：
+
+```text
+backend/app/api/v1/admin_auth.py
+backend/app/api/v1/admin_imports.py
+admin-frontend/src/app/(admin)/imports/batch-image/page.tsx
+admin-frontend/src/components/audit-logs/action-labels.ts
+```
+
+四文件本地 SHA256 均与 `env02-defect-fixes-2026-11-01.json` 中此前通过验收的版本一致，本轮未修改业务源码或重跑该业务测试套件。同步前将服务器原文件备份并校验到 `/data/backups/source_sync_20261101T053249Z_co6jr670/`，备份目录 700、文件 600；`source-before.json` / `source-after.json` 记录前后哈希。
+
+rsync 使用仅含上述四文件的明确清单，不进行删除，也不使用先前宽泛的 dry-run 清单。同步后四文件 SHA256 与本地逐项相等，重复 checksum dry-run 差异为 0。未上传测试、离线脚本、运行材料或环境配置。
+
+本批仅更新 `/opt/22408-ai/` 的服务器源码，未构建镜像、重启服务或执行迁移。运行中的后端/Admin镜像尚未包含这次同步的修复，不能将源码同步视为上线或 ENV-06 验收完成。生产 17 张表的恢复状态不受该操作影响。

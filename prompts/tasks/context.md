@@ -12,6 +12,7 @@
 
 ## 已完成
 
+- §353：用户确认保留新增工作区变化后，按此前授权同步2个后端、2个Admin运行文件。四文件哈希匹配此前ENV-02验收版本；旧服务器文件备份于 `/data/backups/source_sync_20261101T053249Z_co6jr670/`，同步后SHA一致、checksum dry-run差异0。仅服务器源码同步，未构建/重启，运行镜像尚未包含修复；不上传测试、离线脚本或环境配置。详见[操作记录](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)§353补记。
 - §352：按用户授权先备份、持锁复核17表为0行后删除；用户要求回滚后，已限定恢复17表、12序列及默认值/索引/约束，其他64表名称/schema/OID不变，迁移头未改。完整schema前后830段无缺失/新增，829段逐字一致，1段等价数组cast通过10种判定检查；12序列状态与备份一致。公网live/health/首页200。当前PG备份及证据在生产 `/data/backups/postgres/pre_drop_empty_20261101T051459Z_jondm9/`。未重启或同步代码；checksum dry-run确认2个后端和2个Admin运行文件存在差异，代码同步仍待处理。见[恢复记录](../../docs/project/PRODUCTION_TABLE_ROLLBACK_2026-11-01.md)。
 - §351（历史）：生产只读检查发现17张空表仍有代码消费者，当时未删表或创建备份；该轮“没有新代码”的本地判断已由§352服务器checksum比对补充，不能作为当前服务器同步结论。
 - §350：重核ENV-01前置：WeChat MCP可用，账号有3个AppID（2个名称有测试标记），当前验收项目匹配未标记为测试的应用；测试号列表0，本轮未查/设ticket，也未触发provider wx.login。已有合成用户身份已按§349删除。ENV-02源码哈希与隔离API/浏览器报告匹配；ENV-03迁移8/PG-Redis22/番茄钟PG并发6、ENV-05 fencing29/Redis恢复6/队列硬化23/worker恢复2的存档JUnit报告全零失败/跳过，PG/Redis恢复与worker投影证据PASS。只是复核且未重跑；阶段仍是ENV-02/03/05 PASS-ISOLATED，ENV-01 PARTIAL，最终门禁未全关。规划与结构化审计记录在§14和 `acceptance-owned-identities-2026-11-01.json`。
@@ -57,7 +58,7 @@
 
 ## 下一步与保护
 
-- 优先解决ENV-01专用身份/HTTPS/真机与ENV-04受控外部能力，再进入ENV-06。§352生产17张表已按最新要求恢复，不继续删表；当前PG备份与限定恢复证据不代表全库/Redis恢复或最终验收。后端/Admin代码同步仍待处理，后续先核查DEPLOY_PLAN和具体差异。
+- 优先解决ENV-01专用身份/HTTPS/真机与ENV-04受控外部能力，再进入ENV-06。§352生产17张表已恢复，不继续删表；当前PG备份与限定恢复证据不代表全库/Redis恢复或最终验收。§353后端/Admin源码同步已完成，运行镜像未更新；后续上线仍需按DEPLOY_PLAN核查具体部署范围与授权。
 - 生产update-all不含worker；新迁移先build后用新镜像run；nginx文件bind mount换inode需force-recreate。匹配生产记录只用sync_uuid，不按本地numeric id修改生产。
-- 保留已有文档、删除和未跟踪内容；用户已确认保留`11332141`及`nul\r`，不处理无关文件。`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§352后当前卷48节、四卷共346条记录；ENV阶段不变。实际生产删除及恢复以§352为准，未重跑业务测试套件、推送或写系统记忆。
+- 保留已有文档、删除和未跟踪内容；用户已确认保留`11332141`及后续`.zcodeignore`删除、`error_log.txt`新增、`nul\r`消失，不处理无关文件。`backend/service_compatibility.py`是无关诊断文本，不lint/提交。只允许显式路径暂存，禁止add-A/amend/reset/checkout。§353后当前卷49节、四卷共347条记录；ENV阶段不变。实际生产删除及恢复以§352为准，源码同步见§353；未重跑业务测试套件、推送或写系统记忆。
 - 代码图谱通过本地stdio可用，project `home-lmh-projects-postgraduate-ai`，generation `2026-10-31T09:32:18Z`，68045节点/236032边；相关刷新/队列/import/client路径已核对，无已记录缺口且metadata_match，非完整性证明。Graphify缺graph.json，显式文档读取作为回退。
