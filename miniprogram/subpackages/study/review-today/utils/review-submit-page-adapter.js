@@ -9,6 +9,7 @@ const { createGroupSubmitConfirmController } = require('./submit-confirm-control
 const { createGroupSubmitRequestController } = require('./submit-request-controller')
 const { createGroupSubmitResultController } = require('./submit-result-controller')
 const { createResultDockController } = require('./result-dock-controller')
+const { createReviewStateWriter } = require('./review-active-state')
 
 function buildGroupSubmitFlowPageCapabilities(page, deps) {
   return {
@@ -74,7 +75,7 @@ function buildGroupSubmitResultPageCapabilities(page, deps) {
       clearSubmittedDraft: (questions, results) => page._clearSubmittedReviewDraft(questions, results),
       showToast: options => wx.showToast(options),
       pauseTimer: () => page._pauseReviewTimer(),
-      setData: patch => page.setData(patch),
+      setData: createReviewStateWriter(page),
       showResultDockAndRefreshTimer: () => page._showResultDockAndRefreshTimer(),
   }
 }

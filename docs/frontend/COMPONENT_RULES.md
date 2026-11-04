@@ -188,8 +188,14 @@ Android/iOS 真机及服务器上传尚未验证，不能复用历史结果作�
 
 ---
 
+## 冷启动会话还原
+
+冷启动默认入口还原规则见 `docs/frontend/LAUNCH_RESUME.md`：只在登录后替换默认首页跳转，
+复用现有作答/草稿/番茄钟控制器；微信编译、真机及原生“回首页”行为仍待手工验收。
+
 ## 相关链接
 
 - [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
 - [[docs/frontend/DESIGN_SYSTEM.md|DESIGN_SYSTEM]] — 设计系统
 - [[docs/frontend/render-invariant.md|render-invariant]] — 渲染不变性
+- [[docs/frontend/LAUNCH_RESUME.md|LAUNCH_RESUME]] — 冷启动会话还原

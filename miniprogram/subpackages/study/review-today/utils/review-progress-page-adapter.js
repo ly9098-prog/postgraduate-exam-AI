@@ -7,13 +7,14 @@ const { createNextGroupController } = require('./next-group-controller')
 const { createNextRetryGroupController } = require('./next-retry-group-controller')
 const { createNextRemoteBatchController } = require('./next-remote-batch-controller')
 const { createReviewTimerController } = require('./review-timer-controller')
+const { createReviewStateWriter } = require('./review-active-state')
 
 function buildReviewMasterPageCapabilities(page, deps) {
   const { api } = deps
   return {
       getData: () => page.data,
       getSession: () => page._reviewSession,
-      setData: patch => page.setData(patch),
+      setData: createReviewStateWriter(page),
       isPageAlive: () => page._alive,
       isMasterSubmitting: () => page.data.masterSubmitting,
       isSubmittingGroup: () => page.data.submittingGroup,
@@ -67,7 +68,7 @@ function buildNextRetryGroupPageCapabilities(page, deps) {
   return {
       getGroups: () => page.data.groups,
       getSession: () => page._reviewSession,
-      setData: patch => page.setData(patch),
+      setData: createReviewStateWriter(page),
       syncAnsweredFlags: () => page._syncAnsweredFlags(),
       showQuestion: index => page._showQuestion(index),
       startReviewTimer: () => page._startReviewTimer(),
@@ -84,7 +85,7 @@ function buildNextRemoteBatchPageCapabilities(page, deps) {
       normalizeQuestion: question => normalizeReviewQuestion(question),
       restoreDraft: questions => page._restoreReviewDraft(questions),
       getSession: () => page._reviewSession,
-      setData: patch => page.setData(patch),
+      setData: createReviewStateWriter(page),
       getCurrentBatchNo: () => page.data.currentBatchNo,
       getTotalBatchCount: () => page.data.totalBatchCount,
       getTodayDueCount: () => page.data.todayDueCount,

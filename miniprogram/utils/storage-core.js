@@ -39,6 +39,13 @@ const SESSION_DYNAMIC_KEY_PREFIXES = [
   'exam_attempt_pending_v2:',
   'exam_attempt_pending_v3:',
   'review_today_draft_v1:',
+  'practice_resume_v1:',
+  'study_active_v1:',
+]
+
+const LAUNCH_RESUME_PREFIXES = [
+  'practice_resume_v1:', 'study_active_v1:',
+  'practice_pending_submission_v1:', 'review_today_draft_v1:',
 ]
 
 function get(key) {
@@ -81,6 +88,7 @@ function clearSession(options) {
 
   // 2. 清除业务缓存
   for (var bi = 0; bi < BUSINESS_CACHE_KEYS.length; bi++) {
+    if (opts.preserveLaunchResume && BUSINESS_CACHE_KEYS[bi] === 'pomodoro_running_state') continue
     remove(BUSINESS_CACHE_KEYS[bi])
   }
 
@@ -89,6 +97,7 @@ function clearSession(options) {
     var allKeys = wx.getStorageInfoSync().keys || []
     for (var ki = 0; ki < allKeys.length; ki++) {
       var key = allKeys[ki]
+      if (opts.preserveLaunchResume && LAUNCH_RESUME_PREFIXES.some(prefix => key.startsWith(prefix))) continue
       // 跳过受保护的键
       if (preservePrivacy && PROTECTED_KEYS.indexOf(key) >= 0) continue
       if (SESSION_DYNAMIC_KEY_PREFIXES.some(prefix => key.indexOf(prefix) === 0)) {

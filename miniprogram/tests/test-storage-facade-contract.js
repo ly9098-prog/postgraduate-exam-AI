@@ -66,6 +66,7 @@ test('facade exports keep their names and order', () => {
     'ai_', 'aiCache', 'ai_diagnosis', 'practice_pending_submission_v1:',
     'exam_attempt_pending_v1:', 'exam_attempt_pending_v2:', 'exam_attempt_pending_v3:',
     'review_today_draft_v1:',
+    'practice_resume_v1:', 'study_active_v1:',
   ])
   assert.ok(storage.BUSINESS_CACHE_KEYS.includes('pomodoro_running_state'))
   assert.ok(storage.BUSINESS_CACHE_KEYS.includes('home_today_goal_total'))

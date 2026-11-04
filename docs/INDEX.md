@@ -97,6 +97,7 @@
 | `docs/frontend/COMPONENT_RULES.md` | 组件规范 |
 | `docs/frontend/DESIGN_SYSTEM.md` | 设计系统 |
 | `docs/frontend/render-invariant.md` | 题干渲染不变性架构 |
+| `docs/frontend/LAUNCH_RESUME.md` | 默认冷启动还原刷题/今日复习/番茄钟、用户隔离与手工验收 |
 
 ### Admin 后台
 

@@ -1,3 +1,5 @@
+const coldResume = require('./cold-resume-controller')
+
 function createQuestionLoadWiring(page, deps) {
   return Object.assign(
     createRequestPorts(page, deps),
@@ -122,6 +124,7 @@ function createSessionPorts(page, deps) {
       page._setPracticeUnloadGuard(true)
       page._startTimer()
       page._updateComputedFields()
+      coldResume.persist(page, deps.monotonicNow)
     },
     checkRenderInvariant: model => page._checkRenderInvariant(model),
   }

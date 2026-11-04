@@ -1,6 +1,11 @@
+const coldResume = require('./cold-resume-controller')
+
 function onLoad(page, options, dependencies) {
 const { resetRenderGuard, setRenderGuardPage } = dependencies
 page._pageAlive = true
+page._coldResumeRequested = Boolean(options && String(options.resume) === '1')
+page._coldResumeOwner = coldResume.userId()
+page._coldResumeCreatedAt = undefined
 page._subjectsRequestSeq = 0
 page._questionsRequestSeq = 0
 page._lastSubjectOptionTap = null
@@ -66,6 +71,7 @@ page._subjectSheetCloseTimer = null
 }
 
 function _resetSession(page) {
+page._coldResumeCreatedAt = undefined
 page._practiceSession = {
 traceId: '',
 safeModeActive: false,
@@ -98,9 +104,16 @@ async function onReady(page, dependencies) {
 const { config, getConsole, getDate } = dependencies
 if (config.DEV) getConsole().log('[LAYER6_ONREADY]', getDate().now())
 page.setData({ enableMathImage: config.enableMathImage || false })
+if (page._coldResumeRequested && coldResume.hasPending()) page._coldResumeRequested = false
 const recoveryHandled = await page._offerPendingSubmissionRecovery()
 if (recoveryHandled || !page._pageAlive) {
 if (page.data.launchingPreset) page.setData({ launchingPreset: false })
+return
+}
+if (coldResume.restore(page)) {
+if (page.data.started && page._pageAlive) {
+page.loadPracticeSubjects({ skipAutostart: true, preserveSelection: true, silent: true }).catch(() => {})
+}
 return
 }
 if (page._fastLaunchEligible) {
@@ -139,6 +152,7 @@ page.setData({ statusBarHeight: 20, navBarHeight: 44 })
 }
 
 function _resetPracticeStateAfterExit(page) {
+  coldResume.clear(page)
   page._resetSession()
   page._pendingResultUrl = ''
   page._submittedResultPayload = null

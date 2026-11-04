@@ -1,10 +1,12 @@
+const coldResume = require('./cold-resume-controller')
+
 function _pendingSubmissionController(page, dependencies) {
 const { PRACTICE_PENDING_SUBMISSION_TTL_MS, createPendingSubmissionController, getConsole, getDate, getPlatform } = dependencies
 return page._pendingSubmission || (
 page._pendingSubmission = createPendingSubmissionController({
 getStorageKey: () => page._pendingSubmissionStorageKey(),
 readStorage: key => getPlatform().getStorageSync(key),
-writeStorage: (key, value) => getPlatform().setStorageSync(key, value),
+writeStorage: (key, value) => { getPlatform().setStorageSync(key, value); coldResume.clear(page) },
 removeStorage: key => getPlatform().removeStorageSync(key),
 now: () => getDate().now(),
 getTtlMs: () => PRACTICE_PENDING_SUBMISSION_TTL_MS,

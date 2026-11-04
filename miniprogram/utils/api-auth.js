@@ -75,7 +75,9 @@ async function _refreshToken(traceId = '') {
 
 function _clearAuthAndRedirect() {
   // 自动失效场景不清除协议同意记录，避免用户在登录页被强制重新同意
-  storage.clearSession({ preservePrivacyAcceptance: true, includeDebugSnapshots: true })
+  storage.clearSession({
+    preservePrivacyAcceptance: true, includeDebugSnapshots: true, preserveLaunchResume: true,
+  })
   if (!_redirecting) {
     _redirecting = true
     wx.reLaunch({ url: '/pages/login/login' })

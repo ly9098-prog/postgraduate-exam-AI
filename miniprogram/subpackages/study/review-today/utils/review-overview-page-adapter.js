@@ -7,6 +7,7 @@ const { createBatchSizeSheetController } = require('./batch-size-sheet-controlle
 const { createOverviewLoadController } = require('./overview-load-controller')
 const { createReviewDaySyncController } = require('./day-sync-controller')
 const { createOverviewSyncController } = require('./overview-sync-controller')
+const { createReviewStateWriter } = require('./review-active-state')
 
 function buildOverviewVMPageCapabilities(page, deps) {
   return {
@@ -44,7 +45,7 @@ function buildOverviewLoadPageCapabilities(page, deps) {
       buildOverviewVM: overview => page.buildReviewOverviewVM(overview),
       applyOverviewToSession: (overview, vm) => page._overviewSyncController().applyOverviewToSession(overview, vm),
       adjustVmForActiveSession: vm => page._overviewSyncController().adjustVmForActiveSession(vm),
-      setData: (patch, callback) => page.setData(patch, callback),
+      setData: createReviewStateWriter(page),
       startReview: () => page.startTodayReview(),
       logError: (...args) => console.error(...args),
   }

@@ -4,6 +4,8 @@ const storage = require('../../utils/storage')
 const privacy = require('../../utils/privacy')
 const config = require('../../config')
 const { getNavigationMetrics } = require('../../utils/navigation')
+const { createLoginResume } = require('../../utils/launch-resume')
+const { userId: resumeOwnerId } = require('../../utils/launch-session-store')
 
 Page({
   data: {
@@ -21,9 +23,11 @@ Page({
   _pageVisible: false,
   _homeRedirectTimer: null,
   _pendingHomeRedirect: false,
+  _homeRedirectResolving: false,
   _loginAttemptSeq: 0,
 
   onLoad() {
+    this._launchResume = createLoginResume()
     this._pageDestroyed = false
     // onLoad is immediately followed by onShow on first entry. Mark the page
     // visible now so a direct-login redirect can be scheduled without relying
@@ -80,7 +84,7 @@ Page({
     this._clearHomeRedirectTimer()
     if (!this._pageVisible) return
 
-    this._homeRedirectTimer = setTimeout(() => {
+    this._homeRedirectTimer = setTimeout(async () => {
       this._homeRedirectTimer = null
       if (this._pageDestroyed || !this._pageVisible) return
 
@@ -91,18 +95,40 @@ Page({
         return
       }
 
-      this._pendingHomeRedirect = false
-      wx.reLaunch({
-        url: '/pages/home/home',
-        fail: () => {
-          if (this._pageDestroyed) return
-          this._safeSetData({
-            loading: false,
-            error: '进入首页失败，请重试',
-          })
-        },
-      })
+      await this._redirectAfterLogin()
     }, Math.max(0, Number(delayMs) || 0))
+  },
+
+  async _redirectAfterLogin() {
+    if (this._homeRedirectResolving) return
+    this._homeRedirectResolving = true
+    const owner = resumeOwnerId()
+    const attemptSeq = this._loginAttemptSeq
+    let target
+    try {
+      target = await this._launchResume.resolve()
+    } finally {
+      this._homeRedirectResolving = false
+    }
+    if (this._pageDestroyed || !this._pageVisible) return
+    if (attemptSeq !== this._loginAttemptSeq) {
+      if (!this.data.loading) this._scheduleHomeRedirect(0)
+      return
+    }
+    if (!target || !auth.isLoggedIn() || !privacy.hasAcceptedCurrentPrivacy() ||
+      owner !== resumeOwnerId()) {
+      this._pendingHomeRedirect = false
+      return
+    }
+    this._pendingHomeRedirect = false
+    wx.reLaunch({
+      url: target,
+      success: () => this._launchResume.complete(),
+      fail: () => {
+        if (this._pageDestroyed) return
+        this._safeSetData({ loading: false, error: '进入页面失败，请重试' })
+      },
+    })
   },
 
   /** 同步检查 storage 中的 token 和协议同意状态 */

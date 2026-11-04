@@ -7,6 +7,7 @@ const { createReviewSessionController } = require('./review-session-controller')
 const { createStartBatchController } = require('./start-batch-controller')
 const { createNavBackController } = require('./nav-back-controller')
 const { createReviewSelfHealController } = require('./self-heal-controller')
+const { createReviewStateWriter, createReviewActivityClearer } = require('./review-active-state')
 
 function buildReviewSessionPageCapabilities(page, deps) {
   return {
@@ -25,7 +26,7 @@ function buildStartBatchPageCapabilities(page, deps) {
       getCurrentFlowSeq: () => page._flowRequestSeq,
       isFlowCurrent: seq => seq === page._flowRequestSeq,
       isPageAlive: () => page._alive,
-      setData: patch => page.setData(patch),
+      setData: createReviewStateWriter(page),
       getBatchSize: () => page.data.reviewBatchSize,
       postNextBatch: payload => api.post('/review/today/next-batch', payload),
       loadOverview: () => page.loadTodayReviewOverview(),
@@ -51,11 +52,12 @@ function buildStartBatchPageCapabilities(page, deps) {
 }
 
 function buildNavBackPageCapabilities(page, deps) {
+  const clearReviewActivity = createReviewActivityClearer()
   return {
       getPhase: () => page.data.phase,
       setData: patch => page.setData(patch),
       clearMasterUndo: () => page._clearMasterUndo(),
-      clearReviewTimer: () => page._clearReviewTimer(),
+      clearReviewTimer: () => { clearReviewActivity(); page._clearReviewTimer() },
       getCurrentPages: () => getCurrentPages(),
       navigateBack: () => wx.navigateBack(),
       reLaunch: options => wx.reLaunch(options),

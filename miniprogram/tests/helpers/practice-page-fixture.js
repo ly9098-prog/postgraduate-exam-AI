@@ -36,6 +36,9 @@ function fixture(sourcePath = process.env.PRACTICE_PAGE_SOURCE) {
   const api = { now: () => 1234, createTraceId: () => 'trace' }
   const config = { DEV: false, enableMathImage: false }
   const stubs = {
+    './cold-resume-controller': {
+      userId: () => '', persist() {}, restore: () => false, clear() {}, hasPending: () => false,
+    },
     '../../../utils/api': api, '../../../config': config,
     '../../../utils/debug': { debugLog() {}, saveDebugSnapshot() {}, shouldDebugQuestion: () => false },
     '../utils/stem-render': { setRenderGuardPage: name => calls.push(['guard', name]), resetRenderGuard: () => calls.push(['resetGuard']) },

@@ -78,9 +78,15 @@ function moduleViolations(source, name) {
     }
     if (ts.isIdentifier(node) && forbidden.has(node.text)) {
       const parent = node.parent
+      const resumeImport = node.text === 'require' && ts.isCallExpression(parent) &&
+        parent.expression === node && parent.arguments.length === 1 &&
+        ts.isStringLiteral(parent.arguments[0]) &&
+        parent.arguments[0].text === './cold-resume-controller' &&
+        ['practice-lifecycle-flow', 'practice-question-page-adapter', 'practice-submit-page-adapter']
+          .includes(name)
       const propertyName = (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
         (ts.isPropertyAssignment(parent) && parent.name === node)
-      if (!propertyName) errors.push('module global dependency: ' + node.text)
+      if (!propertyName && !resumeImport) errors.push('module global dependency: ' + node.text)
     }
     ts.forEachChild(node, walk)
   }

@@ -350,6 +350,7 @@ vm.runInContext(source, realmContext, { filename: 'pomodoro.js' })
 assert.ok(capturedPage, 'Page definition was not captured')
 
 function createPage() {
+  if (!storage.has('user')) storage.set('user', { id: 9001 })
   const page = Object.assign({}, capturedPage)
   page.data = JSON.parse(JSON.stringify(capturedPage.data))
   page._timerState = page._createTimerState()

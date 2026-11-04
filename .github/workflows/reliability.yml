@@ -522,6 +522,11 @@ jobs:
           node --test miniprogram/tests/test-practice-launch-return-controller.js
           node --test miniprogram/tests/test-practice-exit-guard-controller.js
           node --test miniprogram/tests/test-practice-page-contracts.js
+          node --test miniprogram/tests/test-launch-resume.js
+          node --test miniprogram/tests/test-login-launch-resume.js
+          node --test miniprogram/tests/test-practice-cold-resume.js
+          node --test miniprogram/tests/test-practice-cold-resume-page.js
+          node --test miniprogram/tests/test-review-active-resume.js
           node --test miniprogram/tests/test-practice-module-boundaries.js
           node --test miniprogram/tests/test-practice-exit-request-controller.js
           node --test miniprogram/tests/test-practice-paused-confirm-controller.js

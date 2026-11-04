@@ -7,7 +7,10 @@ function createPausedConfirmController(options) {
 async function showImpl(options, opts) {
   const session = options.getSession()
   const pauseStartedMonoMs = options.monotonicNow()
-  if (session) session._timingPauseActive = true
+  if (session) {
+    session._timingPauseActive = true
+    session._timingPauseStartedMonoMs = pauseStartedMonoMs
+  }
   options.settleQuestionTime(true)
   options.clearTimer()
   let confirmed = false
@@ -18,6 +21,7 @@ async function showImpl(options, opts) {
     if (session) {
       session.backgroundMs = (session.backgroundMs || 0) + pausedMs
       session._timingPauseActive = false
+      session._timingPauseStartedMonoMs = null
     }
   }
   if (

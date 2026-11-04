@@ -25,6 +25,7 @@ const MODULES = {
     './render-safety-controller',
   ],
   'review-overview-page-adapter.js': [
+    './review-active-state',
     './review-runner-support',
     './overview-vm-controller',
     './batch-size-sheet-controller',
@@ -33,6 +34,7 @@ const MODULES = {
     './overview-sync-controller',
   ],
   'review-session-page-adapter.js': [
+    './review-active-state',
     './review-runner-support',
     '../../utils/question-runner-adapter',
     './review-session-controller',
@@ -41,6 +43,7 @@ const MODULES = {
     './self-heal-controller',
   ],
   'review-submit-page-adapter.js': [
+    './review-active-state',
     './review-runner-support',
     '../../utils/question-runner-adapter',
     './group-submit-flow-controller',
@@ -51,6 +54,7 @@ const MODULES = {
     './result-dock-controller',
   ],
   'review-progress-page-adapter.js': [
+    './review-active-state',
     './review-runner-support',
     './master-controller',
     './next-group-controller',
@@ -63,10 +67,10 @@ const MODULE_BUDGETS = {
   'review-runner-support.js': 70,
   'review-draft-page-adapter.js': 29,
   'review-answer-page-adapter.js': 67,
-  'review-overview-page-adapter.js': 83,
-  'review-session-page-adapter.js': 82,
-  'review-submit-page-adapter.js': 103,
-  'review-progress-page-adapter.js': 124,
+  'review-overview-page-adapter.js': 84,
+  'review-session-page-adapter.js': 84,
+  'review-submit-page-adapter.js': 104,
+  'review-progress-page-adapter.js': 125,
 }
 const FUNCTION_BUDGET = 50
 

@@ -1,3 +1,5 @@
+const coldResume = require('./cold-resume-controller')
+
 function _startPracticeController(page, dependencies) {
 const { api, createStartPracticeController, getPlatform } = dependencies
 return page._startPracticeControllerInstance || (
@@ -50,7 +52,7 @@ getAnswerMap: () => page._practiceSession.answerMap,
 getQuestions: () => page.data.questions,
 isMathImageEnabled: () => config.enableMathImage,
 isDev: () => config.DEV,
-setData: (patch, cb) => page.setData(patch, cb),
+setData: (patch, cb) => { page.setData(patch, cb); coldResume.persist(page) },
 updateComputedFields: () => page._updateComputedFields(),
 checkRenderInvariant: model => page._checkRenderInvariant(model),
 showToast: options => getPlatform().showToast(options),
@@ -161,7 +163,7 @@ getCurrentQuestion: () => page.data.currentQuestion,
 getAnswerMap: () => page._practiceSession.answerMap,
 setAnswerMap: map => { page._practiceSession.answerMap = map },
 getAnsweredFlags: () => page._practiceSession.answeredFlags,
-setAnsweredFlags: flags => { page._practiceSession.answeredFlags = flags },
+setAnsweredFlags: flags => { page._practiceSession.answeredFlags = flags; coldResume.persist(page) },
 getQuestions: () => page.data.questions,
 getCurrentIndex: () => page.data.currentIndex,
 getTotalQuestions: () => page.data.totalQuestions,
