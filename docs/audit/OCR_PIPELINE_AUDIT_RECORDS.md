@@ -267,3 +267,13 @@
 ---
 
 *报告结束。初版：2026-06-20，末次更新：2026-07-18。*
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

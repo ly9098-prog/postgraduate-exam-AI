@@ -165,3 +165,13 @@ node miniprogram/tests/test-storage-session-cleanup.js
 当前客户端考试 Node 测试 407 项通过；不是新一次完整 reliability shell，也不是微信编译/设备证据。本轮 readiness/cloud 门禁、冷进程全 OpenAPI、固定静态 CI、源码哈希及一次独立审查/提交状态集中在 [结果清单](refactor-results/miniprogram-exam-request-2026-10-30.json)。此前第 8–9 节的历史“尚未覆盖”描述以本次新增局部证据为补充，真实 PostgreSQL 行锁/部分唯一索引并发、Redis、微信、外部 AI 与生产环境仍未验收。
 
 本条完成消费者所需的响应职责治理后停止继续按文件长度拆分。完整真实环境及生产验收仍是全部结构重构之后的最后阶段；本轮不授权部署、迁移、生产重启或用户数据操作。临时 `extract_once.py` 是源代码写入器，禁止作为验证命令重跑。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约

@@ -45,3 +45,12 @@ Set `PAGE_STREAM_MODE=legacy`.
 ## Legacy Removal Criteria
 
 When no pipeline uses legacy full-document rendering.
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录

@@ -14,3 +14,13 @@
 ## 维护规则
 
 本文件仅作为历史兼容入口，不再承载 AI 管线细节。AI、OCR、标准化实现发生变化时，请同步 `/docs/ai/` 下权威文档，不要在一级目录重复维护正文。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线

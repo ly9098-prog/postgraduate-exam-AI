@@ -611,3 +611,12 @@
 - `pomodoro-stats-boundaries.js` 核对 pageConfig 的全部直接属性模板/顺序、六个 const require 绑定、唯一 Page(pageConfig) 注册，以及新增职责模块无额外导入/裸平台依赖/动态执行；模块与函数预算继续由既有门禁约束。原条件注册和 formatDuration 导出保持；独立审查发现条件/导出未冻结的门禁缺口后，已按原顶层语句模板补充检查与负例，仅门禁增量复验，业务代码未改变。CI 注册新门禁与两项契约。
 
 验收命令、数字、模块行数和证据限制集中于 `refactor-results/pomodoro-stats-page-2026-10-29.json`。原页/当前直接契约、47个方法逆向 AST token（含字符串值）与全部属性顺序对照、controller端口返回/状态/轨迹对照均通过；引擎TypeError中的this/page名归一化，未宣称诊断文本逐字一致。临时证据目录见清单，禁止重跑 extract.js。本轮页面剩余装配与视图写回提取完成，真实微信编译/模拟器/真机、真实网络/外部服务及完整学习闭环仍未验收。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

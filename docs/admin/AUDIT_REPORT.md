@@ -698,3 +698,13 @@ DeepSeek 在以下情形必须**停止开发并提问**，不允许自行决定�
 > **强烈建议在 DeepSeek 启动 Phase 0 之前完成 C1-C6 的文档修正**。
 >
 > 修正完成后，本规划具备启动条件，可作为长期运营型产品的合格架构起点。
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

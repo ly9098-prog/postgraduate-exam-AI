@@ -414,3 +414,13 @@ df -h /var/backups/postgraduate/
 # 手动清理过期备份（调整保留天数）
 BACKUP_RETENTION_DAYS=7 python scripts/postgres_backup.py
 ```
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/backend/DB_SCHEMA.md|DB_SCHEMA]] — App 数据模型

@@ -41,3 +41,12 @@
 - [x] Nginx 反向代理 + gzip + 安全头
 - [x] API 全链路验证通过
 - [ ] 微信小程序正式环境切换（需提交审核）— **当前唯一阻塞项**
+
+---
+
+## 相关链接
+
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

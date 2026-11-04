@@ -44,3 +44,13 @@ hook/query/mutation/request端口为隔离替身；只显式执行适用的壳/�
 真实浏览器的cookie/跨域/返回路径、真实Admin JWT登录/续签/退出、RBAC与审计持久化、PostgreSQL/Redis多进程refresh消费/nbf/角色版本传播均未在本轮验收。它们继续归ENV-02/03/05；单次测试进程的替身不能证明跨进程原子性。
 
 下一ADM-05：模型配置、推荐实验/策略/指标/报告与系统任务六页。全部结构条目进入终态后才开始真实环境验收，生产最后且操作另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

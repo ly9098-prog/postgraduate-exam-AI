@@ -46,3 +46,12 @@ backend/app/services/review_service.py # 复习计划服务
 ```
 
 详细算法见 `/docs/REVIEW_ALGORITHM.md`。
+
+---
+
+## 相关链接
+
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

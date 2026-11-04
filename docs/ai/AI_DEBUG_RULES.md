@@ -62,3 +62,13 @@
 - Sonnet：小范围实现、局部修复、UI 层小修复。
 - Opus：Root Cause 审计、Fix Plan 审计、风险审计。
 - Claude Code：严格执行 Fix Plan、最小范围修改、文档同步。
+
+---
+
+## 相关链接
+
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线
+- [[docs/ai/OCR_STRATEGY.md|OCR_STRATEGY]] — OCR 策略
+- [[docs/ai/STANDARDIZATION_FLOW.md|STANDARDIZATION_FLOW]] — 标准化流程
+- [[docs/backend/ai-prompts.md|ai-prompts]] — AI Prompt 事实
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

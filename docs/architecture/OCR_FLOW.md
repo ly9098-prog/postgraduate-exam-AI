@@ -194,3 +194,13 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，�
 - ❌ LLM 输出缓存（每次 AI 调用独立，缓存会导致陈旧结果无法更新）
 - ❌ 纯 AI 自动入库（所有导入必须经过 question_imports + 人工确认）
 - ❌ OCR 结果直接入库（必须经过清洗、切题、标准化、审核）
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

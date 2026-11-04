@@ -163,3 +163,13 @@ systemctl restart backend.service
 | 失败样本导出 | 每次修复 | Export-Case |
 | 回归测试 | 每次代码变更 | pytest |
 | 发布前全量检查 | 每次发布 | preflight script |
+
+---
+
+## 相关链接
+
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明
+- [[docs/ocr/OPERATIONS.md|OPERATIONS]] — OCR 运维
+- [[docs/ocr/TROUBLESHOOTING.md|TROUBLESHOOTING]] — OCR 排障
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维

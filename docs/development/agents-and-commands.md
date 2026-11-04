@@ -432,3 +432,13 @@ wait
 - [[wiki/concepts/development/development-workflow|开发流程]]
 - [[wiki/concepts/development/coding-style|编码规范]]
 - [[projects/english/_README|ruoyi-codex 项目架构]]
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/development/coding-style.md|coding-style]] — 编码规范
+- [[docs/development/development-workflow.md|development-workflow]] — 开发工作流
+- [[docs/development/git-workflow.md|git-workflow]] — Git 工作流

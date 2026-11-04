@@ -1090,3 +1090,13 @@ git diff --check -- miniprogram/pages/dashboard/dashboard.wxml miniprogram/pages
 不改业务逻辑
 不影响刷题 / 错题 / 导入 / AI 分析链路
 ```
+
+---
+
+## 相关链接
+
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
+- [[docs/frontend/COMPONENT_RULES.md|COMPONENT_RULES]] — 组件规范
+- [[docs/frontend/DESIGN_SYSTEM.md|DESIGN_SYSTEM]] — 设计系统
+- [[docs/frontend/render-invariant.md|render-invariant]] — 渲染不变性
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围

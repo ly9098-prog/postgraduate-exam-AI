@@ -2046,3 +2046,13 @@ D. ACBEDF
   "expected_question_type": "single_choice"
 }
 ```
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

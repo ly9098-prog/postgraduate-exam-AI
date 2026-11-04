@@ -594,3 +594,13 @@ import_regions:
 - Excel 导入路径不在本次范围
 - 图片单图导入路径未审（与扫描 PDF 复用大部分代码，结论可推广）
 - DeepSeek API 失败重试 / 限流策略未在内存维度评估
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

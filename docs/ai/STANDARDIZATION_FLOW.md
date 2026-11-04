@@ -181,3 +181,11 @@ DB 兼容字段：
 | `performance_summary` | 各阶段耗时/AI 调用/缓存统计 |
 
 失败归因（`ocr_failure_analyzer.py`）16 种分类，兼容 `risk_flags` 体系，自动识别 math_image_missing / answer_missing / options_anomaly / watermark_noise 等失败类型并给出修复建议。
+
+---
+
+## 相关链接
+
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线
+- [[docs/ai/OCR_STRATEGY.md|OCR_STRATEGY]] — OCR 策略
+- [[docs/ai/AI_DEBUG_RULES.md|AI_DEBUG_RULES]] — AI 调试规则

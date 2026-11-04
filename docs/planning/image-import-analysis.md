@@ -190,3 +190,13 @@ question_imports(status=pending)
 7. OCR 耗时明显长于 Excel/PDF 文本解析，不适合同步阻塞过久。
 8. 图片任务状态若不对齐现有 pipeline 状态查询语义，前端会被迫维护额外轮询分支。
 9. 原图和 OCR cache 若没有生命周期，会带来存储和隐私边界风险。
+
+---
+
+## 相关链接
+
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/MVP_SCOPE.md|MVP_SCOPE]] — MVP 范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线

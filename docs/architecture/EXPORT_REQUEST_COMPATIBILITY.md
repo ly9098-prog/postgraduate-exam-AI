@@ -91,3 +91,13 @@ try/finally 中，始终按原 tokens 列表清理；绑定自身失败的原边
 未执行真实微信编译/设备/登录、生产鉴权/数据库、真实 COS/本地文件生命周期、
 真实多进程并发或 WebSocket 网关连接；本批不代表整个导出生成器、全部小程序
 接口或全栈重构已经验收。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/backend/EXPORT_RELEASE.md|EXPORT_RELEASE]] — 导出发布

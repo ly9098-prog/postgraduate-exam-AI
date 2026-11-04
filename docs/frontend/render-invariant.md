@@ -381,3 +381,11 @@ TAP 合计 1897 passed、0 failed、0 skipped，另有 CODE 197、
 各比本批前增加 4,227 字节；主包仍为 772,769 字节/174 文件。
 源码和媒体预算通过，阈值未调整。这些证据不代表微信编译体积、开发者工具、
 模拟器、Android/iOS 真机或上传验收；这些环境仍待验证。
+
+---
+
+## 相关链接
+
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
+- [[docs/frontend/COMPONENT_RULES.md|COMPONENT_RULES]] — 组件规范
+- [[docs/frontend/DESIGN_SYSTEM.md|DESIGN_SYSTEM]] — 设计系统

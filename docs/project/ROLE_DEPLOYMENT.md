@@ -196,3 +196,13 @@ curl -f http://localhost:8000/health/live
 2. 注意：`all` 模式在 `DEPLOYMENT_PROFILE=cloud_api` 下会被配置校验拒绝
 3. 如需紧急回退，同时设置 `APP_ENV=development` 或注释掉 `_check_process_role` 校验
 4. 恢复后立即改回角色拆分
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

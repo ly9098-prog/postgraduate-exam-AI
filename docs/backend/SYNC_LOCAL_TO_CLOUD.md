@@ -207,3 +207,12 @@ python3 -m scripts.sync_to_cloud --dry-run
 - [x] 云端更新时间更新的记录 → SKIP + 冲突报告
 - [x] 题目知识点经关联表同步：导出 `load_question_kps`、云端 `sync_question_knowledge_points(source="sync", replace=True)` 重建映射（`sync_to_cloud.py` + `knowledge_point_service.py`）
 - [x] 现有测试全部通过（554 passed）
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/backend/DB_SCHEMA.md|DB_SCHEMA]] — App 数据模型
+- [[docs/backend/STORAGE_DESIGN.md|STORAGE_DESIGN]] — 存储设计
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

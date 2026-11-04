@@ -116,3 +116,13 @@
 
 本批不改变小程序代码、数据库结构、API/OpenAPI 或真实多设备并发行为；
 真实微信、生产 PostgreSQL 行锁和跨设备并发验收仍保持未验证。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围

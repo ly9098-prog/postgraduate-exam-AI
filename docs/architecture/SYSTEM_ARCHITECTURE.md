@@ -231,3 +231,11 @@ PDF → pdf_classifier (逐页判断)
   - Idempotency: (batch_import_id, image_import_id) 唯一约束防重复提交
   - 自适应轮询: SSE 有事件 500ms, 空闲 1500ms (原固定 300ms)
 ```
+
+---
+
+## 相关链接
+
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

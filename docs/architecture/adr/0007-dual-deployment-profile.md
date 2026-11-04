@@ -53,3 +53,13 @@ Set `DEPLOYMENT_PROFILE=local_import` or remove the env var.
 ## Removal criteria
 
 When the deployment model is replaced by a different abstraction or the cloud server is upgraded to match local hardware.
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维

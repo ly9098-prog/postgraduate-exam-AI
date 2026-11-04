@@ -133,3 +133,13 @@ type: concept
 - [Superpowers: verification-before-completion](https://github.com/obra/superpowers/tree/main/skills/verification-before-completion) — 完成验证证据规则
 - [Superpowers: systematic-debugging](https://github.com/obra/superpowers/tree/main/skills/systematic-debugging) — 四阶段根因调试
 - [Spec Kit: tasks-template](https://github.com/github/spec-kit/blob/main/templates/tasks-template.md) — 任务分层与并行标注
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/development/coding-style.md|coding-style]] — 编码规范
+- [[docs/development/git-workflow.md|git-workflow]] — Git 工作流
+- [[docs/development/agents-and-commands.md|agents-and-commands]] — Agent 与命令

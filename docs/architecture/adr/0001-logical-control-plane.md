@@ -44,3 +44,13 @@ Unset `CONTROL_PLANE_MODE` or set to `legacy`.
 ## Legacy Removal Criteria
 
 When all pipelines use `facade` mode and no stage reads env vars directly.
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

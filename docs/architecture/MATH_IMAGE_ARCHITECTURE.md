@@ -610,3 +610,12 @@ class StorageBackend(ABC):
 - `ocr_pages()` 旧函数**绝对不改签名**
 - Stage 5 新增独立函数 `ocr_pages_with_boxes()`
 - 两函数可共用内部逻辑，用参数区分是否返回 boxes
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

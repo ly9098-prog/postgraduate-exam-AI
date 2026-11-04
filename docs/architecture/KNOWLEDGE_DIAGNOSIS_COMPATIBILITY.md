@@ -45,3 +45,13 @@ scope 的 exam408 回退、字段插入顺序、recommendations 列表与 primar
 Public API 测试使用独立 FastAPI router、替换的数据库与用户依赖，验证参数和响应边界，不代表真实微信登录/JWT 验收。差分中的数据库响应为替身；SQL/参数对照不等于真实 PostgreSQL 执行、索引计划或生产数据验收。
 
 未执行真实微信编译、模拟器/真机、跨设备、生产鉴权、外部 AI/OCR、PostgreSQL/Redis 与完整学习闭环验收。未部署、push 或操作生产/用户数据。全栈重构目标保持 ACTIVE。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/KNOWLEDGE_GRAPH_COMPATIBILITY.md|KNOWLEDGE_GRAPH_COMPATIBILITY]] — 知识图谱兼容

@@ -1596,3 +1596,12 @@ class AppUserAdminBinding(Base):
 > 历史更新：2026-09-23 — 补齐 408 考试四表（public_id、deleted_at、attempt 状态）；知识点 (subject_id, normalized_name) 改为非唯一索引。2026-09-19 的多空题型拆分仍然有效。
 >
 > 历史更新：2026-08-10 — 知识点重构为关联表唯一事实源（移除 questions.knowledge_points JSON）；新增 knowledge_points/question_knowledge_points/practice_sessions/pomodoro_pause_intervals/user_pomodoro_settings 表；module 重构全部改为 subject_id
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/backend/STORAGE_DESIGN.md|STORAGE_DESIGN]] — 存储设计
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型

@@ -422,3 +422,13 @@ V2 迁移落地后，attribution engine 扩展纳入刷题时长（commit `7b79c
 - `/pomodoro/history` 由 `PomodoroSession + PracticeSession` UNION 后按 `start_time DESC` 全局 offset/limit
   分页，带唯一 `record_key`（`pomodoro:<id>` / `practice:<id>`），避免两来源各自取 N 条再拼接丢页。
 
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

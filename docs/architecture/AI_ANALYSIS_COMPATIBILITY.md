@@ -370,3 +370,13 @@ I001/F401/N818 债务除外）、compileall 与 diff-check 通过；formatter �
 本轮代码已提交 `9742993a`，并于2026-11-02 03:17（Asia/Shanghai）完成三个后端角色部署，
 运行的18份源码逐容器与提交一致，限定健康/schema检查通过，见
 [本轮部署记录](../project/PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md)。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线

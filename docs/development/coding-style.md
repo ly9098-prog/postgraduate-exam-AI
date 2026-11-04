@@ -88,3 +88,13 @@ updated = replace(original, field=value)  # 返回新对象，original 不变
 
 - [[wiki/concepts/development/development-workflow|开发流程]]
 - [[projects/english/_README|ruoyi-codex 项目架构]]
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/development/development-workflow.md|development-workflow]] — 开发工作流
+- [[docs/development/git-workflow.md|git-workflow]] — Git 工作流
+- [[docs/development/agents-and-commands.md|agents-and-commands]] — Agent 与命令

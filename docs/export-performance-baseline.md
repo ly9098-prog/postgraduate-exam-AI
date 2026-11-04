@@ -91,3 +91,13 @@ fc-list | grep -i wqy
 cd /opt/2240ai-v2/backend
 .venv/bin/python -m pytest tests/test_export*.py -v --tb=short
 ```
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/backend/EXPORT_RELEASE.md|EXPORT_RELEASE]] — 导出发布

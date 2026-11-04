@@ -87,3 +87,12 @@
 - 门禁覆盖 15 个模块、112 个迁移委托、114 个唯一 Page 方法和 19 个私有字段默认值。原页面包含两处 noop，共 115 个方法声明，均保留；只检查实际 Page 对象的直接属性，逐个方法声明验证精确模板和次数，并拒绝未知方法、函数/箭头/别名属性、简写、accessor、spread、默认值漂移及多个 Page。data 必须为对象字面量；该门禁不验证 data 内部值的完整兼容性。
 - 独立审查发现重复 noop 的首个方法体可被 Map 最终值覆盖，已改为逐声明校验并补充仅改首处 noop 的负例，复核无剩余 P0–P3。新增 10 项筛选契约在原页、当前页与原页重放通过；十组定向 126 项、全量 Node 2424 项、渲染 5 fixtures/31 项、八条架构门禁、JS 语法、visual/math、CI YAML 和 diff 检查通过。12 个方法体按 AST token 等价，1200 组返回值、状态、筛选、轨迹与字段顺序对照一致。
 - CI 注册筛选契约，页面预算收紧至 478 行；临时证据 `/tmp/wrong-book-filter-batch/`。本轮错题本职责提取与入口登记完成，真实微信客户端、外部 AI/网络及完整学习闭环仍未验收；下一步继续 practice 剩余页面职责及 pomodoro-stats 视图写回。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

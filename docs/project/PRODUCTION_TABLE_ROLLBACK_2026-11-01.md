@@ -81,3 +81,13 @@ admin-frontend/src/components/audit-logs/action-labels.ts
 rsync 使用仅含上述四文件的明确清单，不进行删除，也不使用先前宽泛的 dry-run 清单。同步后四文件 SHA256 与本地逐项相等，重复 checksum dry-run 差异为 0。未上传测试、离线脚本、运行材料或环境配置。
 
 §353仅更新 `/opt/22408-ai/` 的服务器源码，当时未构建镜像、重启服务或执行迁移，不能将该次源码同步视为上线或 ENV-06 验收完成。用户随后明确要求更新运行版本，§354已完成四服务镜像构建、替换和公网验证，见[生产运行版本更新](PRODUCTION_RUNTIME_UPDATE_2026-11-01.md)。生产 17 张表的恢复状态不受后续部署影响，830 个 schema 对象复核一致。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

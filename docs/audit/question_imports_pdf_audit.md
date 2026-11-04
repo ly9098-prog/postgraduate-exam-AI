@@ -2059,3 +2059,13 @@ D. 操作系统
 - 本报告中的 PDF 页码为文件物理页码，从 1 开始。
 - 当“正确内容依据”为另一条数据库记录时，表示该记录与 PDF 同页 OCR 高度一致，可作为直接修正模板。
 - 当依据为“PDF 页面人工复核转写”时，已在 OCR 定位基础上逐页对照原图校正；含图示的题目以方括号补充了图中关键结构。
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

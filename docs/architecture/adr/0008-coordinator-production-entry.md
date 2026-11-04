@@ -56,3 +56,13 @@ Set `PIPELINE_COORDINATOR_MODE=legacy`. No data migration required since shadow 
 ## Removal criteria
 
 When all production pipelines run in `coordinator` mode and `legacy` mode has zero callers for N consecutive days.
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维

@@ -775,3 +775,12 @@ Content-Security-Policy: default-src 'self'
 5. 任何 GET 接口不修改服务端状态
 6. 任何 POST/PUT/PATCH/DELETE 必须对应 audit_log 记录（按 severity 分级）
 7. JWT type ≠ "admin" → 401
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

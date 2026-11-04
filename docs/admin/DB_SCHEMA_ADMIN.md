@@ -649,3 +649,13 @@ await redis_set_role_version(role_id)
 - ❌ 多租户字段 `tenant_id`
 - ❌ MFA 字段 `mfa_secret`
 - ❌ `notifications` / `messages` 表
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录
+- [[docs/backend/DB_SCHEMA.md|DB_SCHEMA]] — App 数据模型

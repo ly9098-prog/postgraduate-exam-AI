@@ -48,3 +48,13 @@
 真实 Admin 浏览器、JWT/RBAC/审计持久化、PostgreSQL/Redis 事务并发与资源清理、实际模型连通性、定时任务/备份执行及多 worker 行为均未在本轮验收，继续归 ENV-02..05。所有真实环境仍在结构条目全部进入终态后执行；生产验收最后，生产操作另行授权。
 
 下一项 ADM-06：公式、资源与考试管理六页，再 ADM-07、OCR 和共享条目。已确认的既有缺陷继续明确保留，不能写成已经修复。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

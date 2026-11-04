@@ -477,3 +477,12 @@
 - 若同时运行 HTTP `all` 角色和独立 scheduler，两个监控会重复运行：投影对账有 `DistributedLock` 保护，健康监控没有，会重复记录健康事件。
 
 限制：生产 `scheduler` 服务运行 `python -m app.scheduler_main`，不经 HTTP 路径，本修复只让 dev/`all` 角色与之对齐；真实多角色、多 worker 行为及 Redis/PostgreSQL 下的对账锁归 ENV-05。全量 `tests/core` + `tests/architecture` 仅剩两项既有 SHR-03 旧源码门禁失败（`pipeline_split_*` 中的 `normalized_blocks`）。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

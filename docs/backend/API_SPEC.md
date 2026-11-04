@@ -1299,3 +1299,11 @@ AI 错因分析。
   "env": "production"
 }
 ```
+
+---
+
+## 相关链接
+
+- [[overview]] — 架构分区索引，本页是其下 API 分区的第一篇正式文档
+- [[system-architecture]] — 技术栈快照（FastAPI + SQLAlchemy async + Pydantic + Python 3.11），本页的 `response_model`/schema 结论依赖它
+- [[concepts-overview]] — 概念索引；`Idempotency-Key`、`retryable` 这类术语的解释页将落在该分区

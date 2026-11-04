@@ -58,3 +58,13 @@
 本轮5份既有后端测试119项通过；最终管理端143文件1769项通过，其中本域61文件508项，typecheck通过、lint0错误/138警告。无构建配置或运行时改动，未跑build。§323的473文件8155项固定后端CI及§321OpenAPI334快照按冻结输入不变复用，非本轮重跑。具体命令、源码哈希、复用范围和一次独立审查状态见 [结果清单](refactor-results/admin-question-retention-2026-10-30.json)。
 
 本条只关闭有界结构评估；真实Admin登录/RBAC、浏览器交互/图片上传、PostgreSQL/Redis事务与幂等、对象存储和生产仍归最终环境验收。全部结构工作完成后再验收，生产最后且单独授权；ADM-02导入审核等领域继续。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

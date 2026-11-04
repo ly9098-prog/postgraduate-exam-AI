@@ -186,3 +186,11 @@
 - 仅定时计时新增 `.ring-time-timed`，复用自由计时既有 `free-shimmer` 关键帧；自由计时模板、渐变、暂停样式保持原样（4 秒线性循环、200% 背景宽度、文字裁剪），不增加 JS 动画或更新定时器。
 - 自由计时保留绿色渐变与字体规格；定时计时以窄幅同色系高光带流动（替代不明显的透明度渐变），只改变原色的局部明暗，保留浅色/深色主题专注阶段的 `#168CB8` / `#72DDF2` 和休息阶段的 `#C66A1B` / `#F8B96B`，字体尺寸、字重、字距与光晕不变。
 - 倒计时暂停时停用字体流萤；系统减少动态效果时只停用倒计时动画并恢复原色实心文字，不改变自由计时既有行为。`tests/test-pomodoro-timer-shimmer.js` 验证共享样式与配色契约；本轮未进行微信模拟器/真机动画视觉验证。
+
+---
+
+## 相关链接
+
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
+- [[docs/frontend/COMPONENT_RULES.md|COMPONENT_RULES]] — 组件规范
+- [[docs/frontend/render-invariant.md|render-invariant]] — 渲染不变性

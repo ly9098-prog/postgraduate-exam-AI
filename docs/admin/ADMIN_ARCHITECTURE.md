@@ -349,3 +349,12 @@ Route 执行（Service 层可再次 assert_permission()）
 - 用户消息推送 / 邮件通知
 - AI 自动审核题目
 - 题目导出（CSV / Excel）— Phase 3.5 可选
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

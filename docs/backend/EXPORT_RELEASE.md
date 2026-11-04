@@ -186,3 +186,13 @@ curl https://xzshub.top/api/v1/exports/capabilities
 | `export_capability_checked` | capability.py | user_id, allowed |
 
 日志不包含：题目全文、答案、JWT、openid、签名 URL、COS key。
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/backend/DB_SCHEMA.md|DB_SCHEMA]] — App 数据模型
+- [[docs/backend/STORAGE_DESIGN.md|STORAGE_DESIGN]] — 存储设计
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/EXPORT_REQUEST_COMPATIBILITY.md|EXPORT_REQUEST_COMPATIBILITY]] — 导出请求兼容

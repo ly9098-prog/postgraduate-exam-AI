@@ -184,3 +184,13 @@
 
 - 需联调确认题目版本 diff 高亮是否已达到最终验收预期；若后端版本对比字段不足，应记录为后续 API/UI 联调项，而不是在前端伪造数据。
 - 需在可联网环境或完成字体本地化后复验 `npm --prefix admin-frontend run build`。
+
+---
+
+## 相关链接
+
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
+- [[docs/frontend/COMPONENT_RULES.md|COMPONENT_RULES]] — 组件规范
+- [[docs/frontend/DESIGN_SYSTEM.md|DESIGN_SYSTEM]] — 设计系统
+- [[docs/frontend/render-invariant.md|render-invariant]] — 渲染不变性
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

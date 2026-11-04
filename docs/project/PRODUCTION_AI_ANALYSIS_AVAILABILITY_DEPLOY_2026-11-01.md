@@ -73,3 +73,13 @@
 
 后续已于2026-11-02完成内聚/耦合复核、提交及新镜像部署，见
 [后续部署记录](PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md)。本页保留2026-11-01部署事实。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

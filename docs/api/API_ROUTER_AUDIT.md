@@ -90,3 +90,13 @@
 | 废弃审核接口在 OpenAPI 中暴露 | 中 | **已修复** |
 | main.py 直接 include 30+ Router | 中（维护负担） | **已修复**（聚合 Router） |
 | /api/v1/admin/ 非标准前缀 | 低 | **已修复** |
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域

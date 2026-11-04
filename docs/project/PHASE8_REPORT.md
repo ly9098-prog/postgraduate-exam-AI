@@ -320,3 +320,13 @@ Phase 8 delivered the critical verifications that Phase 7 deferred:
 The system is ready for current low-volume test usage. The remaining NOT VERIFIED items (real kill -9 process, Redis container stop/start, SIGTERM, resource stress) require either a dedicated worker process or a maintenance window, and are not blocking for test usage given the fencing mechanisms are verified at the code level.
 
 **Next development should be usage-driven, not architecture-driven. No Phase 9.**
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

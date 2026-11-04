@@ -33,3 +33,11 @@
 2. 再看 `BEFORE_NORMALIZE` / `AFTER_NORMALIZE` 是否一致。
 3. 再看 `BEFORE_RENDER` 与 `renderCount` 是否异常。
 4. 最后看 `STATE` 与 `SUBMIT` 是否沿同一 TraceId 传递。
+
+---
+
+## 相关链接
+
+- [[docs/debug/DEBUG_HISTORY.md|DEBUG_HISTORY]] — 调试历史
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约

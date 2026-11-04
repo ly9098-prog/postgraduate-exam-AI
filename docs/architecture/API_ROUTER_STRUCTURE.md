@@ -143,3 +143,11 @@ app/main.py
 | Admin 路由 | 以运行时 OpenAPI 为准 |
 | Legacy 410 路由 | ~10 |
 | 健康检查/文档 | 5 |
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

@@ -162,3 +162,13 @@
 4. 给出证据位置与最小修复建议。
 5. 若发现文档与代码冲突，标注“以当前代码为准”或“以长期规则为准”，并建议 docs-maintainer 同步。
 6. 不输出泛泛建议；每条建议必须能落到文件、接口、页面或数据表。
+
+---
+
+## 相关链接
+
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

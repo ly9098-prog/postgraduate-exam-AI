@@ -181,3 +181,13 @@ PaddleOCR 对该扫描版PDF的识别质量很好：
 - 语言模型：ch（中英文混合）
 - GPU：未使用（CPU模式）
 - 测试日期：2026-06-03
+
+---
+
+## 相关链接
+
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线
+- [[docs/ai/OCR_STRATEGY.md|OCR_STRATEGY]] — OCR 策略
+- [[docs/ai/STANDARDIZATION_FLOW.md|STANDARDIZATION_FLOW]] — 标准化流程
+- [[docs/ai/AI_DEBUG_RULES.md|AI_DEBUG_RULES]] — AI 调试规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

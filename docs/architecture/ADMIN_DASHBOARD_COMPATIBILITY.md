@@ -37,3 +37,13 @@
 一次独立只读审查及提交状态以结果清单和交接摘要为准。真实浏览器/JWT/RBAC、PG/Redis 并发、实际 AI 日志、队列与多 worker 仍归 ENV-02..05。Admin 有界结构条目终态不等于全部 Admin 行为验收；已登记的 ADM-08/09 缺陷仍保留。
 
 本轮文档、记忆和保护门禁结束后，下一项为 OCR-02/03 有界消费者映射，再按账本处理 SHR-01..03。所有结构条目处置后才启动真实环境验收，生产验收最后，生产操作另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

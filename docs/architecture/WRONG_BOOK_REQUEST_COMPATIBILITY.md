@@ -91,3 +91,12 @@
 测试使用假session/服务或既有隔离SQLite夹具，不访问开发或生产用户数据。
 未执行真实微信编译/设备/登录、真实AI模型、生产PostgreSQL/Redis或完整学习
 闭环验收；本批不代表全部小程序接口或全栈目标已完成。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

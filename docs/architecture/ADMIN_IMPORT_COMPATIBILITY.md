@@ -37,3 +37,13 @@
 批量图片本地条件刻画：请求端口即使收到abort仍成功交付旧响应时，重置并启动job-2后，按相同seq会写入job-1的状态和题数。真实API客户端传递AbortSignal给fetch，但页面在await后不复核批次；当前证据不能证明原生fetch/body取消会产生这种交付时序，故不将此当作已确认线上缺陷。ENV-02必须记录真实重置/新任务与响应、取消、SSE/轮询的时序，再决定是否需要单独修复。
 
 真实Admin会话/RBAC、PG锁与并发、Redis/SSE/worker、外部AI/OCR、存储和清理均未验收；旧batch-answer两个CLI脚本也未执行，不将服务替身视为端到端验收。全部结构工作处置后再按ENV表验收，生产最后且另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

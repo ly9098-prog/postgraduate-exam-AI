@@ -174,3 +174,11 @@ POST /api/admin/v1/imports/pipelines/{pipeline_id}/resume
 | `.backend_cache/ocr/` | 可（自动重建） | OCR 图片缓存，删除后重新 OCR |
 | `.backend_cache/pipeline_artifacts/` | 建议用 API | 正在运行中的 pipeline artifact 被删会导致 resume 失败 |
 | `ocr_test/` | 不可 | 回归测试样本，删除后回归无法执行 |
+
+---
+
+## 相关链接
+
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明
+- [[docs/ocr/TROUBLESHOOTING.md|TROUBLESHOOTING]] — OCR 排障

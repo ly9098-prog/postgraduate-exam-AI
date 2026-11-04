@@ -33,3 +33,13 @@
 - Public chunk 恢复与 Admin stage 恢复保持两条路径，不合并所有权或语义。
 - OCR 执行后端与内部租约 worker API 保持两套边界；`OCR-04` artifact上传契约缺口不因本项关闭。
 - 真实环境验收等待全部结构条目终态后执行，生产最后且另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

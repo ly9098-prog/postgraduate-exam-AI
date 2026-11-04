@@ -372,3 +372,13 @@ service 参数、缓存顺序、取消和用户状态，并核对实际 FastAPI 
 
 本批是后端请求边界的兼容重构，未修改小程序源码；本地替身与差分不代表真实微信
 编译/真机、生产鉴权、PostgreSQL/Redis、多 worker、外部模型或完整学习闭环验收。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/REVIEW_SYSTEM_DESIGN.md|REVIEW_SYSTEM_DESIGN]] — 复习系统设计

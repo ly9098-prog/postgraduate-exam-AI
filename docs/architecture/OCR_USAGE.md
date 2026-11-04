@@ -170,3 +170,13 @@ PaddleOCR-VL 凭证通过 `resolve_active_model(feature="vision")` 从 DB 动态
 5. **失败重试**：单张图片失败不影响批量任务中的其他图片，失败后可重新导入或使用缓存重新解析
 6. **公式截图**：复杂公式和低置信度公式会触发 math_detect 阶段截图，审核页以图片形式展示公式原图，无需手动校正 LaTeX
 7. **Cache 提示**：OCR 结果缓存（SHA256 + config_hash）有效期 14 天，配置变化自动失效；如需手动清理，管理端 → 运维 → Dry-Run → 确认清理
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

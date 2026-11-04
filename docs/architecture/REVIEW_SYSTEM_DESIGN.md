@@ -457,3 +457,13 @@ async def update_quality(db, user_id, wq_id, quality):
 > - 时区工具：`backend/app/core/time_utils.py`（shanghai_today / shanghai_today_boundaries / shanghai_date_utc_range）
 > - ORM 模型：`backend/app/models/review_scheduler.py`, `wrong_question.py`
 > - API 路由：`backend/app/api/v1/review.py`, `wrong_questions.py`
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/REVIEW_ALGORITHM.md|REVIEW_ALGORITHM]] — SM-2 算法

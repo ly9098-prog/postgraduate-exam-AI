@@ -41,3 +41,13 @@
 - 唯一需要新增正文的是本对照记录；其余未记录事实只补入已有 `docs/` 文档，未另建正式 Wiki 页。
 - 旧 Wiki 的历史摘要和派生页保留原样，用于追溯；不要将其中行号、计数或快照日期直接用于当前实现判断。
 - 后续项目文档新增或修订只发生在本仓库 `docs/`；旧 Wiki 不再追加日志或正式页。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

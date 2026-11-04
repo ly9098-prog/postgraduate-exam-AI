@@ -42,3 +42,12 @@ backend/app/services/ai_service.py    # AI 服务
 ```
 
 详细设计见 `/docs/API_SPEC.md`、`/docs/DB_SCHEMA.md`。
+
+---
+
+## 相关链接
+
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

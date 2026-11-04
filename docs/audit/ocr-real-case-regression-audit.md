@@ -218,3 +218,13 @@ tests/ocr_regression/cases/
 4. **P1**：评估 PaddleOCR 对 `->` 指针符号的识别准确率，考虑是否需在 `clean_ocr_text` 层增加 `->` 修复规则
 5. **P1**：在 `ocr_service._detect_column_split` 中放宽 gap 阈值或增加两栏检测回退逻辑
 6. **P2**：扩展真实图片覆盖范围：英语题、表格题、跨页题、数学公式题
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

@@ -96,3 +96,11 @@
 - TTL 14 天，过期自动惰性清理
 - 配置变化（语言/检测阈值）自动导致缓存失效
 - 如需手动清理：管理端 → 运维 → Dry-Run → 确认清理
+
+---
+
+## 相关链接
+
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明
+- [[docs/ocr/OPERATIONS.md|OPERATIONS]] — OCR 运维

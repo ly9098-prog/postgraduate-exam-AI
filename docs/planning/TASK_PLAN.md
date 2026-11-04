@@ -354,3 +354,11 @@ Stage 0 (骨架 + feature flag)
 ```
 
 **并行机会**：Stage 3 完成 `HybridContentBuilder` 及 §3.3 数据结构定义后，Stage 4 可用 `__mocks__/math-question-fixtures.js` 中的 mock 数据独立开发和验收。
+
+---
+
+## 相关链接
+
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/MVP_SCOPE.md|MVP_SCOPE]] — MVP 范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录

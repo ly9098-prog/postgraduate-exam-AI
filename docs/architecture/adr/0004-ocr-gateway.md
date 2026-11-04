@@ -43,3 +43,13 @@ Set `OCR_GATEWAY_MODE=legacy`.
 ## Legacy Removal Criteria
 
 When all pipeline calls go through OCRGateway and `OCR_GATEWAY_MODE=gateway`.
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

@@ -229,3 +229,13 @@
 - 连续重复上传同图命中缓存。
 - 并发 OCR 时 Excel/PDF 导入和普通 API 仍可用。
 - 日志能定位慢请求和失败原因。
+
+---
+
+## 相关链接
+
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/MVP_SCOPE.md|MVP_SCOPE]] — MVP 范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

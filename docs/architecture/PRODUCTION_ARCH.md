@@ -232,3 +232,13 @@ detect_options_from_text(raw_text) == True
 | OCR Service | 🔴 Deprecated | 11 项失败, 被隔离, 不影响核心流程 |
 | CI Gate | 🟢 Operational | 三层结构: OPTIONS(硬) / STRUCTURE(硬) / OCR(退化允许) |
 | SSOT | 🟢 Clean | 所有 fallback 正确委托, 无重复检测分支 |
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/architecture/REDIS_USAGE.md|REDIS_USAGE]] — Redis 使用边界

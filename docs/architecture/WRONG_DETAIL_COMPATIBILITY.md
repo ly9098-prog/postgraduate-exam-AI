@@ -161,3 +161,13 @@
 - 错题详情相关 Node 定向 202 项通过；全量 `node --test tests/*.js` 为
   `2557 passed`，5 个渲染 fixture 共 31 项通过。未执行微信开发者工具编译、
   模拟器/真机、真实弱网或真实上游模型验收，小程序由用户手动发布。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线

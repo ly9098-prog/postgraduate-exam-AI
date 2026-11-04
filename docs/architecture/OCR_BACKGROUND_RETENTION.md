@@ -40,3 +40,13 @@ OCR-04 daemon artifact 上传路径未注册是独立契约缺口，继续由 `O
 - 修改 OCR-02 子域必须绑定新的具体缺陷或消费者，并沿用对应兼容契约；不得重开无出口热点池。
 - `coordinator` 模式仅保持现状。若要替换 legacy/shadow，需另行取得用户授权、补齐未实现阶段并给出影子对比与回滚证据。
 - OCR-03 继续按上传准入、Public chunk 恢复、Admin stage 恢复、批量图片与 worker 协议处置；OCR-04 修复另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

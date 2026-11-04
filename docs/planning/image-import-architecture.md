@@ -307,3 +307,13 @@ review_items_created
 | 审核 | 复用 `question_imports` 和批次详情页 |
 | 入库 | 复用现有人工审核后入库 |
 | 数据库 | 第一版不新增字段，必要元数据放 `raw_data`/`ai_metadata` |
+
+---
+
+## 相关链接
+
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/MVP_SCOPE.md|MVP_SCOPE]] — MVP 范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

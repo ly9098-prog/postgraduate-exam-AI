@@ -95,3 +95,13 @@
 | Phase 6 Next.js Admin Dashboard 主要前端实现完成 | 2026-05-30 Phase 6 实现同步 | ADMIN_ARCHITECTURE, PHASE_PLAN, ADMIN_UI_RULES, CHANGELOG |
 | Phase 7 后台 AI 解析设置与全局月度额度完成 | 2026-05-30 Phase 7 实现同步 | README, PHASE_PLAN, ADMIN_API_SPEC, RBAC_RULES, DB_SCHEMA_ADMIN, AUDIT_LOG, ADMIN_UI_RULES, CHANGELOG |
 | Phase 7+ AI 解析设置页面配置接口实施 | 2026-06-10 Phase 7+ 扩展实现同步 | ADMIN_API_SPEC, DB_SCHEMA_ADMIN, AUDIT_LOG, CHANGELOG, ADMIN_ARCHITECTURE, ADMIN_UI_RULES, PHASE_PLAN, README |
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

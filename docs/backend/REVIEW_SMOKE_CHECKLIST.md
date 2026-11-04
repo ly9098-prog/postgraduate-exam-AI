@@ -158,3 +158,13 @@ GET /api/v1/review/schedule-stats?days=7
 ---
 
 > 最后更新：2026-06-26
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/backend/DB_SCHEMA.md|DB_SCHEMA]] — App 数据模型
+- [[docs/backend/STORAGE_DESIGN.md|STORAGE_DESIGN]] — 存储设计
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/REVIEW_SYSTEM_DESIGN.md|REVIEW_SYSTEM_DESIGN]] — 复习系统设计

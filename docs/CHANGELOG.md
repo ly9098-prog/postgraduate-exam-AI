@@ -50,3 +50,12 @@
 - 先写结果，再补影响范围
 - 不写推测，只写已确认事实
 - 变更描述保持短句，便于检索
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范

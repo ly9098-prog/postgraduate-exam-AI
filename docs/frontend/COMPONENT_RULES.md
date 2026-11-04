@@ -185,3 +185,11 @@ study、exam 的 `latex/index.js`、Parser、组件模板和样式保留各自�
 
 当前迁移仅有 Node 与源码体积证据；微信开发者工具重新编译、编译包扫描、模拟器、
 Android/iOS 真机及服务器上传尚未验证，不能复用历史结果作为本次验收。
+
+---
+
+## 相关链接
+
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
+- [[docs/frontend/DESIGN_SYSTEM.md|DESIGN_SYSTEM]] — 设计系统
+- [[docs/frontend/render-invariant.md|render-invariant]] — 渲染不变性

@@ -674,3 +674,13 @@ A=1026B；B=1536B；C=1538B；D=2048B
 ---
 
 **审计状态：** 已完成上传CSV快照与PDF原题的题干、陈述和选项核对，并形成可执行修正清单。
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

@@ -48,3 +48,13 @@
 未验证真实 Admin JWT/RBAC、浏览器 effect/画布交互、PostgreSQL 考纲切换锁与审计持久化、缓存失效、Redis/多进程和外部服务。这些属于 `ENV-02`、`ENV-03`、`ENV-05` 等最终环境阶段，不能以页面替身测试替代。ADM-03 的结构收口不关闭这些环境项。
 
 下一项为 ADM-04（登录、根入口、Admin/App 用户、角色、审计日志）六页身份/RBAC/审计链。生产验收仍固定在全部结构条目终态之后，生产操作另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

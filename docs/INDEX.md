@@ -233,3 +233,11 @@
 4. 更新版本、日期、状态时保持全仓一致。
 5. 如文档间存在冲突，以当前代码与 `CLAUDE.md` / `docs/project/PROJECT_RULES.md` 的长期约束为准。
 6. 输出时说明：改了哪些文档、同步了哪些事实、是否发现文档冲突。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范

@@ -61,3 +61,13 @@
 
 - 微信小程序是否已经提交审核。旧路线图把它列在「规划中」，仓库没有提审结果。
 - OCR 扫描版 PDF 的全量准确率验收。管线已经实现，生产部署记录里有导入 / OCR / 刷题链路自检；这不等于全量 E2E。`docs/achieve/README.md` 仍把 Phase 8 标为待 E2E 验证。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

@@ -81,3 +81,13 @@
 - `prewarm` 的真实 worker dispatch、durable queue 重试和认证隔离超时恢复需 Redis 和 AI 服务可用后验收。
 - `analyze_error` 完整 LLM 路径、多模态视觉证据和认证隔离已在 `AI_ANALYSIS_COMPATIBILITY.md` 登记，本文件不重复。
 - SQLite 服务路径测试不等于生产 PostgreSQL/Redis 查询计划或真实 AI 调用验收。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线

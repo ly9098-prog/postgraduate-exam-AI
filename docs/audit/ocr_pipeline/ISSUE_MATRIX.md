@@ -155,3 +155,12 @@ Status values: **VERIFIED** | PARTIAL | UNVERIFIED | REGRESSED | BLOCKED
 | VERIFIED | 2 |
 | PARTIAL | 2 |
 | UNVERIFIED | 0 |
+
+---
+
+## 相关链接
+
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

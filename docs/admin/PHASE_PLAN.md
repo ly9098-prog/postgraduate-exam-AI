@@ -545,3 +545,13 @@ DeepSeek **不得**自行实现以下功能（即使认为有价值）：
 如需实现以上任一项，DeepSeek **必须先停下来提问确认**。
 
 > 2026-10-25 校正：题目版本回滚已于 2026-10-24 实现并完成本地回归，不再属于“明确不实现/延后”范围；真实角色组合、生产 Admin 浏览器交互和上线后审计仍需单独验收。
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

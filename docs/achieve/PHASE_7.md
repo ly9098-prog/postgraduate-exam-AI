@@ -42,3 +42,12 @@ OCR_USE_GPU=false
 - [ ] 回归：原有 Excel / 文本 PDF / AI 生成导入不受影响
 
 详细流程见 `/docs/OCR_FLOW.md`。
+
+---
+
+## 相关链接
+
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

@@ -436,3 +436,13 @@ Admin 端与之**完全独立**：
 6. 防穿透锁释放必须用 Lua 校验 lockId 原子性（防止误释放他人锁）
 7. bypass token 只豁免限流，绝不豁免 JWT/RBAC/audit_log
 8. 关键批量写 / 关键幂等写在 Redis 不可用时必须 503 或明确声明无幂等保证
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

@@ -373,3 +373,13 @@ db2 在大量记录中保留了诸如：
 
 > db2 的 OCR 题干识别精度更高；db1 的整库生产安全性更高。
 > 从题库生产使用角度，推荐“db1 为底库、db2 定点修复”，而不是选择 db2 直接上线。
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域

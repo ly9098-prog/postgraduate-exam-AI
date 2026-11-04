@@ -246,3 +246,13 @@
   本批新模块不新增该命名命中。该已知基线不等于静态 CI 固定清单失败。
 - 本地替身与静态清单重放不代表真实 PDF、外部 PaddleOCR/LLM、生产 PostgreSQL/Redis、
   多 worker 或备份恢复验收；编排器其他职责与全栈未完成项继续按交接治理。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

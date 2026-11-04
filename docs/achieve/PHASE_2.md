@@ -18,3 +18,12 @@
 4. 前端提示：小程序提示"AI 分析暂时不可用，请稍后重试"
 
 不允许阻塞刷题流程，AI 挂了对用户无感知。
+
+---
+
+## 相关链接
+
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

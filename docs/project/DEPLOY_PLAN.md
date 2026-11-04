@@ -786,3 +786,13 @@ OCR_EXECUTION_BACKEND: "disabled"
 **修复：** compose 给 app/scheduler/worker/admin 设 `TZ: Asia/Shanghai`。**安全性**：DB 时间戳一律 `utcnow()`（显式 UTC，不受进程 TZ 影响）；APScheduler 显式 `AsyncIOScheduler(timezone="UTC")` 调度不变；产品时区（study_day/pomodoro）用显式 UTC+8 换算。裸 `datetime.now()` 仅用于 ID 后缀/瞬时 Redis 状态/时长差，无入库污染。
 
 > admin 镜像缺 tzdata，容器内 OS `date` 仍显示 UTC；但 Node 进程尊重 `TZ`，SSR 显示北京时间正确，无需处理。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构

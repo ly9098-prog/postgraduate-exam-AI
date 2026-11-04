@@ -267,3 +267,13 @@ PaddleOCR 是 CPU/GPU 密集型任务。若运行在主 FastAPI 进程内，大�
 - 文本型 PDF 导入。
 - 扫描版 PDF 现有行为。
 - 图片导入失败不影响批次列表和审核页。
+
+---
+
+## 相关链接
+
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/MVP_SCOPE.md|MVP_SCOPE]] — MVP 范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

@@ -70,3 +70,13 @@ Redis 用于任务队列、缓存、限流、幂等、JWT 黑名单/用户 nbf�
 
 - 部署脚本在 `deploy/` 目录
 - 历史开发阶段文档在 `docs/achieve/`
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/backend/DB_SCHEMA.md|DB_SCHEMA]] — App 数据模型
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
+- [[docs/frontend/COMPONENT_RULES.md|COMPONENT_RULES]] — 组件规范

@@ -62,3 +62,13 @@ type: concept
 
 - [[wiki/concepts/development/development-workflow|开发流程]]
 - [[wiki/concepts/development/coding-style|编码规范]]
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/development/coding-style.md|coding-style]] — 编码规范
+- [[docs/development/development-workflow.md|development-workflow]] — 开发工作流
+- [[docs/development/agents-and-commands.md|agents-and-commands]] — Agent 与命令

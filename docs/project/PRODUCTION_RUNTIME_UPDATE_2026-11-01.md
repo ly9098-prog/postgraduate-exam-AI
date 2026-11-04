@@ -57,3 +57,13 @@ Compose 项目显式指定为 `deploy`，环境文件沿用服务器 `backend/.e
 如需按具体授权回滚运行镜像，可沿用生产 Compose 和原环境，增加备份目录中的 `rollback-images.json` 覆盖文件，使用 `up --no-deps --no-build --pull never` 替换上述四服务，再 reload nginx 并重新验证。该方式不恢复或覆盖数据库。本轮未触发自动回滚，也未进行生产全量 PG/Redis 恢复。
 
 脱敏机器结果见 [部署结果](../architecture/refactor-results/production-runtime-update-2026-11-01.json)。本轮部署不改变既有最终环境门禁：ENV-01 PARTIAL、ENV-02/03/05 PASS-ISOLATED、ENV-04/06 BLOCKED。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

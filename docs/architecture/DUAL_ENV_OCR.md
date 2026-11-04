@@ -86,3 +86,13 @@
 - `APP_ENV=production` → production profile，>5MB 文件/31页 PDF/.xlsx 均被拒绝，OCR 2 线程 + CPU + 无旋转
 - 测试套件 1474 passed（P8 统计；24 pre-existing failures 非 P8 引入）
 - P6 新增性能 Profile：每个 stage 独立记录耗时/AI调用/tokens/缓存命中率，通过 diagnostics.performance_profile 暴露
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

@@ -319,3 +319,13 @@ suggestion 总结快速解题方法和常见考法，最多 100 字。
 （行内公式用 $...$，块级公式用 $$...$$）。
 禁止添加额外解释或评论，只输出识别到的文字内容。
 ```
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/backend/DB_SCHEMA.md|DB_SCHEMA]] — App 数据模型
+- [[docs/backend/STORAGE_DESIGN.md|STORAGE_DESIGN]] — 存储设计
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线

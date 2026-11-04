@@ -79,3 +79,13 @@ Seven additional client cases cover WeChat session persistence, rollback of all 
 The legacy test_auth_session.py is not used as acceptance evidence here: its module does not itself supply database overrides, fixture provenance was not evaluated, and its old grace-window comment is not authority. Current token_service rejects revoked tokens without a grace window, as the selected direct regression confirms. No real account deletion test was executed.
 
 Final fixed-static-CI results, current hashes and frozen backend inputs are recorded in [the retention result](refactor-results/miniprogram-identity-retention-2026-10-30.json). One independent implementation/test review found no remaining P0-P3 and reran the backend compatibility file (24 passed) and client/boundary/storage contracts (43 passed); a final documentation/limited-claim narrow recheck is applied without repeating those suites. The exact local commit hash is recorded in the current handoff, history and Git history rather than in this self-referential batch manifest. Real WeChat/jscode2session, device/network behavior, PostgreSQL atomic rotation, Redis/multi-worker invalidation, storage and production acceptance remain ENV-01..06 WAITING-FINAL. Production acceptance stays last after structural refactoring and requires separate production-operation authorization.
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

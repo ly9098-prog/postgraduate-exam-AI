@@ -114,3 +114,12 @@ OCR → code_detector → text_normalizer → AI修复 → pipeline → hybrid_c
 - **Positive**: 避免在窄受益场景下引入合并复杂度；保持 math-question 组件简洁；设计资产全部保留不丢失
 - **Negative**: 混合 code+math 题目的渲染退化问题未解决（mp-html 路径下公式显示为 `$latex$` 原文）
 - **Neutral**: Segment Schema 规范已建立，未来新增 type 无需重新设计框架
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引

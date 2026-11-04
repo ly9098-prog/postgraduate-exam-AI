@@ -56,3 +56,13 @@ NewFormulaPage 用例只证明其交给既有 FormulaEditorForm 的 create 模�
 真实 Admin/JWT/权限/审计、PostgreSQL 行锁/唯一约束并发、Redis、多 worker、对象存储/外部渲染服务与实际客户端均未验收，继续归 ENV-02..05。SQLite、替身、冷 OpenAPI 和环境画像测试不能代替这些证据。
 
 本轮收尾后下一 ADM-07：dashboard 单页五契约，再 OCR-02/03 和 SHR-01..03。所有真实环境在结构条目全部处置后执行，生产验收最后，生产操作仍需另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

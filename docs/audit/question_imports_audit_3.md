@@ -628,3 +628,13 @@ CSV 的数值 ID 范围为 1-588，共 574 条，缺号为：
 - PDF 为扫描件，OCR 主要用于候选匹配；最终异常以页面图像复核为准。
 - 本次没有直接连接线上数据库，结论针对上传 CSV 所代表的数据库快照。
 - 外部静态图片资产未包含在上传包中，因此第 4 节的 10 条仍需在部署环境读取实际 `.webp` 文件后完成最终闭环。
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

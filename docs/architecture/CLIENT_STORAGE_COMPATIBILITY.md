@@ -51,3 +51,13 @@
 - `scripts/test-408-feature-integration.js` 与 `scripts/test-pomodoro-practice-stats.js` 不在 CI 清单：前者在 HEAD 即因 `activeTaskTypeLabel` 旧内联形状失败（本次拆分又新增一处 `utils/storage.js` 内联断言过期），后者在 HEAD 与当前失败集合完全一致（12 项，均为已拆分页面的旧形状断言）。两者都只反映历史脚本落后于现有模块形状，不能当作小程序功能失败。
 - `utils/api.js` 已按 `CLIENT_API_COMPATIBILITY.md` 拆分治理（2026-10-28）；`pages/dashboard`、`pages/home`、`subpackages/knowledge`、`subpackages/export` 等主包文件仍未治理；页面级存储写入与真机 `wx` 行为不在本基线范围。
 - 本基线不覆盖后端学习域、任务队列、OCR 导入、AI 执行或生产验收。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/backend/SYNC_LOCAL_TO_CLOUD.md|SYNC_LOCAL_TO_CLOUD]] — 本地到云端同步

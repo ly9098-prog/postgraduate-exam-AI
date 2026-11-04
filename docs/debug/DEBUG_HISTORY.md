@@ -92,3 +92,11 @@ questionId：
 - 证据优先于结论
 - 单层修复优先于联动修改
 - 验证结果必须可复现
+
+---
+
+## 相关链接
+
+- [[docs/debug/DEBUG_SYSTEM.md|DEBUG_SYSTEM]] — 调试体系
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约

@@ -68,3 +68,13 @@ permissions:
 
 不得将个人访问令牌写入工作流、仓库 Secrets 以外的位置、文档或部署日志。首次发布后，
 应在 Package 设置中确认可见性和仓库关联符合预期。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

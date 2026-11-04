@@ -68,3 +68,13 @@
 
 未执行真实微信编译/设备访问、生产鉴权与数据库、外部图像网络请求或管理端页面
 交互；本批不代表全部小程序接口、全栈重构或 OCR 验收完成。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/frontend/FORMULA_READER_UI.md|FORMULA_READER_UI]] — 公式阅读 UI

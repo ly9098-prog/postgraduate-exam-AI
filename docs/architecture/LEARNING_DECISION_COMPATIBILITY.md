@@ -114,3 +114,12 @@
 - 顺序模式先完成原过滤构造，再校验单一具体科目。它继续只向顺序预留入口传递科目、数量和旧名称过滤，不透传 canonical ID、Leitner 或重复窗口选项；保留原错误消息与触发顺序，不在本批改变已有行为。其余模式把原模式、数量和重复窗口交给原调度入口，候选池可继续超过 API 最终下发数量，不新增 50 题裁剪。
 - 查询、过滤和模式常量继续从服务原命名空间动态读取，保留 resolver 等待期间及桶之间替换回调的行为。聚合器仍绑定原 logger/merge；桶加载器使用聚合器传入的 DB 和桶数量，不误用外层会话或外层数量。候选列表、过滤输入与合并结果保留原引用；异常和取消不触发后续桶、合并或额外回退。
 - `test_basic_selection_contract.py`、`test_random_bucket_selection_contract.py`、`test_basic_selection_sql_contract.py` 合计 234 项在拆分前后均通过；另有 5 项架构检查约束两个入口、共同选项绑定、聚合器所有权、预算与独立导入。真实 revision/知识点 helper 的 SQL 编译和本地 asyncio 取消不代表真实 PostgreSQL、Redis、小程序或生产验收，学习域及阶段 0 其余职责仍未全部收敛。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

@@ -397,3 +397,13 @@ P2 任务。先解决代码/公式问题（P0/P1），表格题作为下一阶�
 6. C 代码 `for (int i = 0; i < n; i++)` 缩进保留
 7. 展开 OCR 原文面板可看到 raw_data
 ```
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

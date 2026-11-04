@@ -129,3 +129,13 @@ PaddleOCR → text_normalizer（13 步规则清洗）
 - 考虑：AI 补全并行化（当前 50 题串行，可 asyncio.gather 加速）
 - 考虑：代码语义等价性检查（防止 408 C 代码被 AI 改写逻辑）
 - 考虑：合并 llm_text_structurer 独立 token budget 到共享 token_budget.py
+
+---
+
+## 相关链接
+
+- [[docs/ai/AI_PIPELINE.md|AI_PIPELINE]] — AI 管线
+- [[docs/ai/STANDARDIZATION_FLOW.md|STANDARDIZATION_FLOW]] — 标准化流程
+- [[docs/ai/AI_DEBUG_RULES.md|AI_DEBUG_RULES]] — AI 调试规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

@@ -84,3 +84,13 @@ PostgreSQL dump已校验TOC并完整解码，Redis RDB通过 `redis-check-rdb`�
 结构化结果：[本轮部署结果](../architecture/refactor-results/wrong-detail-ai-health-review-deploy-2026-11-02.json)。
 职责复核：[AI兼容说明 §19](../architecture/AI_ANALYSIS_COMPATIBILITY.md#19-可用性实现的内聚与耦合复核2026-11-02)。
 前次部署：[2026-11-01可用性部署](PRODUCTION_AI_ANALYSIS_AVAILABILITY_DEPLOY_2026-11-01.md)。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

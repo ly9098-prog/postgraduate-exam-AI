@@ -109,3 +109,12 @@ CoordinatorPipeline (Shadow mode by default)
 - `docs/audit/ocr_pipeline/ISSUE_MATRIX.md` — all P5/P6/P7 sections updated. 20 VERIFIED / 9 PARTIAL / 0 UNVERIFIED / 0 REGRESSED
 - `docs/audit/ocr_pipeline/RELEASE_EVIDENCE.md` — P0-P6 evidence, P5/P6/P7 status table, test count 335 passed
 - `docs/audit/ocr_pipeline/CURRENT_STATE.md` — this file
+
+---
+
+## 相关链接
+
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

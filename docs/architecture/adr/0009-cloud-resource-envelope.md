@@ -61,3 +61,12 @@ Set `RESOURCE_GUARD_DISABLED=true`. Individual budgets can also be relaxed via c
 ## Removal criteria
 
 When the cloud server hardware is upgraded to match local capacity and unbounded processing is safe, or when a different resource management system replaces `ResourceGuard`.
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录

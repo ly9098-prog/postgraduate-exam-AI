@@ -68,3 +68,13 @@
 - 将“文件存储”收敛为临时存储 + 可选缓存，不要在第一版引入长期图像资产管理。
 - 将“审计日志”从“建议记录”改为“必须记录的最小事件集”，以便排障和回归。
 - 将“失败策略”明确为：OCR 失败不进入审核队列，但保留错误状态与原图短期预览。
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

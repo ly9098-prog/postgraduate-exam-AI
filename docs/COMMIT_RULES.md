@@ -291,3 +291,11 @@ When creating Git commits for this repository:
 如确有业务、法律、审计或协作流程要求记录共同作者，应由仓库维护者明确指定具体 identity 与 trailer。
 
 任何例外都应是**显式授权**，不得由工具默认行为自动产生。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引

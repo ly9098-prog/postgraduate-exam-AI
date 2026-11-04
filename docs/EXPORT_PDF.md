@@ -191,3 +191,13 @@ python3 -m pytest tests/test_services/test_wrong_question_service.py -v
 - `backend/app/services/export/docx_exporter.py` 已实现 `DocxExporter`。
 - 是否开放由服务端能力 `docx_enabled`（`EXPORT_DOCX_ENABLED`）决定，不是前端写死禁用。
 - 小程序在 `docx_enabled !== true` 时禁用 Word，并提示「Word 导出暂未开放」。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

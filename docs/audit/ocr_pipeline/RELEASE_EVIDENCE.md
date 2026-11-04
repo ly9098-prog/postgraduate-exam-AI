@@ -153,3 +153,12 @@ GPU: NVIDIA GeForce RTX 3050 (WSL2 passthrough, unstable)
 | P5 (Remote VL lifecycle) | 4 | 0 | 0 |
 | P6 (Stage SSOT/fingerprint) | 4 | 1 | 0 |
 | P7 (Benchmark/CI/release) | 2 | 2 | 0 |
+
+---
+
+## 相关链接
+
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

@@ -67,3 +67,12 @@ Before `DOCUMENT_IR_SSOT_MODE=ir`: revert individual migration commits. After sw
 - All coordinators and pipeline stages accept `DocumentIR` as their input
 - `document_ir_to_blocks()` is removed
 - `DOCUMENT_IR_SSOT_MODE=ir` is the default and only supported mode
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录

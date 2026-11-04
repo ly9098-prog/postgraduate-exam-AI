@@ -143,3 +143,13 @@ tests/export/test_export_comprehensive.py
 - 导出 Redis 集成测试需要显式集成环境；本机未启动 Redis 时不能记录为真实故障恢复通过。
 - 已入库题目 `re_pending` 重审/回滚已由 Admin 题库域实现；公式/导出域不参与审核状态迁移。
 - `practice_service.use_leitner` 的到期过滤与 fallback 已由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行；公式/导出域不参与选题调度。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/backend/EXPORT_RELEASE.md|EXPORT_RELEASE]] — 导出发布

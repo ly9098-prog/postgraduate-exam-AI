@@ -67,3 +67,12 @@
 2026-10-31 已修复 MP-19：`loadDetail` 在发起时记录请求的知识点 id，`await` 之后若页面已卸载或 `knowledgePointId` 已变（关系切换已发布），丢弃成功结果和失败分支，不再改写详情或错误态。普通加载、后台刷新、强刷和失败四种时序各有契约用例，另有卸载后的成功/失败不发布、当前 id 仍正常应用与失败提示；原“旧响应覆盖详情”的刻画用例已替换，另固定切换失败后旧 id 加载仍应用、切换期间 retry 的 loading 最终清除。`openRelation` 的 `_switchToken` 逻辑不变。仍以刻画页面端口为证据，没有真实微信交互、弱网或渲染验证，归 ENV。
 
 当前全量固定静态 CI、源码哈希、一次独立审查与提交状态统一见 [本轮结果清单](refactor-results/miniprogram-knowledge-map-retention-2026-10-30.json)。真实微信交互/渲染/弱网、PostgreSQL 查询、跨端状态与生产验收仍在最终环境阶段；生产验收最后，生产操作不由本轮自动授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

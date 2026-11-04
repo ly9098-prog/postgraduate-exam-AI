@@ -15,3 +15,12 @@
 ## 维护规则
 
 本文件仅作为历史兼容入口，不再承载长期规则正文。项目约束、范围、路线图变化请同步对应项目目录文档，不要在一级目录重复维护正文。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范

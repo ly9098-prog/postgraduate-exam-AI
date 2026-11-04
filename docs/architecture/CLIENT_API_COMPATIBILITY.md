@@ -61,3 +61,12 @@
 当前reliability小程序步骤有306物理行、185条逻辑命令。初次按序执行在第20条番茄钟韧性脚本失败（105通过/1失败），其源码断言要求旧`active = await`写法；真实后端幂等键查询仍在活跃检查前。本轮将该断言限定在start_session函数并检查await调用顺序，未改后端。继续诊断余下命令后，唯一失败仍为第20条；修复后仅复跑该命令106通过，复用其余184条通过结果。最终相关输入有185条通过证据，**不是修复后重新执行了一次完整shell步骤**。MP-15番茄钟业务仍OPEN，不能据一个门禁修复冒称它已治理完毕。
 
 Node语法和diff检查通过；后端源码/测试/固定CI清单未变，复用§317的465文件8049项静态回归，不重复后端全量。精确命令、首次失败/后续诊断/定向复验、当前源哈希、预算口径与审查/提交状态见[结果清单](refactor-results/miniprogram-transport-retention-2026-10-30.json)。保留结构不表示每个业务缺陷或真实微信网络都已验收；真实环境仍ENV-01..06最终阶段，生产验收最后，授权边界不变。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则

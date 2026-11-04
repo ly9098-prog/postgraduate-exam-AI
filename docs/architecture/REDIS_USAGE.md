@@ -266,3 +266,13 @@ bash deploy/scripts/deploy.sh update      # 如仅 Redis 配置变更，可单�
 | 科目树缓存 | `backend/app/services/subject_tree_cache.py`、`miniprogram/pages/pomodoro/utils/subject-cache.js` |
 | 生产 Compose | `deploy/docker-compose.prod.yml` |
 | Redis 备份脚本 | `deploy/scripts/redis_backup.sh` |
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维

@@ -14,3 +14,13 @@
 ## 维护规则
 
 本文件仅作为历史兼容入口，不再承载 UI 规则正文。页面、组件、设计 token 或交互规则变化请同步 `/docs/frontend/` 下权威文档，不要在一级目录重复维护正文。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则

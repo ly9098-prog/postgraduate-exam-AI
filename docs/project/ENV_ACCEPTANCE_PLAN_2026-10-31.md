@@ -311,3 +311,13 @@ ENV-02已定位到以下具体入口，供后续有界修复；本次没有修�
 - ENV-05：队列/PG fencing 29项、Redis崩溃恢复6项、队列硬化23项、worker进程恢复2项均0失败/错误/跳过；既有双worker+scheduler投影收敛、Redis RDB新进程恢复证据均为PASS，来源证据时间为2026-10-31；阶段专属检查 `PASS-ISOLATED`。
 
 因此按验收规划定义，ENV-02、ENV-03、ENV-05各自的限定隔离技术验收已完成；本轮仅复核源码/报告一致性，未重跑PG/Redis、多进程、浏览器或API套件。它们仍不是整个最终环境验收中可关闭的顺序阶段：ENV-01先决条件未通过，ENV-04/06仍阻塞。完整ENV目标未完成，未执行生产操作。原始报告与日志分别保留在 `~/.cache/postgraduate-ai/acceptance/2026-10-31/` 和 `2026-11-01-env02-fixes/`。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

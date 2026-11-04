@@ -193,3 +193,13 @@
 - ❌ LLM 输出缓存（每次 AI 调用独立，缓存会导致陈旧结果无法更新）
 - ❌ 纯 AI 自动入库（所有导入必须经过 question_imports + 人工确认）
 - ❌ 完全移除旧版 `ocr_correction.py`（保留 171 行向后兼容包装，可安全删除但需验证外部调用方）
+
+---
+
+## 相关链接
+
+- [[docs/ai/OCR_STRATEGY.md|OCR_STRATEGY]] — OCR 策略
+- [[docs/ai/STANDARDIZATION_FLOW.md|STANDARDIZATION_FLOW]] — 标准化流程
+- [[docs/ai/AI_DEBUG_RULES.md|AI_DEBUG_RULES]] — AI 调试规则
+- [[docs/backend/ai-prompts.md|ai-prompts]] — AI Prompt 事实
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

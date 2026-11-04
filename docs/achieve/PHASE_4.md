@@ -41,3 +41,12 @@ backend/app/services/knowledge_service.py # 知识点管理
 backend/app/api/v1/stats.py             # 统计 API
 backend/app/api/v1/knowledge_points.py   # 知识点 API
 ```
+
+---
+
+## 相关链接
+
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

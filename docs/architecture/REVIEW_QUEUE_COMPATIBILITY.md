@@ -70,3 +70,13 @@
 - `admin-frontend/src/app/(admin)/imports/review/review-detail-session.test.ts`：本次打开刷新完成前禁止编辑、关闭/替换后的迟到响应失效，以及详情 ID 不匹配守卫。
 
 本基线来自源码、Vitest/类型/构建及静态对照；未运行真实 Admin 浏览器、真实服务端、真实权限拒绝或真机，不能据此宣称审核流程生产验收完成。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/REVIEW_SYSTEM_DESIGN.md|REVIEW_SYSTEM_DESIGN]] — 复习系统设计

@@ -362,3 +362,13 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 4. **状态机闭合**：`question_imports.status` 取值在 `{pending, approved, rejected, published}` 内；`questions.review_status` 取值在 `{approved, re_pending, rejected}` 内，转换仅允许 `re_pending → approved/rejected`、`rejected → approved`
 5. **审计先行**：critical 操作的 audit_log 写入失败 → 整个事务回滚
 6. **AppUser 不可见**：is_active=false 或 review_status ≠ approved 的题目，**绝不可**出现在小程序刷题池
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/RBAC_RULES.md|RBAC_RULES]] — RBAC 与身份域
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

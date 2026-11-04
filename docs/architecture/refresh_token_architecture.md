@@ -238,3 +238,13 @@ async function _refreshToken() {
 6. **管理员吊销**：设 `revoked_at` → 用户下次续签 fallback 到 wx.login()
 7. **开发模式**：`_dev_openid` 流程不变，refresh token 跟随正常流程
 8. **wx.login() 失败**：两级都失败 → 保持现有行为（弹错误、留在登录页）
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/IDENTITY_SECURITY_COMPATIBILITY.md|IDENTITY_SECURITY_COMPATIBILITY]] — 身份与安全兼容

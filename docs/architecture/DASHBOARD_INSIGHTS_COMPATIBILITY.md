@@ -30,3 +30,13 @@
 原始service载入独立模块后运行入口/API契约45项通过；当前实现的8份相关测试与架构门禁111项通过。结构核对（MP-17 时点，早于 MP-18 修复）确认13处SQL执行表达式、11个异步签名以及两个查询辅助函数/顶层聚合器完整AST保持；MP-18 修复后其中薄弱点回退与重复错题 Top 两条查询的 AST 因 `.select_from(KnowledgePoint)` 有意变更，其余不变。一次独立审查指出纯模块门禁遗漏参数传入的数据库操作，已添加execute/commit/flush/rollback/add等检查和负例，该时点业务源码未变，定向18项通过；审查者已窄复核关闭P3，无剩余P0–P3。新测试同步固定CI清单，但本批没有重放全量固定CI，不能据此关闭 `MP-08`。
 
 精确结果、模块预算、源哈希、审查和提交状态见[结果清单](refactor-results/miniprogram-dashboard-insights-2026-10-30.json)。临时 `extract.py` 是源码写入工具，不得作为验证脚本重跑。真实客户端、PostgreSQL/Redis、外部服务和生产验收留到全栈结构重构完成后的最后阶段；本文件不授权生产操作。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则

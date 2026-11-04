@@ -375,3 +375,13 @@ P0 基础        旧版路径清理 ────────────→    p
 6. **与生命周期审计的潜在冲突**：纯线性结构拆分与流式架构改造的关系未明确，可能导致重复工作。
 
 推荐的补救方案是：在 6.4 的 10 个任务基础上，补充约 12 个遗漏任务，并采用三阶段执行路线——第一阶段解决内存崩溃和回归基线，第二阶段优化结构和幻觉防护，第三阶段补齐性能和度量体系。
+
+---
+
+## 相关链接
+
+- [[docs/audit/AUDIT_INDEX.md|AUDIT_INDEX]] — 审计索引
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明

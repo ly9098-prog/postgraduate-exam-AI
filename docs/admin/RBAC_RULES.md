@@ -489,3 +489,12 @@ await redis.del(`admin:perm:user:${userId}`); // 立即清自己的缓存
 - 导出全量数据
 
 **当前 Phase 不实现**，但 API 设计需预留 `X-Confirm-Password` Header 位置，避免未来加时不兼容。
+
+---
+
+## 相关链接
+
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/admin/DB_SCHEMA_ADMIN.md|DB_SCHEMA_ADMIN]] — 管理端数据模型
+- [[docs/admin/AUDIT_LOG.md|AUDIT_LOG]] — 审计记录

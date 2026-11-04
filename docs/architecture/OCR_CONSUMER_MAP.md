@@ -37,3 +37,13 @@
 3. SHR-01..03：在 OCR 结构条目终态后继续共享队列、运行时生命周期和旧门禁治理。
 
 真实外部 OCR、PG/Redis、多 worker、备份恢复和生产操作均不在本映射中执行，继续归 ENV-04..06；生产最后且另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

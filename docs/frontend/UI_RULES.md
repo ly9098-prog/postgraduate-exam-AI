@@ -225,3 +225,11 @@
 - WXML class：小写 + 连字符（`action-card`、`subject-row`）
 - JS 变量：小驼峰（`wrongStats`、`practiceCount`）
 - 事件处理：`handleXxx` 或 `onXxx` 命名
+
+---
+
+## 相关链接
+
+- [[docs/frontend/COMPONENT_RULES.md|COMPONENT_RULES]] — 组件规范
+- [[docs/frontend/DESIGN_SYSTEM.md|DESIGN_SYSTEM]] — 设计系统
+- [[docs/frontend/render-invariant.md|render-invariant]] — 渲染不变性

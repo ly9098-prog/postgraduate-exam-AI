@@ -39,3 +39,13 @@
 后端路由 AST 与 §321 的 334-path OpenAPI 快照对应；841 个 backend/app 文件哈希未变，复用该 schema，并非本轮冷进程或服务器验证。运行时、测试和 CI 未改，未重放 typecheck/lint/test/build 或完整 CI；§323 的 473 文件／8155 passed 仅作既有证据，不作为本轮新跑结果。
 
 一次独立只读审查完成，无 P0–P3 遗留；独立核对页面枚举、330 哈希、注册差集、注入中继及 uploaded 允许值；取消有限组合截断的扫描重算结果一致，4287 个原源码／测试／CI 路径未变。实际浏览器、Admin JWT/RBAC、PostgreSQL/Redis、外部 OCR/AI、worker 和生产均未在本轮验收。所有真实环境项目在结构工作结束后执行，生产最后且另行授权。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/admin/ADMIN_ARCHITECTURE.md|ADMIN_ARCHITECTURE]] — 管理端架构

@@ -73,3 +73,13 @@ node tests/test-formula-reader-layout.js
 对每次打开记录 800ms 内的 `setData`，未发现入场后再修改节点或高度。
 以上仅为这次模拟器采样，不代表真机延迟或动画总时长。当前短面板预计算高度约 261px，
 长面板仍为 675px 上限；之前的 253px 是旧版入场后测量的结果。
+
+---
+
+## 相关链接
+
+- [[docs/frontend/UI_RULES.md|UI_RULES]] — 小程序 UI 规则
+- [[docs/frontend/COMPONENT_RULES.md|COMPONENT_RULES]] — 组件规范
+- [[docs/frontend/DESIGN_SYSTEM.md|DESIGN_SYSTEM]] — 设计系统
+- [[docs/frontend/render-invariant.md|render-invariant]] — 渲染不变性
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约

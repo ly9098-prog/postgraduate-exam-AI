@@ -46,3 +46,13 @@ PostgreSQL归档TOC和完整解码通过，Redis文件头及redis-check-rdb通�
 小程序四个运行JS文件尚需用户自行发布；管理后台未重建。本批未主动调用真实模型、未修改Admin模型配置，也未执行生产账号业务验收。此前日志中的上游403仍需核对凭据、Base URL与服务权限，本次部署不代表该配置故障已解决；整体ENV门禁状态不变。
 
 [脱敏部署结果](../architecture/refactor-results/wrong-detail-ai-production-deploy-2026-11-01.json)。本轮没有Git提交或推送。
+
+---
+
+## 相关链接
+
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档

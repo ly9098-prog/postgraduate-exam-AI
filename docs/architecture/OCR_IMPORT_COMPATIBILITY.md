@@ -392,3 +392,13 @@ cloud profile 隔离 30 项通过：运行器保留已安装依赖的 PYTHONUSER
   最终关联裁剪、表格、extract/split/freeze、OCR 适配与依赖门禁合并 1097 项通过、
   无跳过，40 条警告来自既有 OCR 兼容包装器的弃用提示；隔离守卫未记录网络、数据库连接
   或真实 `.env` 读取尝试。新增业务模块均满足 300 行/50 行预算与 Python 3.11 语法要求。
+
+---
+
+## 相关链接
+
+- [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
+- [[docs/architecture/PRODUCTION_ARCH.md|PRODUCTION_ARCH]] — 生产架构
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程

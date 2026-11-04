@@ -46,3 +46,12 @@ backend/app/services/ai_import_service.py  # AI 导题服务
 backend/app/models/ai_generation_log.py    # AI 生成日志
 backend/app/api/v1/imports.py             # 导入 API（含 AI 审核流）
 ```
+
+---
+
+## 相关链接
+
+- [[docs/INDEX.md|INDEX]] — 文档总索引
+- [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
+- [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
+- [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

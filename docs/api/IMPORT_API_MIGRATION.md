@@ -90,3 +90,13 @@
 - 所有兼容代码已在 2026-07-04 批次中整体删除，不再保留 410 过渡接口
 - 旧路径（`/api/v1/import/upload`、`/api/v1/admin/watermark-rules` 等）已完全从路由表中移除
 - 前端若仍调用旧路径将收到 404，需确保已切换到新路径
+
+---
+
+## 相关链接
+
+- [[docs/backend/API_SPEC.md|API_SPEC]] — App API 合约
+- [[docs/admin/ADMIN_API_SPEC.md|ADMIN_API_SPEC]] — 管理 API 合约
+- [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
+- [[docs/architecture/OCR_FLOW.md|OCR_FLOW]] — OCR 导入流程
+- [[docs/architecture/OCR_USAGE.md|OCR_USAGE]] — OCR 使用说明
