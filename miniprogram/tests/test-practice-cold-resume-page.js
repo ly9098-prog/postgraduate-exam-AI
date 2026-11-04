@@ -4,15 +4,18 @@ const memory = new Map()
 let mono = 10000
 let definition
 const navigations = []
+let pageStack = []
 global.wx = {
   getStorageSync: key => memory.get(key),
   setStorageSync: (key, value) => memory.set(key, structuredClone(value)),
   removeStorageSync: key => memory.delete(key),
   getPerformance: () => ({ now: () => mono }),
   reLaunch: options => navigations.push(options.url),
+  redirectTo: options => navigations.push(options.url),
+  navigateBack: options => navigations.push({ delta: options.delta }),
   showToast() {}, pageScrollTo() {},
 }
-global.getCurrentPages = () => []
+global.getCurrentPages = () => pageStack
 global.Page = value => { definition = value }
 require('../subpackages/study/practice/practice')
 const store = require('../utils/launch-session-store')
@@ -51,6 +54,7 @@ function page(options = {}) {
 function activePage() {
   memory.clear()
   navigations.length = 0
+  pageStack = []
   memory.set('user', { id: 11 })
   memory.set('token', 't')
   mono = 10000
@@ -130,5 +134,66 @@ test('declining pending recovery keeps the existing setup flow without forcing h
   fresh.loadPracticeSubjects = () => { loaded = true }
   await fresh.onReady()
   assert.equal(loaded, true)
+  assert.deepEqual(navigations, [])
+})
+
+test('real restored Page returns home after confirming exit, including repeated header taps', async () => {
+  const previous = activePage()
+  previous.selectOption({ detail: { option: 'A' } })
+  const fresh = page({ resume: '1' })
+  await fresh.onReady()
+  pageStack = [fresh]
+  fresh._showSubmitConfirmPaused = async () => true
+  await fresh.requestExitPractice({ source: 'test' })
+  fresh.goBack()
+  fresh.goBack()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.deepEqual(navigations, ['/pages/home/home'])
+  assert.equal(store.readPractice(), null)
+})
+
+test('real Page header preserves ordinary stack back and explicit launch-origin routing', async () => {
+  for (const root of [false, true]) {
+    const subject = activePage()
+    subject._resetPracticeStateAfterExit()
+    pageStack = root ? [subject] : [{ route: 'pages/home/home' }, subject]
+    if (root) subject._launchReturnTo = '/subpackages/knowledge/knowledge-detail/index?knowledge_point_id=9'
+    subject.goBack()
+    await new Promise(resolve => setTimeout(resolve, 40))
+    assert.deepEqual(navigations, root
+      ? ['/subpackages/knowledge/knowledge-detail/index?knowledge_point_id=9']
+      : [{ delta: 1 }])
+  }
+})
+
+test('scheduled real Page back is ignored after unload', async () => {
+  const subject = activePage()
+  subject._resetPracticeStateAfterExit()
+  pageStack = [subject]
+  subject.goBack()
+  subject.onUnload()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.deepEqual(navigations, [])
+  assert.equal(subject._returnNavigationLocked, false)
+})
+
+test('restored active practice system back still confirms before discarding answers', async () => {
+  const previous = activePage()
+  previous.selectOption({ detail: { option: 'A' } })
+  const fresh = page({ resume: '1' })
+  await fresh.onReady()
+  pageStack = [fresh]
+  let confirmed = false
+  fresh._showSubmitConfirmPaused = async () => confirmed
+  fresh.onPracticeExitGuardLeave()
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(fresh.data.started, true)
+  assert.equal(fresh.data.practiceExitGuardVisible, true)
+  assert.deepEqual(fresh._practiceSession.answerMap, { 1: 'A' })
+  confirmed = true
+  fresh.onPracticeExitGuardLeave()
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(fresh.data.started, false)
+  assert.equal(store.readPractice(), null)
   assert.deepEqual(navigations, [])
 })

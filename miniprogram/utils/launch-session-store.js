@@ -1,5 +1,6 @@
 const storage = require('./storage-core')
 const { getChinaDate } = require('./china-time')
+const { recordResumeEvent } = require('./launch-resume-diagnostics')
 
 const PRACTICE_PREFIX = 'practice_resume_v1:'
 const ACTIVE_PREFIX = 'study_active_v1:'
@@ -48,7 +49,10 @@ function readPractice(now = Date.now()) {
   if (!snapshotKey) return null
   const snapshot = storage.get(snapshotKey)
   if (!validPractice(snapshot, now)) {
-    if (snapshot) clearPractice()
+    if (snapshot) {
+      recordResumeEvent('practice_invalid')
+      clearPractice()
+    }
     return null
   }
   return snapshot
@@ -63,14 +67,17 @@ function savePractice(snapshot, now = Date.now()) {
   )
   const value = { ...snapshot, version: 1, owner: userId(), createdAt }
   if (!validPractice(value, now)) {
+    recordResumeEvent('practice_invalid')
     clearPractice()
     return false
   }
   try {
     storage.setStrict(snapshotKey, value)
     storage.setStrict(key(ACTIVE_PREFIX), { version: 1, kind: 'practice', owner: userId() })
+    if (!previous || previous.requestId !== snapshot.requestId) recordResumeEvent('practice_saved')
     return true
   } catch (error) {
+    recordResumeEvent('practice_save_failed')
     console.warn('保存练习恢复状态失败', error)
     return false
   }

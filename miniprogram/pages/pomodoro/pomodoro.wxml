@@ -1,3 +1,4 @@
+<root-back-guard />
 <view class="page theme-{{themeMode}} page-{{phase === 'break' ? 'break' : 'focus'}} {{isFreeTimer ? 'page-free' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
   <view class="theme-backdrop"></view>
   <view class="page-inner animation-entrance size-{{fontSizeLevel}} {{pageEntered ? 'entered' : ''}}">

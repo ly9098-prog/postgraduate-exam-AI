@@ -1,4 +1,8 @@
 <page-meta page-style="{{phase === 'overview' || phase === 'empty' || phase === 'reviewing' ? 'height: 100vh; overflow: hidden;' : ''}}" />
+<root-back-guard
+  delegate="{{phase === 'reviewing'}}"
+  bind:back="onNavBack"
+/>
 <premium-nav
   title="今日复习"
   variant="mint"

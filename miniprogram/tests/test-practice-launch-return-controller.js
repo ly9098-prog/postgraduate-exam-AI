@@ -82,7 +82,7 @@ test('navigateBack falls back through redirect, back and relaunch when no stack 
   state.locked = true
 
   controller.navigateBack('/subpackages/knowledge/knowledge-detail/index?id=1')
-  assert.equal(state.locked, false)
+  assert.equal(state.locked, true)
   assert.equal(state.calls[0].kind, 'redirect')
   state.calls[0].options.fail()
   assert.equal(state.calls[1].kind, 'reLaunch')
@@ -187,7 +187,8 @@ test('returnToOrigin locks once and waits for nextTick before navigation', () =>
   state.nextTicks[0]()
   assert.equal(state.timers[0].delay, 20)
   state.timers[0].callback()
-  assert.equal(state.calls[0].kind, 'navigateBack')
+  assert.equal(state.calls[0].kind, 'reLaunch')
+  assert.equal(state.calls[0].options.url, '/pages/home/home')
 })
 
 test('returnToOrigin falls back to immediate scheduling without nextTick', () => {
@@ -212,7 +213,7 @@ test('returnToOrigin hides a visible exit guard before navigation and respects t
   state.patches[1]()
   state.nextTicks[0]()
   state.timers[0].callback()
-  assert.equal(state.calls[0].kind, 'navigateBack')
+  assert.equal(state.calls[0].kind, 'reLaunch')
 })
 
 function matchingStack(state) {
@@ -264,7 +265,7 @@ test('retry re-reads the stack and falls back if the target disappears', () => {
   state.calls[0].options.fail()
   state.pages = [{ route: 'subpackages/study/practice/practice' }]
   state.timers[0].callback()
-  assert.equal(state.locked, false)
+  assert.equal(state.locked, true)
   assert.equal(state.calls[1].kind, 'redirect')
   assert.equal(state.calls[1].options.url, returnTo)
 })
@@ -301,7 +302,7 @@ test('stack matching stops at identity gaps and preserves undecoded fallback rul
   assert.equal(controller.findStackIndex(pages, `/${route}?subject_id=7`), 1)
 })
 
-test('returnToOrigin waits for guard completion and retains the navigation port identity', () => {
+test('returnToOrigin waits for guard completion and passes platform options to the navigation port', () => {
   const h = createHarness()
   const returnTo = matchingStack(h.state)
   h.state.exitGuardVisible = true
@@ -324,7 +325,28 @@ test('returnToOrigin waits for guard completion and retains the navigation port 
   assert.deepEqual(h.state.timers.map(timer => timer.delay), [20])
   assert.deepEqual(calls, [])
   h.state.timers[0].callback()
-  assert.deepEqual(calls, [[returnTo, 0]])
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].length, 1)
+  assert.equal(calls[0][0].delta, 1)
+  assert.equal(typeof calls[0][0].success, 'function')
+  assert.equal(typeof calls[0][0].fail, 'function')
+})
+
+test('failed fallback home unlocks for retry and duplicate taps cannot schedule concurrent navigation', () => {
+  const { controller, state } = createHarness({ hasNextTick: () => false })
+  state.pages = [{ route: 'subpackages/study/practice/practice' }]
+  controller.returnToOrigin()
+  controller.returnToOrigin()
+  assert.equal(state.timers.length, 1)
+  state.timers[0].callback()
+  assert.equal(state.locked, true)
+  state.calls[0].options.fail()
+  assert.equal(state.locked, false)
+  assert.equal(state.calls[1].kind, 'toast')
+  controller.returnToOrigin()
+  assert.equal(state.timers.length, 2)
+  state.timers[1].callback()
+  assert.equal(state.calls[2].kind, 'reLaunch')
 })
 
 test('navigation and retry ports preserve their receiver and lock ordering', () => {

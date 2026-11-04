@@ -1,3 +1,4 @@
+<root-back-guard />
 <view class="page">
 <app-dialog id="appDialog" theme="mint"></app-dialog>
 <scroll-view

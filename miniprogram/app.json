@@ -131,6 +131,7 @@
   "usingComponents": {
     "app-dialog": "/components/app-dialog/index",
     "premium-nav": "/components/premium-nav/premium-nav",
+    "root-back-guard": "/components/root-back-guard/index",
     "question-filter-panel": "/components/question-filter-panel/index"
   },
   "style": "v2",

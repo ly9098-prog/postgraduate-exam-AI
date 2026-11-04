@@ -1,12 +1,12 @@
 # 冷启动还原刷题、今日复习与番茄钟
 
-更新：2026-11-05（Asia/Shanghai）。小程序本地实现；后端、数据库及提交协议未改动。微信开发者工具与真机尚待手工验收。
+更新：2026-11-05（Asia/Shanghai）。用户已确认刷题、番茄钟冷启动恢复成功；本轮返回导航修复仍待真机复验。后端、数据库及提交协议未改动。
 
 ## 启动边界
 
 `pages/login/login.js` 完成现有登录与协议校验后，通过 `utils/launch-resume.js` 解析默认冷启动目标，直接 `wx.reLaunch`，不在目标页下方垫 home。`app.js`、`pages/home/home.js` 和三个目标页的 `Page({})` 均未修改。
 
-仅默认登录入口、空 query 且识别为普通启动场景时启用。显式路径、带参数入口及其他场景沿用原有入口流程；未知场景采取保守策略，不自动恢复。解析期间再次出现显式入口会取消本轮恢复。成功跳转后，普通热启动和登录页重入不再恢复；自动鉴权失效会记录进程内序号，重新登录后可再恢复一次，成功跳转即消费该序号。页面隐藏时延迟跳转，卸载或登录身份变化时拒绝迟响应跳转。
+仅默认登录入口、空 query 且识别为普通启动场景时启用。白名单为 `1001/1005/1006/1017/1023/1027/1089/1090/1103/1104`，其中 `1017` 为体验版入口，搜索和安卓桌面默认入口也可恢复。场景定义按微信官方 `wechat-miniprogram/api-typings` 的 `types/wx/lib.wx.app.d.ts` 核对；实际真机场景以诊断记录为准。显式路径、带参数入口及分享/二维码等其他场景沿用原有入口流程；未知场景不自动恢复。解析期间再次出现显式入口会取消本轮恢复。成功跳转后，普通热启动和登录页重入不再恢复；自动鉴权失效会记录进程内序号，重新登录后可再恢复一次，成功跳转即消费该序号。页面隐藏时延迟跳转，卸载或登录身份变化时拒绝迟响应跳转。
 
 优先级：
 
@@ -52,6 +52,25 @@
 
 恢复沿用 `autostart=1` 与现有 `/review/today/next-batch` / 草稿匹配。相同日期、未提交的待办排序不因本功能变化；题目改版或其他设备已提交导致匹配变化时，继续使用原有尽力恢复行为。无题/请求失败保留现有空态或错误态，不新增题目快照。
 
+## 恢复后的返回导航
+
+仍直接 `reLaunch` 到目标页，不预先加载 home。刷题确认退出后留在选题界面；
+左上角按钮经过 `launch-return-controller` 解析返回来源，向微信 `navigateBack` 传入标准选项对象。
+有匹配来源时返回原页面，无匹配时保留原跳转规则；单页栈无来源时 `reLaunch` 回 home。
+跳转期间保留锁，失败时提示并解锁，延迟回调在页面卸载后不再导航。
+
+`components/root-back-guard` 统一处理单页栈的系统返回：刷题选题界面、已提交但结果页未打开的界面、练习结果页、今日复习非作答阶段和番茄钟回到 home。
+今日复习作答阶段通过事件调用既有退出确认并重新启用拦截；弹窗期间重复返回和取消后仍受保护，确认后仍由原控制器清除活跃标记和计时。
+番茄钟只导航，不结束运行/暂停会话，保存仍由既有页面生命周期负责。
+普通多页栈不启用该组件的拦截；刷题作答阶段继续使用原退出 guard，两个容器通过互斥模板分支避免同时存在。
+
+组件只负责平台返回与 home 兜底，不读取业务存储、不依赖学习控制器；页面通过属性与事件提供退出确认策略。
+组件在 `app.json` 和四个目标分包页面登记，避免 `requiredComponents` 配合上传时遗漏依赖。
+页面的 `Page({})`、预算和计时/提交逻辑不变。新增组件为 74 行，最长方法 15 行，符合 300/50 预算。
+
+系统拦截依赖微信 `page-container`；微信官方组件文档注明鸿蒙 OS 暂不支持拦截页面返回。
+Android 物理返回、iOS 返回手势及原生导航栏的实际行为仍需真机验证。
+
 ## 验证与守卫
 
 新增行为测试：
@@ -59,6 +78,8 @@
 ```bash
 cd miniprogram
 node --test tests/test-launch-resume.js tests/test-login-launch-resume.js \
+  tests/test-launch-resume-diagnostics.js \
+  tests/test-root-back-guard.js tests/test-practice-launch-return-controller.js \
   tests/test-practice-cold-resume.js tests/test-practice-cold-resume-page.js \
   tests/test-review-active-resume.js
 node --test tests/test-*.js
@@ -89,7 +110,35 @@ node tests/test-main-package-size.js
 15. 超过 24 小时的刷题快照不恢复。
 16. 断网仍可直接恢复有效刷题快照；仅番茄钟时验证 1.5 秒超时及有/无本地快照两种降级。
 
-另需确认：栈长 1 时番茄钟微信原生“回首页”按钮的实际表现、跨设备/顺序预留重置后的服务端拒绝、多空题/图片/公式题恢复后的真实渲染，以及编译包质量扫描。
+另需确认：刷题恢复后确认退出，分别点击左上角和执行系统返回均进入 home；
+今日复习系统返回的确认/取消、结果页返回、番茄钟系统返回后会话仍可继续；
+普通多页返回及知识点指定来源不回归。跨设备/顺序预留重置后的服务端拒绝、
+多空题/图片/公式题真实渲染与编译包质量扫描仍待平台验收。
+
+### 真机恢复诊断
+
+`utils/launch-resume-diagnostics.js` 在 `debug_snapshot:launch_resume:v1` 保留最近 20 个事件。
+诊断独立于开发环境开关，仅记录事件类型、时间、已知页面路径、场景值、query 数量和目标页；
+未知路径统一写为 `other`，不记录参数值、身份、Token、批次凭据、题目或答案。
+诊断写入失败只输出固定警告，不阻断恢复。沿用现有 debug snapshot 清理规则。
+
+可在连接真机的调试控制台读取：
+
+```js
+wx.getStorageSync('debug_snapshot:launch_resume:v1')
+```
+
+- `entry_skipped`：入口或进程内消费条件不满足，可结合 scene/path/queryCount 排查。
+- `entry_changed`：解析期间出现显式入口，取消恢复。
+- `practice_saved` → `target_practice` → `practice_restored`：快照保存、启动选择和作答恢复完成。
+- `practice_invalid` / `practice_save_failed` / `practice_missing` / `practice_restore_failed`：分别对应无效快照、落盘失败、恢复时快照缺失或页面恢复失败。
+- `target_pomodoro` / `pomodoro_local`：服务端活跃或离线快照命中。
+- `pomodoro_inactive` / `pomodoro_unavailable` / `pomodoro_terminal`：服务端无活跃会话、请求失败且无有效本地快照或处于休息/结算。
+- `navigation_success`：登录页目标跳转成功；不代表目标页已完成渲染。
+
+2026-11-05 首轮真机反馈刷题与番茄钟重开均进入首页；补入体验版等默认入口后，
+用户确认冷启动恢复成功。现场实际 scene 仍未取得；本地真实登录页与解析器联合测试
+覆盖体验版入口的刷题/暂停番茄钟跳转。本轮新发现的返回导航问题另行修复、复验。
 
 ## 相关链接
 

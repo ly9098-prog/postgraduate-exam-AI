@@ -268,6 +268,45 @@ test('explicit paths, share/QR scenes and nonempty queries bypass cold routing',
   }
 })
 
+test('experience-version, search and desktop default entries restore practice and pomodoro', async () => {
+  const api = require('../utils/api')
+  const originalGet = api.get
+  try {
+    for (const scene of [1005, 1006, 1017, 1023, 1027]) {
+      reset()
+      delete require.cache[require.resolve(launchPath)]
+      const { createLoginResume, isDefaultEntry } = require(launchPath)
+      const entry = { path: 'pages/login/login', scene, query: {} }
+      assert.equal(isDefaultEntry(entry), true, String(scene))
+      const platform = { getLaunchOptionsSync: () => entry, getEnterOptionsSync: () => entry }
+      const store = loadStore()
+      store.savePractice({ requestId: 'r', batchToken: 'b', questions: [{ id: 1 }],
+        currentIndex: 0, elapsedMs: 1000, answerMap: { 1: 'A' } })
+      assert.match(await createLoginResume(platform).resolve(), /practice\?resume=1$/)
+      assert.deepEqual(store.readPractice().answerMap, { 1: 'A' })
+
+      store.clearPractice()
+      let requests = 0
+      api.get = async path => {
+        assert.equal(path, '/pomodoro/active')
+        requests++
+        return { id: 8, status: 'running' }
+      }
+      const login = createLoginResume(platform)
+      assert.equal(await login.resolve(), '/pages/pomodoro/pomodoro')
+      assert.equal(requests, 1)
+      login.complete()
+      assert.equal(await createLoginResume(platform).resolve(), '/pages/home/home')
+
+      assert.equal(isDefaultEntry({ ...entry, query: { target: 'practice' } }), false)
+      assert.equal(isDefaultEntry({ ...entry, path: 'pages/dashboard/dashboard' }), false)
+    }
+  } finally {
+    api.get = originalGet
+    delete require.cache[require.resolve(launchPath)]
+  }
+})
+
 test('default cold entry is consumed once and hot login reentry does not resume', async () => {
   reset()
   const { createLoginResume } = require(launchPath), store = loadStore()

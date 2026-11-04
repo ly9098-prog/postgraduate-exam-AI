@@ -42,22 +42,35 @@ function navigateBack(options, returnTo, attempt = 0) {
 }
 
 function navigateWithoutStackTarget(options, pages, returnTo) {
-  options.setNavigationLocked(false)
   if (returnTo) {
     options.redirectTo({
       url: returnTo,
-      fail: () => options.reLaunch({ url: '/pages/home/home' }),
+      fail: () => reLaunchHome(options),
     })
     return
   }
   if (pages.length > 1) {
     options.navigateBack({
       delta: 1,
-      fail: () => options.reLaunch({ url: '/pages/home/home' }),
+      fail: () => reLaunchHome(options),
     })
     return
   }
-  options.reLaunch({ url: '/pages/home/home' })
+  reLaunchHome(options)
+}
+
+function reLaunchHome(options) {
+  if (!options.isPageAlive()) {
+    options.setNavigationLocked(false)
+    return
+  }
+  options.reLaunch({
+    url: '/pages/home/home',
+    fail: () => {
+      options.setNavigationLocked(false)
+      if (options.isPageAlive()) options.showToast({ title: '返回失败，请再试一次', icon: 'none' })
+    },
+  })
 }
 
 function createNavigationRetry(options, returnTo, attempt) {
@@ -104,7 +117,7 @@ function returnToOrigin(options) {
   options.setNavigationLocked(true)
   const returnTo = options.getReturnTo()
   const navigate = () => {
-    const run = () => options.setTimeout(() => options.navigateBack(returnTo, 0), 20)
+    const run = () => options.setTimeout(() => navigateBack(options, returnTo, 0), 20)
     if (options.hasNextTick()) options.nextTick(run)
     else run()
   }

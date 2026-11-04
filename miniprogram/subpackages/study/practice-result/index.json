@@ -7,6 +7,7 @@
   "disableScroll": true,
   "usingComponents": {
     "app-dialog": "/components/app-dialog/index",
-    "wrong-book-empty": "../components/wrong-book-empty/index"
+    "wrong-book-empty": "../components/wrong-book-empty/index",
+    "root-back-guard": "/components/root-back-guard/index"
   }
 }

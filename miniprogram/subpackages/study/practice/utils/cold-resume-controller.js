@@ -3,6 +3,7 @@ const storage = require('../../../../utils/storage-core')
 const { buildRecoveryQuestions } = require('./recovery-questions-builder')
 const { monotonicNow } = require('./monotonic-clock')
 const adapter = require('../../utils/question-runner-adapter')
+const { recordResumeEvent } = require('../../../../utils/launch-resume-diagnostics')
 
 const SESSION_FIELDS = [
   'traceId', 'requestId', 'recommendationRequestId', 'batchToken', 'batchMode',
@@ -62,6 +63,7 @@ function restore(page, clock = monotonicNow) {
   page._coldResumeRequested = false
   const snapshot = store.readPractice()
   if (!snapshot) {
+    recordResumeEvent('practice_missing')
     returnHome(page)
     return true
   }
@@ -70,7 +72,9 @@ function restore(page, clock = monotonicNow) {
       throw new Error('resume_auth_required')
     }
     applySnapshot(page, snapshot, clock)
+    recordResumeEvent('practice_restored')
   } catch (error) {
+    recordResumeEvent('practice_restore_failed')
     clear(page)
     returnHome(page)
   }

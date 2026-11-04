@@ -4,7 +4,8 @@
   "navigationBarTextStyle": "black",
   "backgroundColor": "#F4F4EE",
   "usingComponents": {
-    "animated-view": "./components/AnimatedView/AnimatedView"
+    "animated-view": "./components/AnimatedView/AnimatedView",
+    "root-back-guard": "/components/root-back-guard/index"
   },
   "backgroundColorTop": "#F4F4EE",
   "backgroundColorBottom": "#F4F4EE"

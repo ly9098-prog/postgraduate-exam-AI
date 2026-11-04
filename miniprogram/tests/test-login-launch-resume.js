@@ -5,11 +5,11 @@ const path = require('node:path')
 const vm = require('node:vm')
 const source = fs.readFileSync(path.join(__dirname, '../pages/login/login.js'), 'utf8')
 
-function fixture() {
+function fixture(resumeOverride) {
   let definition, completeCount = 0, resolveCount = 0, finish
   const timers = new Map(), navigations = []
   const values = { token: 't', user: { id: 1 } }
-  const resume = {
+  const resume = resumeOverride || {
     resolve: () => { resolveCount++; return new Promise(resolve => { finish = resolve }) },
     complete: () => { completeCount++ },
   }
@@ -106,4 +106,47 @@ test('a profile refresh for the same identity does not strand the login redirect
   harness.finish('/pages/home/home')
   await running
   assert.deepEqual(harness.navigations, ['/pages/home/home'])
+})
+
+test('experience-version login uses the real resolver after process reconstruction', async () => {
+  const originalWx = global.wx
+  const api = require('../utils/api')
+  const originalGet = api.get
+  const launchPath = require.resolve('../utils/launch-resume')
+  const memory = new Map()
+  const entry = { path: 'pages/login/login', scene: 1017, query: {} }
+  const platform = { getLaunchOptionsSync: () => entry, getEnterOptionsSync: () => entry }
+  try {
+    global.wx = {
+      getStorageSync: key => memory.get(key),
+      setStorageSync: (key, value) => memory.set(key, structuredClone(value)),
+      removeStorageSync: key => memory.delete(key),
+    }
+    const store = require('../utils/launch-session-store')
+    for (const kind of ['practice', 'pomodoro']) {
+      memory.clear()
+      memory.set('token', 't')
+      memory.set('user', { id: 1 })
+      if (kind === 'practice') {
+        store.savePractice({ requestId: 'r', batchToken: 'b', questions: [{ id: 1 }],
+          currentIndex: 0, elapsedMs: 1000, answerMap: { 1: 'A' } })
+      }
+      api.get = async () => {
+        assert.equal(kind, 'pomodoro')
+        return { id: 9, status: 'paused' }
+      }
+      delete require.cache[launchPath]
+      const resume = require(launchPath).createLoginResume(platform)
+      const harness = fixture(resume)
+      await harness.runTimer()
+      assert.deepEqual(harness.navigations, [kind === 'practice'
+        ? '/subpackages/study/practice/practice?resume=1' : '/pages/pomodoro/pomodoro'])
+      if (kind === 'practice') assert.deepEqual(store.readPractice().answerMap, { 1: 'A' })
+      assert.equal(await require(launchPath).createLoginResume(platform).resolve(), '/pages/home/home')
+    }
+  } finally {
+    global.wx = originalWx
+    api.get = originalGet
+    delete require.cache[launchPath]
+  }
 })
