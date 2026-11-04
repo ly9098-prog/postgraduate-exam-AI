@@ -9,6 +9,7 @@ const { KEYS } = storage
 
 let _refreshing = null
 let _redirecting = false
+let _authInvalidationSeq = 0
 
 // 主动续签阈值：token 过期前 1 小时即触发续签
 // 避免因 24h 阈值适配短生命周期 token 时持续刷新
@@ -74,6 +75,7 @@ async function _refreshToken(traceId = '') {
 }
 
 function _clearAuthAndRedirect() {
+  _authInvalidationSeq += 1
   // 自动失效场景不清除协议同意记录，避免用户在登录页被强制重新同意
   storage.clearSession({
     preservePrivacyAcceptance: true, includeDebugSnapshots: true, preserveLaunchResume: true,
@@ -82,6 +84,10 @@ function _clearAuthAndRedirect() {
     _redirecting = true
     wx.reLaunch({ url: '/pages/login/login' })
   }
+}
+
+function getAuthInvalidationSeq() {
+  return _authInvalidationSeq
 }
 
 async function forceRefreshToken(traceId = '') {
@@ -141,6 +147,7 @@ function _buildHeader(traceId, requestId) {
 module.exports = {
   PROACTIVE_REFRESH_SEC,
   resetRedirecting,
+  getAuthInvalidationSeq,
   normalizeExpiresAt: _normalizeExpiresAt,
   forceRefreshToken,
   ensureValidToken,

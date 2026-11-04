@@ -32,7 +32,7 @@ function clearPractice() {
 function validPractice(snapshot, now) {
   return Boolean(snapshot && snapshot.version === 1 && snapshot.owner === userId() &&
     Number.isFinite(snapshot.createdAt) && snapshot.createdAt > 0 &&
-    now >= snapshot.createdAt && now - snapshot.createdAt < TTL_MS &&
+    now - snapshot.createdAt < TTL_MS &&
     typeof snapshot.batchToken === 'string' && snapshot.batchToken.trim() &&
     typeof snapshot.requestId === 'string' && snapshot.requestId.trim() &&
     Array.isArray(snapshot.questions) && snapshot.questions.length > 0 &&
@@ -104,7 +104,7 @@ function readPending(now = Date.now()) {
   const pending = storage.get(pendingKey)
   if (!pending) return null
   const freshness = Number(pending.updatedAt || pending.createdAt)
-  if (!freshness || now - freshness >= TTL_MS || freshness > now) {
+  if (!freshness || now - freshness >= TTL_MS) {
     storage.remove(pendingKey)
     return null
   }

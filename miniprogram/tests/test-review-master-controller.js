@@ -33,6 +33,7 @@ function createHarness(overrides = {}) {
     logs: [],
     callbacks: [],
     timerCleared: false,
+    activityCleared: false,
     timerStarted: false,
   }
   const controller = createReviewMasterController({
@@ -63,6 +64,7 @@ function createHarness(overrides = {}) {
     clearUndo: () => controller.clearUndo(),
     armUndoExpiry: ms => controller.armUndoExpiry(ms),
     clearReviewTimer: () => { state.timerCleared = true },
+    clearReviewActivity: () => { state.activityCleared = true },
     getTodayRemainingCount: () => state.data.todayRemainingCount,
     syncAnsweredFlags: () => { state.callbacks.push('sync') },
     showQuestion: index => { state.callbacks.push(['show', index]) },
@@ -119,11 +121,24 @@ test('marks a question as mastered and keeps a five second undo window', async (
   assert.equal(state.masteredCount, 1)
   assert.deepEqual(state.callbacks, ['refresh', 'sync', ['show', 0]])
   assert.equal(state.timerStarted, false)
+  assert.equal(state.activityCleared, false)
 
   state.timerCallback()
   assert.equal(state.pendingMasterUndo, null)
   assert.equal(state.masterUndoTimer, null)
   assert.equal(state.data.masterUndoVisible, false)
+})
+
+test('mastering the last question explicitly ends activity for overview and empty', async () => {
+  for (const remaining of [0, 2]) {
+    const { controller, state } = createHarness()
+    state.data.groupQuestions = [state.data.groupQuestions[1]]
+    state.data.todayRemainingCount = remaining
+    await controller.confirm()
+    assert.equal(state.activityCleared, true)
+    assert.equal(state.timerCleared, true)
+    assert.equal(state.data.phase, remaining ? 'overview' : 'empty')
+  }
 })
 
 test('master sync and request failures preserve page state safely', async () => {

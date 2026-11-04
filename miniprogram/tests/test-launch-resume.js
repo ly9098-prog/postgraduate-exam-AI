@@ -6,6 +6,8 @@ global.wx = {
   getStorageSync: key => memory.get(key),
   setStorageSync: (key, value) => memory.set(key, structuredClone(value)),
   removeStorageSync: key => memory.delete(key),
+  getStorageInfoSync: () => ({ keys: [...memory.keys()] }),
+  reLaunch: () => {},
 }
 const storage = require('../utils/storage-core')
 const storePath = '../utils/launch-session-store'
@@ -54,6 +56,34 @@ test('practice expiry is fixed at batch creation and corrupt snapshots are remov
     assert.equal(store.readPractice(200), null)
     assert.equal(memory.has('practice_resume_v1:11'), false)
   }
+})
+
+test('a future pending timestamp is not discarded as expired', () => {
+  reset()
+  const store = loadStore()
+  const now = 1000
+  memory.set('practice_pending_submission_v1:11', {
+    version: 1, status: 'pending', updatedAt: now + 1000, submission: { requestId: 'r' },
+  })
+  assert.equal(store.readPending(now).status, 'pending')
+  assert.equal(memory.has('practice_pending_submission_v1:11'), true)
+})
+
+test('clock rollback preserves practice answers, original expiry and launch routing', async () => {
+  reset()
+  const store = loadStore()
+  const { resolveLaunchTarget } = require(launchPath)
+  const createdAt = 100000
+  const snapshot = { requestId: 'r', batchToken: 'b', questions: [{ id: 1 }],
+    currentIndex: 0, elapsedMs: 1200, answerMap: { 1: 'A' } }
+  store.savePractice(snapshot, createdAt)
+  const restored = store.readPractice(createdAt - 1000)
+  assert.deepEqual(restored.answerMap, { 1: 'A' })
+  assert.match(await resolveLaunchTarget({ now: createdAt - 1000 }), /practice\?resume=1$/)
+  assert.equal(store.savePractice({ ...restored, elapsedMs: 2000 }, createdAt - 1000), true)
+  assert.equal(store.readPractice(createdAt).createdAt, createdAt)
+  assert.equal(store.readPractice(createdAt + 86400000), null)
+  assert.equal(store.readActive(createdAt + 86400000), null)
 })
 
 test('review marker uses the single active slot and expires across China dates', () => {
@@ -253,6 +283,30 @@ test('default cold entry is consumed once and hot login reentry does not resume'
   assert.equal(await createLoginResume(platform).resolve(), '/pages/home/home')
   cold.complete()
   assert.equal(await createLoginResume(platform).resolve(), '/pages/home/home')
+})
+
+test('auth invalidation re-login can resume the preserved session once', async () => {
+  reset()
+  const { createLoginResume } = require(launchPath)
+  const store = loadStore()
+  const apiAuth = require('../utils/api-auth')
+  store.markReview(require('../utils/china-time').getChinaDate(0))
+  const entry = { path: 'pages/login/login', scene: 1001 }
+  const platform = { getLaunchOptionsSync: () => entry, getEnterOptionsSync: () => entry }
+
+  createLoginResume(platform).complete()
+  const before = apiAuth.getAuthInvalidationSeq()
+  apiAuth.resetRedirecting()
+  await assert.rejects(apiAuth.forceRefreshToken())
+  assert.equal(apiAuth.getAuthInvalidationSeq(), before + 1)
+
+  memory.set('user', { id: 11 })
+  memory.set('token', 'token')
+  const reentry = createLoginResume(platform)
+  assert.match(await reentry.resolve(), /review-today/)
+  reentry.complete()
+  assert.equal(await createLoginResume(platform).resolve(), '/pages/home/home')
+  apiAuth.resetRedirecting()
 })
 
 test('automatic auth invalidation can preserve owned recovery state; explicit logout still clears it', () => {

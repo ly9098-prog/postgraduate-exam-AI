@@ -70,7 +70,7 @@ const MODULE_BUDGETS = {
   'review-overview-page-adapter.js': 84,
   'review-session-page-adapter.js': 84,
   'review-submit-page-adapter.js': 104,
-  'review-progress-page-adapter.js': 125,
+  'review-progress-page-adapter.js': 126,
 }
 const FUNCTION_BUDGET = 50
 

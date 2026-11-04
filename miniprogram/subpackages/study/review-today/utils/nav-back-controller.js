@@ -14,6 +14,7 @@ function createNavBackController(options) {
 
     confirmExitReview() {
       options.clearMasterUndo()
+      options.clearReviewActivity()
       options.clearReviewTimer()
       options.setData({ exitConfirmVisible: false })
       navigateBack(options)

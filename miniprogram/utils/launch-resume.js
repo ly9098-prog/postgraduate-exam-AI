@@ -1,6 +1,7 @@
 const store = require('./launch-session-store')
 const storage = require('./storage-core')
 const api = require('./api')
+const apiAuth = require('./api-auth')
 
 const HOME = '/pages/home/home'
 const PRACTICE = '/subpackages/study/practice/practice?resume=1'
@@ -8,6 +9,7 @@ const REVIEW = '/subpackages/study/review-today/review-today?autostart=1'
 const POMODORO = '/pages/pomodoro/pomodoro'
 const TIMEOUT_MS = 1500
 let coldEntryHandled = false
+let consumedAuthInvalidationSeq = 0
 
 function isDefaultEntry(entry) {
   if (!entry) return false
@@ -58,7 +60,10 @@ async function resolveLaunchTarget(options = {}) {
 function createLoginResume(platform = wx) {
   const launch = typeof platform.getLaunchOptionsSync === 'function'
     ? platform.getLaunchOptionsSync() : null
-  let eligible = !coldEntryHandled && isDefaultEntry(launch)
+  const authInvalidationSeq = typeof apiAuth.getAuthInvalidationSeq === 'function'
+    ? apiAuth.getAuthInvalidationSeq() : 0
+  let eligible = isDefaultEntry(launch) && (!coldEntryHandled ||
+    authInvalidationSeq > consumedAuthInvalidationSeq)
   return {
     async resolve() {
       const target = eligible ? await resolveLaunchTarget() : HOME
@@ -74,6 +79,8 @@ function createLoginResume(platform = wx) {
     complete() {
       eligible = false
       coldEntryHandled = true
+      consumedAuthInvalidationSeq = typeof apiAuth.getAuthInvalidationSeq === 'function'
+        ? apiAuth.getAuthInvalidationSeq() : 0
     },
   }
 }

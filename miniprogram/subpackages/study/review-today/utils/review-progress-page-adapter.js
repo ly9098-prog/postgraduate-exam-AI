@@ -7,7 +7,7 @@ const { createNextGroupController } = require('./next-group-controller')
 const { createNextRetryGroupController } = require('./next-retry-group-controller')
 const { createNextRemoteBatchController } = require('./next-remote-batch-controller')
 const { createReviewTimerController } = require('./review-timer-controller')
-const { createReviewStateWriter } = require('./review-active-state')
+const { createReviewStateWriter, createReviewActivityClearer } = require('./review-active-state')
 
 function buildReviewMasterPageCapabilities(page, deps) {
   const { api } = deps
@@ -33,6 +33,7 @@ function buildReviewMasterPageCapabilities(page, deps) {
       clearUndo: () => page._clearMasterUndo(),
       armUndoExpiry: ms => page._armMasterUndoExpiry(ms),
       clearReviewTimer: () => page._clearReviewTimer(),
+      clearReviewActivity: createReviewActivityClearer(),
       getTodayRemainingCount: () => page.data.todayRemainingCount,
       syncAnsweredFlags: () => page._syncAnsweredFlags(),
       showQuestion: index => page._showQuestion(index),

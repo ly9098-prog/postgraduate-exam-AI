@@ -128,6 +128,7 @@ function buildGroupsAfterMaster(plan, groupQuestions) {
 
 function finishMasterRemoval(options, groupQuestions, currentIndex) {
   if (groupQuestions.length === 0) {
+    options.clearReviewActivity()
     options.clearReviewTimer()
     const nextPhase = options.getTodayRemainingCount() > 0 ? 'overview' : 'empty'
     options.setData({

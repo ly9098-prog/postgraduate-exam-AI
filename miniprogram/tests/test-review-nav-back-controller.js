@@ -10,6 +10,7 @@ function createHarness(overrides = {}) {
     patches: [],
     masterCleared: false,
     timerCleared: false,
+    activityCleared: false,
     navigatedBack: false,
     reLaunched: false,
   }
@@ -18,6 +19,7 @@ function createHarness(overrides = {}) {
     setData: patch => { state.patches.push(patch) },
     clearMasterUndo: () => { state.masterCleared = true },
     clearReviewTimer: () => { state.timerCleared = true },
+    clearReviewActivity: () => { state.activityCleared = true },
     getCurrentPages: () => [1, 2],
     navigateBack: () => { state.navigatedBack = true },
     reLaunch: () => { state.reLaunched = true },
@@ -33,6 +35,7 @@ test('onNavBack shows exit confirm in reviewing phase', () => {
 
   assert.deepEqual(state.patches[0], { exitConfirmVisible: true })
   assert.equal(state.navigatedBack, false)
+  assert.equal(state.activityCleared, false)
 })
 
 test('onNavBack navigates back in non-reviewing phase', () => {
@@ -64,6 +67,7 @@ test('closeExitConfirm hides confirm', () => {
   controller.closeExitConfirm()
 
   assert.deepEqual(state.patches[0], { exitConfirmVisible: false })
+  assert.equal(state.activityCleared, false)
 })
 
 test('confirmExitReview clears state and navigates back', () => {
@@ -72,5 +76,6 @@ test('confirmExitReview clears state and navigates back', () => {
 
   assert.equal(state.masterCleared, true)
   assert.equal(state.timerCleared, true)
+  assert.equal(state.activityCleared, true)
   assert.equal(state.navigatedBack, true)
 })

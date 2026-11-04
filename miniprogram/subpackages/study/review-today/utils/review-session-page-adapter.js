@@ -52,12 +52,12 @@ function buildStartBatchPageCapabilities(page, deps) {
 }
 
 function buildNavBackPageCapabilities(page, deps) {
-  const clearReviewActivity = createReviewActivityClearer()
   return {
       getPhase: () => page.data.phase,
       setData: patch => page.setData(patch),
       clearMasterUndo: () => page._clearMasterUndo(),
-      clearReviewTimer: () => { clearReviewActivity(); page._clearReviewTimer() },
+      clearReviewTimer: () => page._clearReviewTimer(),
+      clearReviewActivity: createReviewActivityClearer(),
       getCurrentPages: () => getCurrentPages(),
       navigateBack: () => wx.navigateBack(),
       reLaunch: options => wx.reLaunch(options),

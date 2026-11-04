@@ -6,7 +6,7 @@ function createReviewStateWriter(page) {
     if (owner && owner === store.userId()) {
       if (patch.phase === 'reviewing') {
         store.markReview((page._reviewSession || {}).taskDate)
-      } else if (['group-result', 'overview', 'empty', 'error'].includes(patch.phase)) {
+      } else if (['group-result', 'empty'].includes(patch.phase)) {
         store.clearActive('review-today')
       }
     }

@@ -232,11 +232,25 @@
 
 ## 执行结果（2026-11-05）
 
-- 启动解析：新增 `utils/launch-session-store.js` / `launch-resume.js`，登录后按待确认 `pending|blocked` 提交 → 单槽刷题/复习标记 → 番茄钟 active → home 解析，直接 `reLaunch`。仅默认登录入口、空 query 和普通启动场景生效；未知场景不恢复，热启动、显式入口和其它场景保持原流程。番茄钟请求使用 500 ms client 网络超时、1500 ms 总等待上限，失败按当前用户有归属的本地快照降级。
+- 启动解析：新增 `utils/launch-session-store.js` / `launch-resume.js`，登录后按待确认 `pending|blocked` 提交 → 单槽刷题/复习标记 → 番茄钟 active → home 解析，直接 `reLaunch`。仅默认登录入口、空 query 和普通启动场景生效；未知场景不恢复，热启动、显式入口和其它场景保持原流程。番茄钟请求使用 1500 ms client 网络超时、1500 ms 总等待上限，失败按当前用户有归属的本地快照降级。
 - 刷题：`practice?resume=1` 由 `cold-resume-controller.js` 在现有 `onReady` 恢复精简题目、原请求/批次凭据、答案、位置、入口上下文和前台用时；作答/切题/`onHide` 写入，进入页面起固定 24 小时。确认退出、待确认提交成功持久化时清除或接管快照；取消确认继续保留。恢复后保留科目选择、静默加载科目树且禁止自动开新练习。恢复失败清除状态回 home，迟到 `onHide` 不重建。
-- 复习：`review-active-state.js` 在初次批次/下一批/重试组/掌握撤销进入 `reviewing` 时置位，本组结果、overview/empty、跨天、确认退出时清除；草稿和 `onUnload` 行为不变。跨天恢复拒绝；进入时复用现有 `autostart`、next-batch 和草稿匹配。
+- 复习：`review-active-state.js` 在初次批次/下一批/重试组/掌握撤销进入 `reviewing` 时置位，本组结果、empty、掌握移除最后一题、跨天、确认退出时清除；普通 overview 加载和瞬时 error 保留标记，草稿和 `onUnload` 行为不变。跨天恢复拒绝；进入时复用现有 `autostart`、next-batch 和草稿匹配。
 - 隔离：刷题/复习动态键按用户前缀，显式登出清除；自动鉴权失效保留恢复键但清除身份，迟到回调按启动时 owner 校验。番茄钟快照 `session-storage` 写入 `ownerId`，页面读取与 reconciler 在 storage 边界校验归属，无身份迟到 `onHide` 不覆盖快照。
-- 守卫：`practice.js` 542 行/113 属性、`review-today.js` 645 行/24 控制器、`pomodoro.js` 1596 行均未变。practice 守卫仅豁免三个既有责任模块对 `cold-resume-controller` 的直接 require；review 守卫登记四个适配器对 `review-active-state` 的依赖，require 35→39、适配器源预算 +5 行；通用 300/50 与包体预算通过。
+- 守卫：`practice.js` 542 行/113 属性、`review-today.js` 645 行/24 控制器、`pomodoro.js` 1596 行均未变。practice 守卫仅豁免三个既有责任模块对 `cold-resume-controller` 的直接 require；review 守卫登记四个适配器对 `review-active-state` 的依赖，require 35→39、适配器源预算 +6 行；通用 300/50 与包体预算通过。
 - 验证：新增 36 项定向行为测试（含真实 Page 作答/切题/隐藏恢复、退出、交卷失败、科目树、登录隐藏/换身份、番茄钟归属），全量 `node --test tests/test-*.js` 2597/2597 通过；受影响 50 项相邻回归、5 fixture/31 渲染回归、architecture 守卫、主包/分包/媒体预算通过。已新增 5 个测试到 reliability 固定清单。
 - 独立脚本 `node --test scripts/test-*.js` 为 25/28；3 个失败（`test-error-diagnosis`、`test-v5-ui-fixes`、`test-v8-fixes`）在未修改的 `HEAD` 归档副本同样失败，属于既有基线而非本任务回归。`codex review --uncommitted` 的两条 P2（跨用户番茄钟旧快照、恢复后科目树为空）均已先复现、修复并加回归测试。
 - 文档：新增 `docs/frontend/LAUNCH_RESUME.md`，更新文档索引和相关链接。未改后端、数据库、OpenAPI、提交协议；未提交、推送、部署或同步 Windows 镜像。微信开发者工具编译/模拟器/真机、原生“回首页”、真实网络/预留/多设备场景及编译包质量扫描未验证，不能以 Node 测试替代。
+
+## 复审修复（2026-11-05）
+
+- 自动鉴权失效后重新登录可恢复一次：`api-auth` 增加进程内失效序号，`launch-resume` 在新登录入口检测未消费的失效序号；显式登出及普通热启动仍不恢复。新增真实 refresh 失败路径回归。
+- 复习标记不再被普通 overview 加载或瞬时 error 清除；掌握操作移除本组最后一题仍通过显式清除路径回到 overview/empty，组结果、empty 和确认退出继续清除。新增保留与显式清除回归。
+- 待确认交卷记录不再因设备时钟回拨产生的未来时间戳被删除，仅按 24 小时 TTL 清理；新增未来时间戳保留回归。
+- 修复后全量 `node --test tests/test-*.js` 2601/2601 通过；review-today 架构守卫、practice 守卫、学习控制器预算、渲染 fixture 31/31、主包/分包/媒体预算和包体质量检查通过。微信开发者工具/真机验收仍未执行。
+
+### 内聚与耦合复审修复
+
+- 普通刷题快照也容忍设备时钟回拨，读写保留原始创建时间，原 24 小时过期边界不变；补充答案保留、启动目标、再次保存不续期和到期清理回归。
+- 掌握移除最后一题及确认退出复习均通过独立 `clearReviewActivity` 端口清除标记；`clearReviewTimer` 仅负责计时，不再隐藏会话清理副作用。同步适配器固定契约，覆盖保留其他题目、overview/empty 和取消退出边界。
+- 本轮先增加回归，6 项失败复现后修复至通过；首次全量检查发现固定端口契约需同步，已按新增的两个业务端口更新。本轮修复连同上一轮未提交修复一起提交；不包含既有无关改动、不推送或部署。
+- 最终验证：全量 `node --test tests/test-*.js` 2603/2603 通过；practice/review-today 架构守卫、学习控制器/模块预算、渲染 31/31、主包/分包/媒体预算和包体质量检查通过。微信开发者工具编译及真机验收仍待完成。
