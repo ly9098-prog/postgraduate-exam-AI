@@ -61,7 +61,8 @@ test('load resets navigation/request state and configures render guard before na
   assert.equal(f.page._fastLaunchEligible, true)
   assert.equal(f.page._pageAlive, true)
   assert.equal(f.page._questionsRequestSeq, 0)
-  assert.deepEqual(f.calls.slice(-4).map(row => row[0]), ['guard', 'resetGuard', 'navigation', 'computed'])
+  assert.deepEqual(f.calls.slice(-5).map(row => row[0]), ['guard', 'resetGuard', 'navigation', 'computed', 'setData'])
+  assert.equal(f.page.data.practiceExitGuardVisible, true)
 })
 
 test('unload preserves timer cleanup order and stops at a synchronous cleanup failure', () => {

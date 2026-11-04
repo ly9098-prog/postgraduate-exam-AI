@@ -57,7 +57,11 @@ function fixture(sourcePath = process.env.PRACTICE_PAGE_SOURCE) {
     const required = request => {
       if (Object.hasOwn(stubs, request)) return stubs[request]
       if (Object.hasOwn(FACTORIES, request)) return { [FACTORIES[request]]: options => {
-        const instance = { type: FACTORIES[request], options }; instances.push(instance); return instance
+        const instance = { type: FACTORIES[request], options }
+        if (request === './utils/exit-guard-controller') {
+          Object.assign(instance, load(path.join(root, 'utils/exit-guard-controller.js')).createExitGuardController(options))
+        }
+        instances.push(instance); return instance
       } }
       const resolved = require.resolve(path.resolve(path.dirname(filename), request))
       if (!resolved.startsWith(path.resolve(root, '..') + path.sep)) throw Error('Unexpected dependency: ' + request)

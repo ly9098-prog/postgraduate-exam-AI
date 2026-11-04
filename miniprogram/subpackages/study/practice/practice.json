@@ -8,7 +8,6 @@
     "loading-lottie": "/subpackages/study/components/loading-lottie/loading-lottie",
     "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",
     "submit-confirm": "/subpackages/study/components/submit-confirm/submit-confirm",
-    "premium-nav": "/components/premium-nav/premium-nav",
-    "root-back-guard": "/components/root-back-guard/index"
+    "premium-nav": "/components/premium-nav/premium-nav"
   }
 }

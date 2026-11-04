@@ -1,6 +1,7 @@
 function createExitGuardController(options) {
   return {
     setUnloadGuard: (enabled, message) => setUnloadGuard(options, enabled, message),
+    syncVisibility: () => syncVisibility(options),
     shouldInterceptSystemBack: () => shouldInterceptSystemBack(options),
     rearm: () => rearm(options),
     handleGuardLeave: () => handleGuardLeave(options),
@@ -24,8 +25,12 @@ function setUnloadGuard(options, enabled, message) {
       options.setRearmTimer(null)
     }
   }
+  syncVisibility(options)
+}
+
+function syncVisibility(options) {
   if (!options.isPageAlive()) return
-  const visible = !!enabled
+  const visible = !options.isNavigationLocked()
   if (options.isGuardVisible() !== visible) {
     options.setData({ practiceExitGuardVisible: visible })
   }
@@ -35,6 +40,7 @@ function shouldInterceptSystemBack(options) {
   const session = options.getSession()
   return !!(
     options.isPageAlive() &&
+    !options.isNavigationLocked() &&
     session &&
     session.exitGuardActive &&
     options.isStarted() &&
@@ -71,7 +77,11 @@ function rearm(options) {
 }
 
 function handleGuardLeave(options) {
-  if (!shouldInterceptSystemBack(options)) return
+  if (!options.isPageAlive() || options.isNavigationLocked()) return
+  if (!shouldInterceptSystemBack(options)) {
+    options.returnToOrigin()
+    return
+  }
   rearm(options)
   if (options.isPromptQueued() || options.isExitConfirmInFlight()) return
   options.setPromptQueued(true)

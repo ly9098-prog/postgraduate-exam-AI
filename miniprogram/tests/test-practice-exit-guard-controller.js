@@ -27,6 +27,8 @@ function createHarness(overrides = {}) {
     warnings: [],
     exitRequests: [],
     clearedTimers: [],
+    navigationLocked: false,
+    returns: 0,
   }
   const controller = createExitGuardController({
     getSession: () => state.session,
@@ -39,6 +41,8 @@ function createHarness(overrides = {}) {
     isGuardVisible: () => state.visible,
     isStarted: () => state.started,
     isSubmitted: () => state.submitted,
+    isNavigationLocked: () => state.navigationLocked,
+    returnToOrigin: () => { state.navigationLocked = true; state.returns++ },
     isRearming: () => state.rearming,
     setRearming: value => { state.rearming = value },
     getRearmTimer: () => state.rearmTimer,
@@ -73,7 +77,7 @@ function createHarness(overrides = {}) {
   return { controller, state }
 }
 
-test('setUnloadGuard updates session, disables native guard, and only commits changed visibility', () => {
+test('setUnloadGuard updates session while preserving the page navigation container', () => {
   const { controller, state } = createHarness()
   state.visible = true
 
@@ -86,7 +90,23 @@ test('setUnloadGuard updates session, disables native guard, and only commits ch
   controller.setUnloadGuard(false, '')
   assert.equal(state.session.exitGuardActive, false)
   assert.equal(state.session.exitGuardMessage, '')
-  assert.deepEqual(state.patches, [{ practiceExitGuardVisible: false }])
+  assert.deepEqual(state.patches, [])
+})
+
+test('page navigation stays guarded after session confirmation is disabled', () => {
+  const { controller, state } = createHarness()
+  state.visible = true
+  state.started = true
+  state.session.exitGuardActive = true
+  controller.setUnloadGuard(false)
+  assert.equal(state.session.exitGuardActive, false)
+  assert.equal(state.visible, true)
+  state.started = false
+  controller.handleGuardLeave()
+  assert.equal(state.returns, 1)
+  assert.deepEqual(state.exitRequests, [])
+  controller.handleGuardLeave()
+  assert.equal(state.returns, 1)
 })
 
 test('setUnloadGuard tolerates missing session and disableAlertBeforeUnload failures', () => {
@@ -100,7 +120,6 @@ test('setUnloadGuard tolerates missing session and disableAlertBeforeUnload fail
   assert.equal(state.session.exitGuardActive, false)
   assert.deepEqual(state.patches, [
     { practiceExitGuardVisible: true },
-    { practiceExitGuardVisible: false },
   ])
 })
 
@@ -189,7 +208,7 @@ test('rearm falls back to a zero-delay timer without nextTick', () => {
   assert.equal(state.rearming, false)
 })
 
-test('disabling the guard clears a scheduled fallback rearm timer and prevents a later show', () => {
+test('ending session confirmation clears its rearm timer while preserving page navigation', () => {
   const { controller, state } = createHarness({ hasNextTick: () => false })
   state.session.exitGuardActive = true
   state.started = true
@@ -205,7 +224,10 @@ test('disabling the guard clears a scheduled fallback rearm timer and prevents a
   assert.deepEqual(state.clearedTimers, [state.timers[0]])
 
   state.timers[0].callback()
-  assert.deepEqual(state.patches, [{ practiceExitGuardVisible: false }])
+  assert.deepEqual(state.patches, [
+    { practiceExitGuardVisible: false },
+    { practiceExitGuardVisible: true },
+  ])
 })
 
 test('rearm resets state when interception becomes invalid before showing', () => {
@@ -270,4 +292,22 @@ test('guard leave resets the queue flag and warns when the prompt fails', async 
   assert.equal(state.promptQueued, false)
   assert.equal(state.warnings.length, 1)
   assert.equal(state.warnings[0][0], '系统返回退出确认处理失败')
+})
+
+test('programmatic navigation hides the guard and ignores late native leave and rearm callbacks', () => {
+  const { controller, state } = createHarness()
+  state.started = true
+  state.session.exitGuardActive = true
+  state.visible = true
+  controller.rearm()
+  state.callbacks[0]()
+  state.navigationLocked = true
+  controller.syncVisibility()
+  state.nextTicks[0]()
+  controller.handleGuardLeave()
+  assert.equal(state.visible, false)
+  assert.equal(state.rearming, false)
+  assert.equal(controller.shouldInterceptSystemBack(), false)
+  assert.deepEqual(state.exitRequests, [])
+  assert.equal(state.returns, 0)
 })

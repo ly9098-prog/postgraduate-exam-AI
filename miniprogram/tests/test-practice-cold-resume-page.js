@@ -197,3 +197,67 @@ test('restored active practice system back still confirms before discarding answ
   assert.equal(store.readPractice(), null)
   assert.deepEqual(navigations, [])
 })
+
+for (const restored of [false, true]) {
+  test(`${restored ? 'cold restored' : 'normally started'} system back confirms, cancels and returns to setup on the same Page`, async () => {
+    let subject
+    if (restored) {
+      const previous = activePage()
+      previous.selectOption({ detail: { option: 'A' } })
+      subject = page({ resume: '1' })
+      pageStack = [subject]
+      await subject.onReady()
+    } else {
+      activePage()
+      subject = page()
+      pageStack = [{ route: 'pages/home/home' }, subject]
+      subject.data.selectedSubjectId = 9
+      subject._flushPendingRecentSubject = () => {}
+      subject._loadQuestions = async () => {
+        Object.assign(subject._practiceSession, { requestId: 'r', batchToken: 'b' })
+        Object.assign(subject.data, { loading: false, questions: structuredClone(questions), totalQuestions: 2 })
+        subject._showQuestion(0)
+      }
+      await subject.startPractice()
+      subject.selectOption({ detail: { option: 'A' } })
+    }
+    const originalStack = [...pageStack]
+    let finishConfirm
+    const prompts = []
+    subject._showSubmitConfirmPaused = options => {
+      prompts.push(options)
+      return new Promise(resolve => { finishConfirm = resolve })
+    }
+    assert.equal(subject.data.practiceExitGuardVisible, true)
+    subject.onPracticeExitGuardLeave()
+    subject.onPracticeExitGuardLeave()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    assert.equal(prompts.length, 1)
+    assert.equal(prompts[0].title, '退出练习？')
+    assert.equal(subject.data.started, true)
+    assert.deepEqual(navigations, [])
+    subject.onPracticeExitGuardLeave()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    assert.equal(prompts.length, 1)
+    finishConfirm(false)
+    await new Promise(resolve => setTimeout(resolve, 5))
+    assert.deepEqual(subject._practiceSession.answerMap, { 1: 'A' })
+    assert.equal(subject.data.practiceExitGuardVisible, true)
+    subject.onPracticeExitGuardLeave()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    finishConfirm(true)
+    await new Promise(resolve => setTimeout(resolve, 5))
+    assert.equal(subject.data.started, false)
+    assert.equal(subject.data.selectedSubjectId, 9)
+    assert.equal(subject.data.currentQuestion, null)
+    assert.equal(subject.data.practiceExitGuardVisible, true)
+    assert.equal(store.readPractice(), null)
+    assert.deepEqual(pageStack, originalStack)
+    assert.deepEqual(navigations, [])
+    subject.onPracticeExitGuardLeave()
+    subject.onPracticeExitGuardLeave()
+    await new Promise(resolve => setTimeout(resolve, 40))
+    assert.equal(prompts.length, 2)
+    assert.deepEqual(navigations, restored ? ['/pages/home/home'] : [{ delta: 1 }])
+  })
+}

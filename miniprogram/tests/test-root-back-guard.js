@@ -124,11 +124,10 @@ test('delegated root back protects repeated review confirmation, cancellation an
   assert.equal(harness.calls[0][1].url, '/pages/home/home')
 })
 
-test('restored and terminal pages wire the root guard without competing practice containers', () => {
+test('restored and terminal pages wire the root guard', () => {
   const app = JSON.parse(fs.readFileSync(path.join(miniRoot, 'app.json'), 'utf8'))
   assert.equal(app.usingComponents['root-back-guard'], '/components/root-back-guard/index')
   const routes = [
-    'subpackages/study/practice/practice',
     'subpackages/study/review-today/review-today',
     'pages/pomodoro/pomodoro',
     'subpackages/study/practice-result/index',
@@ -138,11 +137,17 @@ test('restored and terminal pages wire the root guard without competing practice
     assert.equal(config.usingComponents['root-back-guard'], '/components/root-back-guard/index')
     assert.match(fs.readFileSync(path.join(miniRoot, `${route}.wxml`), 'utf8'), /<root-back-guard\b/)
   }
-  const practice = fs.readFileSync(path.join(miniRoot, `${routes[0]}.wxml`), 'utf8')
-  assert.match(practice, /<page-container\s+wx:if="\{\{started && !submitted\}\}"/)
-  assert.match(practice, /<root-back-guard\s+wx:if="\{\{entryResolved && \(\(!started && !launchingPreset\) \|\| submitted\)\}\}"/)
-  const review = fs.readFileSync(path.join(miniRoot, `${routes[1]}.wxml`), 'utf8')
+  const review = fs.readFileSync(path.join(miniRoot, `${routes[0]}.wxml`), 'utf8')
   assert.doesNotMatch(review, /enabled="\{\{!exitConfirmVisible\}\}"/)
   assert.match(review, /delegate="\{\{phase === 'reviewing'\}\}"/)
   assert.match(review, /bind:back="onNavBack"/)
+})
+
+test('practice keeps exactly one native back container mounted across setup and active phases', () => {
+  const practice = fs.readFileSync(path.join(miniRoot, 'subpackages/study/practice/practice.wxml'), 'utf8')
+  const containers = [...practice.matchAll(/<page-container\b[\s\S]*?\/>/g)]
+  assert.equal(containers.length, 1)
+  assert.doesNotMatch(containers[0][0], /wx:(if|elif|for)=/)
+  assert.doesNotMatch(practice, /<root-back-guard\b/)
+  assert.match(containers[0][0], /bind:afterleave="onPracticeExitGuardLeave"/)
 })

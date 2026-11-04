@@ -32,6 +32,8 @@ const { createExitGuardController, getClearTimeout, getConsole, getPlatform, get
       isGuardVisible: () => page.data.practiceExitGuardVisible,
       isStarted: () => page.data.started,
       isSubmitted: () => page.data.submitted,
+      isNavigationLocked: () => page._returnNavigationLocked,
+      returnToOrigin: () => page._returnToLaunchOrigin(),
       isRearming: () => page._systemBackRearming,
       setRearming: value => { page._systemBackRearming = value },
       getRearmTimer: () => page._systemBackRearmTimer,

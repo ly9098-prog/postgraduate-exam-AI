@@ -42,6 +42,7 @@ setRenderGuardPage('practice')
 resetRenderGuard()
 page._initCustomNavigation()
 page._updateComputedFields()
+page._exitGuardController().syncVisibility()
 }
 
 function onUnload(page, dependencies) {
@@ -174,7 +175,6 @@ function _resetPracticeStateAfterExit(page) {
     launchingPreset: false,
     submitting: false,
     submitted: false,
-    practiceExitGuardVisible: false,
     questions: [],
     currentQuestion: null,
     currentAnswerState: null,
