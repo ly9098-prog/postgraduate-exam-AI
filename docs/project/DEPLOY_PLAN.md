@@ -4,6 +4,10 @@
 > 2026-10-23 变更：Redis 备份/恢复路径与脚本默认值一致保留；移除 §9.6/§9.7 两条生产补录番茄钟记录（一次性运维操作，留痕移至 docs/project/CHANGELOG.md）。
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
 
+> 2026-11-04 变更：登记内部 readiness 探针必须带生产域名 Host 头。生产 `ALLOWED_HOSTS` 生效后，
+> 不带 Host 的探针会触发可信主机校验失败；公网 `/health/ready` 仍由 nginx 保护，不能替代内部探针。
+> 首次检查返回非 200 时，先用同一探针核验旧镜像，避免把探针配置错误误判为新版本回滚触发条件。
+>
 > ✅ **Pomodoro V2 迁移已完成（2026-08-08）**：历史 Pomodoro 数据已规范化到 V2 canonical 模型，
 > legacy compatibility 已删除，生产运行新 runtime（alembic `f6e7a8b9c0d1`）。执行记录见
 > **[POMODORO_V2_MIGRATION.md](./POMODORO_V2_MIGRATION.md)** §8。
@@ -617,6 +621,14 @@ cd deploy && make redis-restore BACKUP=/opt/22408-ai/redis_backups/<backup>.rdb
 |------|------|------|
 | 1. 检查单个 head | `alembic heads` | 仅 `812ba6628ff1 (head)` |
 | 2. 验证 readiness | `curl /health/ready` | `status: ok` |
+
+容器内 readiness 检查必须使用生产域名 Host 头，例如：
+
+```bash
+curl -H "Host: xzshub.top" http://127.0.0.1:8000/health/ready
+```
+
+若该探针失败，先用相同 Host 头请求保留的旧运行镜像。旧镜像也失败说明探针或配置有问题；只有新镜像失败而旧镜像通过，才按回滚流程处理。公网 `/health/ready` 受 nginx 保护，通常返回 403，不以它替代容器内探针。
 | 3. 验证角色日志 | `docker compose logs app` | 显示当前角色及组件清单 |
 | 4. 检查 schema 分歧 | `docker compose logs app` | 无 `Schema divergence` 警告 |
 | 5. 检查指标 | `curl /health/metrics` | 包含 `scheduler_running`, `staging_orphan_count` |

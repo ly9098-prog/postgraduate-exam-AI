@@ -1,6 +1,7 @@
 # UI Rules
 
 > 2240AI 前端设计规范。包含 Design System Token、组件库、页面结构、交互规则。
+> 2026-11-04：Token 表按 `miniprogram/styles/tokens.wxss` 当前实现修订；现行 Token 以工具类形式提供，不再使用 CSS 自定义属性。
 
 ---
 
@@ -17,85 +18,89 @@
 
 ## 1. Color Tokens
 
-| Token | Value | 用途 |
-|-------|-------|------|
-| `--color-primary` | `#5B7B9A` | 主色：按钮、链接、激活态 |
-| `--color-primary-dark` | `#357ABD` | 主色深：渐变、按压态 |
-| `--color-primary-light` | `#EDF1F5` | 主色浅：背景、标签 |
-| `--color-success` | `#6B9B6B` | 正确、已掌握、通过 |
-| `--color-success-light` | `#EFF5EF` | 正确态背景 |
-| `--color-warning` | `#C49A6B` | 注意、待复习 |
-| `--color-warning-light` | `#F5F1EB` | 注意态背景 |
-| `--color-danger` | `#C47A7A` | 错误、有风险 |
-| `--color-danger-light` | `#F5EFEF` | 错误态背景 |
-| `--color-wechat` | `#07C160` | 微信品牌绿 |
-| `--color-text-primary` | `#2D3E50` | 主文字 |
-| `--color-text-secondary` | `#6B7B8D` | 次要文字 |
-| `--color-text-hint` | `#9AABBA` | 辅助文字 |
-| `--color-text-placeholder` | `#BCC8D4` | 占位文字 |
-| `--color-border` | `#E8E5E0` | 分割线、边框 |
-| `--color-bg` | `#F7F5F0` | 页面背景（暖白米色） |
-| `--color-bg-card` | `#FFFFFF` | 卡片背景 |
-| `--color-bg-input` | `#F3F2EF` | 输入框背景 |
+现行颜色 Token 定义在 `miniprogram/styles/tokens.wxss`，以工具类提供。页面通过引入该文件后直接使用 `.color-*` / `.bg-*` 等类。
+
+| 类 | 值 | 用途 |
+|---|---|---|
+| `.color-primary` / `.bg-primary` | `#4F7FFF` | 主色：文字、按钮、激活态 |
+| `.bg-primary-gradient` | `135deg, #4F7FFF → #6EC1FF` | 主色渐变 |
+| `.bg-primary-light` | `#EEF4FF` | 主色浅背景 |
+| `.color-success` / `.bg-success` | `#22C55E` | 成功、已掌握、通过 |
+| `.bg-success-light` | `#ECFDF3` | 成功浅背景 |
+| `.color-warning` / `.bg-warning` | `#F59E0B` | 注意、待复习 |
+| `.bg-warning-light` | `#FFF7E8` | 警告浅背景 |
+| `.color-danger` / `.bg-danger` | `#EF4444` | 错误、有风险 |
+| `.bg-danger-light` | `#FEF2F2` | 危险浅背景 |
+| `.bg-wechat` | `#07C160` | 微信品牌绿 |
+| `.color-text-primary` | `#18233A` | 主文字 |
+| `.color-text-secondary` | `#617089` | 次要文字 |
+| `.color-text-hint` | `#8EA0BA` | 辅助文字 |
+| `.color-text-placeholder` | `#B7C4D8` | 占位文字 |
+| `.color-border` | `#E2EAF7` | 分割线、边框 |
+| `.bg-page` | `#F8FAFF → #EEF5FF` 渐变 | 页面背景 |
+| `.bg-card` / `.bg-input` / `.bg-surface` / `.bg-glass` | `#FFFFFF` / `#F3F7FF` / `#F6F9FF` / `rgba(255,255,255,.72)` | 卡片、输入、表面与毛玻璃背景 |
 
 ### 语义对照
 
 | 场景 | 色值 | Token |
 |------|------|-------|
-| 导航栏 | `#5B7B9A` | primary |
-| 答案正确 | `#6B9B6B` | success |
-| 待复习 | `#C49A6B` | warning |
-| 答错 | `#C47A7A` | danger |
+| 导航栏/主色 | `#4F7FFF` | primary |
+| 答案正确 | `#22C55E` | success |
+| 待复习 | `#F59E0B` | warning |
+| 答错 | `#EF4444` | danger |
 
 ---
 
 ## 2. Spacing Scale (8pt base)
 
-| Token | Value | 场景 |
-|-------|-------|------|
-| `--space-xs` | `8rpx` | 极小间距、标签内边距 |
-| `--space-sm` | `12rpx` | 元素间小间距、标签间距 |
-| `--space-md` | `16rpx` | 内边距、选项间距 |
-| `--space-lg` | `20rpx` | 区块间距、卡内边距 |
-| `--space-xl` | `24rpx` | 卡内边距、选项内边距 |
-| `--space-2xl` | `30rpx` | 卡边距、区块标题底部 |
-| `--space-3xl` | `40rpx` | 大区块间距 |
-| `--space-4xl` | `60rpx` | 页面顶部、底部留白 |
+间距同样以工具类提供，`.p-*` 控制四向 padding，`.m*-*` 控制方向性 margin，`.gap-*` 控制 flex/grid 间距。
+
+| 后缀 | 值 | 场景 |
+|---|---|---|
+| `xs` | `8rpx` | 极小间距、标签内边距 |
+| `sm` | `12rpx` | 元素间小间距、标签间距 |
+| `md` | `16rpx` | 内边距、选项间距 |
+| `lg` | `20rpx` | 区块间距、卡内边距 |
+| `xl` | `24rpx` | 卡内边距、选项内边距 |
+| `2xl` | `30rpx` | 卡边距、区块标题底部 |
+| `3xl` | `40rpx` | 大区块间距 |
+| `4xl` | `60rpx` | 页面顶部、底部留白 |
 
 ---
 
 ## 3. Border Radius
 
-| Token | Value | 场景 |
-|-------|-------|------|
-| `--radius-sm` | `8rpx` | 小标签、进度条 |
-| `--radius-md` | `12rpx` | 按钮、输入框 |
-| `--radius-lg` | `20rpx` | 卡片、大区块 |
-| `--radius-xl` | `28rpx` | 弹窗、首屏卡片 |
-| `--radius-full` | `50%` | 圆形头像 |
+| 类 | 值 | 场景 |
+|---|---|---|
+| `.radius-sm` | `12rpx` | 小标签、按钮 |
+| `.radius-md` | `16rpx` | 输入框、中型卡片 |
+| `.radius-lg` | `24rpx` | 卡片、大区块 |
+| `.radius-xl` | `32rpx` | 弹窗、首屏卡片 |
+| `.radius-2xl` | `40rpx` | 超大圆角面板 |
+| `.radius-full` | `999rpx` | 胶囊、圆形元素 |
 
 ---
 
 ## 4. Typography
 
-| Token | Size | Weight | 场景 |
-|-------|------|--------|------|
-| `--text-h1` | `36rpx` | 700 | 页面标题 |
-| `--text-h2` | `32rpx` | 600 | 区块标题、结果数字 |
-| `--text-body` | `28rpx` | 400 | 正文、选项、列表项 |
-| `--text-caption` | `24rpx` | 400 | 辅助信息、标签文字 |
-| `--text-small` | `22rpx` | 400 | 极简标注、徽标文字 |
-| `--text-stat` | `48rpx` | 700 | 统计数字 |
-| `--text-stat-sm` | `40rpx` | 700 | 小号统计数字 |
+| 类 | Size | Weight | 场景 |
+|---|---|---|---|
+| `.text-h1` | `36rpx` | 800 | 页面标题 |
+| `.text-h2` | `32rpx` | 700 | 区块标题 |
+| `.text-body` | `28rpx` | 400 | 正文、选项、列表项 |
+| `.text-caption` | `24rpx` | 400 | 辅助信息、标签文字 |
+| `.text-small` | `22rpx` | 400 | 极简标注、徽标文字 |
+| `.text-stat` | `48rpx` | 800 | 统计数字（`tabular-nums`） |
+| `.text-stat-sm` | `40rpx` | 800 | 小号统计数字（`tabular-nums`） |
 
 ---
 
 ## 5. Shadow
 
-| Token | Value | 场景 |
-|-------|-------|------|
-| `--shadow-card` | `0 2rpx 12rpx rgba(0,0,0,0.06)` | 卡片阴影 |
-| `--shadow-card-hover` | `0 4rpx 16rpx rgba(0,0,0,0.08)` | 卡片按压态 |
+| 类 | 值 | 场景 |
+|---|---|---|
+| `.shadow-card` | `0 8rpx 24rpx rgba(42,84,160,.08)` | 卡片阴影 |
+| `.shadow-card-hover` | `0 14rpx 36rpx rgba(42,84,160,.12)` | 卡片按压/悬停增强态 |
 
 ---
 
@@ -103,20 +108,20 @@
 
 ### Card (`.card`)
 
-- `bg: #FFFFFF`, `border-radius: 20rpx`, `padding: 30rpx`, `margin: 20rpx 30rpx`
-- `box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.06)`
+- `bg: #FFFFFF`, `border-radius: 24rpx`, `padding: 30rpx`, `margin: 16rpx 24rpx`
+- `box-shadow: 0 8rpx 24rpx rgba(42,84,160,.08)`，带 `1rpx solid rgba(226,234,247,.92)` 边框
 
 ### Button
 
 | 类名 | 样式 | 用途 |
 |------|------|------|
-| `.btn-primary` | 主色（`#5B7B9A`）实心 | 主要操作 |
-| `.btn-secondary` | 主色浅底 | 次要操作 |
+| `.btn-primary` | 主色渐变（`#4F7FFF → #6EC1FF`）实心 | 主要操作 |
+| `.btn-secondary` | 主色浅底（`#EEF4FF`） | 次要操作 |
 | `.btn-text` | 纯文字 | 文字按钮 |
 | `.btn-danger` | 红色实心 | 危险操作 |
 | `.btn-block` | 宽度 100% | 全宽按钮 |
 
-所有按钮高度统一 88rpx（padding 24rpx），圆角 12rpx。
+所有按钮最小高度 88rpx，圆角 999rpx。
 
 ### Tag
 
@@ -128,24 +133,24 @@
 | `.tag-danger` | 错误 |
 | `.tag-primary` | 主色标签 |
 
-内联块，padding 6rpx 16rpx，圆角 6rpx，字号 22rpx。
+内联块，padding 6rpx 16rpx，圆角 999rpx，字号 22rpx。
 
 ### List Item (`.list-item`)
 
 左右布局，padding 28rpx 30rpx，border-bottom 分割线，支持箭头指示可点击。
 
-### Stat Number (`.stat-num`)
+### Stat Number (`.text-stat` / `.text-stat-sm`)
 
-字号 40-48rpx，字重 700，主色。
+字号 48rpx / 40rpx，字重 800，主色，启用 `tabular-nums`。
 
 ---
 
 ## 7. 布局约定
 
-- 页面背景：`#F7F5F0`
-- 导航栏背景：`#5B7B9A`，文字白色
+- 页面背景使用 `.bg-page`：`#F8FAFF → #EEF5FF` 渐变；需要纯色滚动底色时同步设置页面级 `background-color`
+- 主色导航/主操作使用 `#4F7FFF` 系；具体导航栏背景以页面 JSON 为准
 - 内容最大宽度：750rpx
-- 卡片间距：垂直 12-20rpx，水平 30rpx
+- 卡片间距：垂直 12-16rpx，水平 24rpx
 - 标题与内容间距：24rpx
 - 列表项高度：88rpx（含 padding）
 - 底部操作栏：padding 20rpx 30rpx 40rpx

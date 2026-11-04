@@ -1,80 +1,85 @@
 # 设计系统 (Design System)
 
-> 2240AI 设计令牌，从 `UI_RULES.md` 中提取，方便前端开发快速查阅。
+> 2240AI 设计令牌。2026-11-04 按 `miniprogram/styles/tokens.wxss` 与 `miniprogram/styles/components.wxss` 当前实现修订；现行 Token 以工具类形式提供。
 
 ---
 
 ## Color Tokens
 
-| Token | Value | 用途 |
-|-------|-------|------|
-| `--color-primary` | `#5B7B9A` | 主色：按钮、链接、激活态 |
-| `--color-primary-dark` | `#357ABD` | 主色深：渐变、按压态 |
-| `--color-primary-light` | `#EDF1F5` | 主色浅：背景、标签 |
-| `--color-success` | `#6B9B6B` | 正确、已掌握、通过 |
-| `--color-success-light` | `#EFF5EF` | 正确态背景 |
-| `--color-warning` | `#C49A6B` | 注意、待复习 |
-| `--color-warning-light` | `#F5F1EB` | 注意态背景 |
-| `--color-danger` | `#C47A7A` | 错误、有风险 |
-| `--color-danger-light` | `#F5EFEF` | 错误态背景 |
-| `--color-wechat` | `#07C160` | 微信品牌绿 |
-| `--color-text-primary` | `#2D3E50` | 主文字 |
-| `--color-text-secondary` | `#6B7B8D` | 次要文字 |
-| `--color-text-hint` | `#9AABBA` | 辅助文字 |
-| `--color-text-placeholder` | `#BCC8D4` | 占位文字 |
-| `--color-border` | `#E8E5E0` | 分割线、边框 |
-| `--color-bg` | `#F7F5F0` | 页面背景（暖白米色） |
-| `--color-bg-card` | `#FFFFFF` | 卡片背景 |
-| `--color-bg-input` | `#F3F2EF` | 输入框背景 |
+现行颜色 Token 定义在 `miniprogram/styles/tokens.wxss`，以 `.color-*`、`.bg-*` 工具类提供。
+
+| 类 | 值 | 用途 |
+|---|---|---|
+| `.color-primary` / `.bg-primary` | `#4F7FFF` | 主色：按钮、链接、激活态 |
+| `.bg-primary-gradient` | `135deg, #4F7FFF → #6EC1FF` | 主色渐变 |
+| `.bg-primary-light` | `#EEF4FF` | 主色浅背景 |
+| `.color-success` / `.bg-success` | `#22C55E` | 成功、已掌握、通过 |
+| `.bg-success-light` | `#ECFDF3` | 成功浅背景 |
+| `.color-warning` / `.bg-warning` | `#F59E0B` | 注意、待复习 |
+| `.bg-warning-light` | `#FFF7E8` | 警告浅背景 |
+| `.color-danger` / `.bg-danger` | `#EF4444` | 错误、有风险 |
+| `.bg-danger-light` | `#FEF2F2` | 危险浅背景 |
+| `.bg-wechat` | `#07C160` | 微信品牌绿 |
+| `.color-text-primary` | `#18233A` | 主文字 |
+| `.color-text-secondary` | `#617089` | 次要文字 |
+| `.color-text-hint` | `#8EA0BA` | 辅助文字 |
+| `.color-text-placeholder` | `#B7C4D8` | 占位文字 |
+| `.color-border` | `#E2EAF7` | 分割线、边框 |
+| `.bg-page` | `#F8FAFF → #EEF5FF` 渐变 | 页面背景 |
+| `.bg-card` / `.bg-input` / `.bg-surface` / `.bg-glass` | `#FFFFFF` / `#F3F7FF` / `#F6F9FF` / `rgba(255,255,255,.72)` | 卡片、输入、表面与毛玻璃背景 |
 
 ---
 
 ## Spacing (8pt base)
 
-| Token | Value | 场景 |
-|-------|-------|------|
-| `--space-xs` | `8rpx` | 极小间距 |
-| `--space-sm` | `12rpx` | 小间距 |
-| `--space-md` | `16rpx` | 内边距 |
-| `--space-lg` | `20rpx` | 区块间距 |
-| `--space-xl` | `24rpx` | 卡内边距 |
-| `--space-2xl` | `30rpx` | 卡边距 |
-| `--space-3xl` | `40rpx` | 大区块间距 |
-| `--space-4xl` | `60rpx` | 页面顶部留白 |
+间距以 `.p-*`、方向性 `.m*-*` 和 `.gap-*` 工具类提供。
+
+| 后缀 | 值 | 场景 |
+|---|---|---|
+| `xs` | `8rpx` | 极小间距 |
+| `sm` | `12rpx` | 小间距 |
+| `md` | `16rpx` | 内边距 |
+| `lg` | `20rpx` | 区块间距 |
+| `xl` | `24rpx` | 卡内边距 |
+| `2xl` | `30rpx` | 卡边距 |
+| `3xl` | `40rpx` | 大区块间距 |
+| `4xl` | `60rpx` | 页面顶部留白 |
 
 ---
 
 ## Border Radius
 
-| Token | Value | 场景 |
-|-------|-------|------|
-| `--radius-sm` | `8rpx` | 小标签 |
-| `--radius-md` | `12rpx` | 按钮 |
-| `--radius-lg` | `20rpx` | 卡片 |
-| `--radius-xl` | `28rpx` | 弹窗 |
-| `--radius-full` | `50%` | 圆形 |
+| 类 | 值 | 场景 |
+|---|---|---|
+| `.radius-sm` | `12rpx` | 小标签 |
+| `.radius-md` | `16rpx` | 输入框、中型卡片 |
+| `.radius-lg` | `24rpx` | 卡片 |
+| `.radius-xl` | `32rpx` | 弹窗 |
+| `.radius-2xl` | `40rpx` | 超大圆角面板 |
+| `.radius-full` | `999rpx` | 胶囊、圆形 |
 
 ---
 
 ## Typography
 
-| Token | Size | Weight | 场景 |
-|-------|------|--------|------|
-| `--text-h1` | `36rpx` | 700 | 页面标题 |
-| `--text-h2` | `32rpx` | 600 | 区块标题 |
-| `--text-body` | `28rpx` | 400 | 正文 |
-| `--text-caption` | `24rpx` | 400 | 辅助信息 |
-| `--text-small` | `22rpx` | 400 | 极简标注 |
-| `--text-stat` | `48rpx` | 700 | 统计数字 |
+| 类 | Size | Weight | 场景 |
+|---|---|---|---|
+| `.text-h1` | `36rpx` | 800 | 页面标题 |
+| `.text-h2` | `32rpx` | 700 | 区块标题 |
+| `.text-body` | `28rpx` | 400 | 正文 |
+| `.text-caption` | `24rpx` | 400 | 辅助信息 |
+| `.text-small` | `22rpx` | 400 | 极简标注 |
+| `.text-stat` | `48rpx` | 800 | 统计数字 |
+| `.text-stat-sm` | `40rpx` | 800 | 小号统计数字 |
 
 ---
 
 ## Shadow
 
-| Token | Value | 场景 |
-|-------|-------|------|
-| `--shadow-card` | `0 2rpx 12rpx rgba(0,0,0,0.06)` | 卡片阴影 |
-| `--shadow-card-hover` | `0 4rpx 16rpx rgba(0,0,0,0.08)` | 卡片按压态 |
+| 类 | 值 | 场景 |
+|---|---|---|
+| `.shadow-card` | `0 8rpx 24rpx rgba(42,84,160,.08)` | 卡片阴影 |
+| `.shadow-card-hover` | `0 14rpx 36rpx rgba(42,84,160,.12)` | 卡片按压/悬停增强态 |
 
 ---
 
@@ -84,9 +89,11 @@
 
 | 语义 | 色值 | 用途 |
 |------|------|------|
-| 深墨绿 | `#0C2A1F` / `#123A2B` / `#0F2D22` | 顶部深色区、导航、主操作按钮 |
-| 荧光绿 | `#B8FF13` / `#A9D800` / `#B7E82A` | 强调色、进度点、箭头、正确标记 |
+| 深墨绿 | `#183528` / `#10251A` / `#09170F` | 顶部深色区、导航、主操作按钮 |
+| 荧光绿 | `#B7E82A` / `#D1F55B` | 强调色、进度点、箭头、正确标记 |
 | 暖米背景 | `#F4F4EE` / `#F7F7F2` / `#F4F2EC` | 页面背景 |
+
+该主题没有集中 Token 文件；色值分布在 quiz-runner、页面 WXSS 与页面 JSON 中。修改前先读取对应调用方样式，不要把它误当作 `.bg-*` 基础 Token。
 
 关键布局事实：
 

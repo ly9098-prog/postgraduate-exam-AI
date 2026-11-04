@@ -5,6 +5,8 @@
 > 2026-08-10 更新原因：题目/科目关系已从 `subject`（string code，如 "math2"）迁移为 `subject_id`（int，FK `subjects.id`），响应中展开 `subject_code` / `subject_name`；本规范相关参数表与 JSON 示例已同步更新。
 >
 > 2026-10-23 更新原因：复习与错题本接口按当前路由修正——`/review/schedule-submit`、`/review/batch-submit`、`/review/grade-submit`、`PUT /wrong-questions/{id}/quality` 均不存在（已移除），评分提交统一为 `POST /review/grade-batch`；补登记 `/review/today/next-batch`、`/review/{schedule_id}/master|unmaster`、`/review/history` 与错题诊断（`/wrong-questions/diagnosis/*`）端点。
+>
+> 2026-11-04 更新原因：通用响应与错误码章节按当前 `PaginatedResponse`、`http_error_contract.py` 与无 success 外壳的实际实现修订。
 
 ---
 
@@ -20,40 +22,41 @@ Authorization: Bearer <jwt_token>
 
 ## 通用响应格式
 
-```json
-// FastAPI 默认响应（直接在路由中返回 dict/Pydantic model）
-// 前端 api.js 中通过 handleResponse 统一包装
-{
-  "code": 0,
-  "message": "success",
-  "data": {}
-}
+2026-11-04 修订：App API 成功响应不再描述为 `{code, message, data}` 外壳。路由返回的资源对象或列表就是响应正文；分页直接使用 `PaginatedResponse` 形态：
 
-// 分页响应
+```json
 {
-  "code": 0,
-  "data": {
-    "items": [],
-    "total": 100,
-    "page": 1,
-    "pageSize": 20,
-    "totalPages": 5
-  }
+  "items": [],
+  "total": 100,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 5
 }
 ```
+
+`total=0` 时 `total_pages=0`；其他情况下 `total_pages` 至少为 1。各端点可能按既有契约使用其他列表形态或额外字段，新增端点必须核对所属模块而不是假设全局别名。
 
 ---
 
 ## 错误码
 
-| code | 说明 |
-|------|------|
-| 0 | 成功 |
-| 40001 | 参数错误 |
-| 40101 | 未登录 / token 过期 |
-| 40401 | 资源不存在 |
-| 50001 | 服务器内部错误 |
-| 50002 | AI 服务不可用 |
+错误响应使用统一 `error` 对象，不使用数字成功码。客户端必须容忍未显式登记的 `HTTP_<status>` 兜底码，不能假设错误码枚举封闭：
+
+```json
+{
+  "error": {
+    "code": "HTTP_404",
+    "message": "请求的资源不存在",
+    "retryable": false,
+    "request_id": "req_example",
+    "trace_id": "trace_example"
+  }
+}
+```
+
+- `error.code` 为大写下划线机器码；`detail` 未提供可公开的稳定业务码时回退为 `HTTP_<status>`。
+- `error.retryable` 由后端按错误类型或 429/502/503/504 判定；`request_id` 与 `trace_id` 在上下文可用时返回。
+- 健康端点有专用轻量结构，不应按本错误对象解析；业务端点契约仍以对应章节为准。
 
 ---
 

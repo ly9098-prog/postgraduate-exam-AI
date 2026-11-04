@@ -1,6 +1,7 @@
 # 文档总索引（docs-maintainer 使用）
 
 > 本文件是 docs-maintainer agent 的文档维护入口，用于快速判断“改了什么后应该同步哪些文档”。
+> 2026-11-04：项目知识以本目录为唯一权威正文来源，直接使用普通文件工具检索。Windows 侧 `C:\Users\Devil\wikis\postgraduate-ai-wiki` 自该日起只读归档，不继续维护项目正文，其内容须先与本目录、代码和运行时配置核对。
 > 维护原则：只同步已完成或已确认的实现，不提前替代码设计文档，不修改业务代码。
 
 ---
@@ -58,6 +59,7 @@
 | `docs/project/BUGS.md` | Bug 完整记录 |
 | `docs/project/BUGS_HISTORY.md` | Bug 历史归档 |
 | `docs/project/DEPLOY_PLAN.md` | 部署方案与计划 |
+| `docs/project/KNOWLEDGE_BASE_MIGRATION_2026-11-04.md` | 旧 Wiki 归档与 `docs/` 唯一知识源的迁移对照 |
 | `docs/backend/REVIEW_SMOKE_CHECKLIST.md` | 复习模块冒烟测试清单 |
 | `docs/project/FILE_CHANGE_MAP.json` | 文件变更映射 |
 | `docs/achieve/README.md` | 历史阶段归档入口 |

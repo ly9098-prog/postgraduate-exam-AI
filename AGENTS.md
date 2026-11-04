@@ -34,12 +34,12 @@ MemoGrad / 22408AI 是面向考研场景的智能刷题与题库治理系统，�
 - 禁止回退到递归 `grep` 或逐文件 `view_file`；仅在准备编辑某个已定位文件时才允许 `view_file`。
 - 优先使用 codebase-memory 知识图谱工具而非 grep/glob 进行代码搜索，减少文件读取次数。
 
-**文档/知识检索 → graphify skill**
+**项目文档/知识检索 → 仓库 `docs/`**
 
-- 安装：`pip install graphifyy`（或 `uv tool install graphifyy`）。包名双 y（`graphifyy`），CLI 命令为 `graphify`，不要混淆。
-- 给 Codex 注册 skill：`graphify install --project --platform codex`。
-- 检索命令：`graphify query` / `path` / `explain`；若使用 Graphify MCP，工具名以 server 暴露为准。
-- 在 grep 原始文档之前，先走 graphify 图查询；仅当图查询无结果时，才退回普通搜索。
+- `docs/` 是项目文档的唯一权威正文来源；`docs/INDEX.md` 是目录与维护入口。不要在外部 Wiki 维护平行的项目规则、架构、API 或运维正文。
+- 项目知识检索直接使用仓库内的普通文件工具，按 `docs/INDEX.md` 和既有目录结构列目录、搜索和读取。
+- Windows 侧 `C:\Users\Devil\wikis\postgraduate-ai-wiki` 是只读历史归档，不作为现行项目规则或实现事实来源。归档中的内容必须先与仓库文档、代码和运行时配置核对。
+- 本仓库不要求维护 Graphify 文档图、生成式索引或 `knowledge_wiki` MCP；文档事实仍须按本文件规则与代码和运行时配置核对。
 
 **通用原则**
 
@@ -105,7 +105,7 @@ MemoGrad / 22408AI 是面向考研场景的智能刷题与题库治理系统，�
 - 小程序使用原生微信开发者工具工作流；保持主包/分包边界、现有渲染不变性和环境配置逻辑。由于仓库没有统一小程序 lint/test 配置，不得声称存在未确认的检查命令。
 - 配置通过 `.env.example` 了解变量名；真实 `.env`、Token、密码、AppSecret、AI/OCR 凭据和私钥不得写入文档、日志或提交。AI 模型凭据（API Key / Base URL / model name）不使用环境变量，统一存于数据库 `admin_ai_model_configs`，经 Admin API 管理，由 `AI_CONFIG_ENCRYPT_KEY` 加密；生产已不通过 `DEEPSEEK_API_KEY` 等环境变量提供 AI 凭据。
 - 文档只记录已实现或已验证事实；无法从代码、配置、CI 或现有文档确认的内容必须标注“待确认/未验证”。
-- 项目知识库通过 MCP 工具 `knowledge_wiki` 访问。当用户在对话中提到“项目知识库”“Wiki”或“知识库”时，默认调用该 MCP，并按用户具体需求使用其 `read_file`、`list_directory` 或 `search_files`（已验证为 `@modelcontextprotocol/server-filesystem` 的真实工具名）读取项目知识库根目录下的内容；该库位于本仓库之外，具体路径由 MCP server 配置的 args 指定，其内容优先作为项目规范依据，但不能替代对源码与运行时配置的核对。
+- 当用户提到“项目知识库”“Wiki”或“知识库”时，默认将其理解为仓库 `docs/`，并使用普通文件工具检索；代码、运行时配置和当前 `docs/` 是事实核验依据。外部只读 Wiki 仅用于历史差异追溯，不得与 `docs/` 并列为现行规范来源。
 
 ## 常用命令
 
