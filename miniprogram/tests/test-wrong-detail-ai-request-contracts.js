@@ -194,3 +194,81 @@ test('tap prefers private identity and calls the current loader without returnin
     pending.resolve()
   }
 })
+
+test('one click during shared checking continues generation once and deduplicates clicks', async () => {
+  const { page } = fixture(), pending = deferred(), loaded = []
+  page.data.aiAvailabilityEnabled = false
+  page.data.aiAvailabilityStatus = 'checking'
+  page._refreshAiAvailability = async () => {
+    await pending.promise
+    page.data.aiAvailabilityEnabled = true
+    return true
+  }
+  page.loadAiAnalysis = id => loaded.push(id)
+  const first = page.onTapAiAnalysis()
+  await page.onTapAiAnalysis()
+  assert.equal(page.data.aiAvailabilityPending, true)
+  assert.deepEqual(loaded, [])
+  pending.resolve()
+  await first
+  assert.deepEqual(loaded, [12])
+  assert.equal(page.data.aiAvailabilityPending, false)
+})
+
+test('a generation rejected only for checking resumes once after the shared probe', async () => {
+  const { page, api } = fixture(), pending = deferred(), requests = []
+  const checking = {
+    error_code: 'ai_service_unavailable', from_fallback: true,
+    availability: { status: 'checking', enabled: false, reason: 'checking' },
+  }
+  api.post = async (...args) => {
+    requests.push(args)
+    return requests.length === 1 ? checking : { content: 'generated' }
+  }
+  page._refreshAiAvailability = async () => {
+    await pending.promise
+    page.data.aiAvailabilityEnabled = true
+    return true
+  }
+  page._scheduleAiAvailabilityRetry = () => {}
+  const task = page._requestAiAnalysis(12, true)
+  await Promise.resolve()
+  assert.equal(requests.length, 1)
+  pending.resolve()
+  assert.equal((await task).content, 'generated')
+  assert.equal(requests.length, 2)
+  assert.equal(requests[0][1].force_regenerate, true)
+  assert.deepEqual(plain(requests[0]), plain(requests[1]))
+})
+
+test('a late checking response cannot change newer availability or start another generation', async () => {
+  const { page, api } = fixture(), pending = deferred()
+  api.post = () => pending.promise
+  const task = page._requestAiAnalysis(12, true)
+  page._aiRequestId++
+  pending.resolve({
+    error_code: 'ai_service_unavailable',
+    availability: { status: 'checking', enabled: false },
+  })
+  await task
+  assert.equal(page.data.aiAvailabilityEnabled, true)
+  assert.equal(page.data.aiAvailabilityPending, false)
+})
+
+test('checking intent cannot generate after switching questions or leaving the page', async () => {
+  for (const change of ['question', 'request', 'hidden', 'unload']) {
+    const { page } = fixture(), pending = deferred(), loaded = []
+    page.data.aiAvailabilityEnabled = false
+    page.data.aiAvailabilityStatus = 'checking'
+    page._refreshAiAvailability = async () => { await pending.promise; return true }
+    page.loadAiAnalysis = id => loaded.push(id)
+    const task = page.onTapAiAnalysis()
+    if (change === 'question') page._currentWqId = 13
+    if (change === 'request') page._aiRequestId++
+    if (change === 'hidden') page.onHide()
+    if (change === 'unload') page._alive = false
+    pending.resolve()
+    await task
+    assert.deepEqual(loaded, [], change)
+  }
+})

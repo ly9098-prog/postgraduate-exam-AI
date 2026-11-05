@@ -131,7 +131,7 @@ wrongQuestions: [],
 runnerProgressPercent: 0,
 skeletonOptions: [1, 2, 3, 4],
 aiSkeletonSections: [1, 2, 3],
-aiAvailabilityChecking: true, aiAvailabilityEnabled: false, aiAvailabilityStatus: 'checking', aiAvailabilityReason: 'checking', aiAvailabilityMessage: '正在检查 AI 服务',
+aiAvailabilityPending: false, aiAvailabilityChecking: true, aiAvailabilityEnabled: false, aiAvailabilityStatus: 'checking', aiAvailabilityReason: 'checking', aiAvailabilityMessage: '正在检查 AI 服务',
 },
 _alive: false,
 _aiRequestId: 0,
@@ -160,10 +160,10 @@ return lifecycle._initWrongDetailFromOptions(this, options)
 return lifecycle._resolveQuestionIds(options, currentId, { get platform() { return wx } })
 },
 onShow() {
-return lifecycle.onShow(this)
+return lifecycle.onShow(this, { resumeAvailability: () => aiAvailability.resumeAvailability(this) })
 },
 onHide() {
-return lifecycle.onHide(this)
+return lifecycle.onHide(this, { pauseAvailability: () => aiAvailability.pauseAvailability(this) })
 },
 onPageScroll() {
 return lifecycle.onPageScroll(this)
@@ -211,7 +211,7 @@ _syncWqCacheAi(wqId, normalized, generatedAt) {
 return aiRequest._syncWqCacheAi(this, wqId, normalized, generatedAt)
 },
 async _requestAiAnalysis(wqId, forceRegenerate) {
-return aiRequest._requestAiAnalysis(wqId, forceRegenerate, { postAnalysis: (payload, options) => api.post('/ai/error-analysis', payload, options), AI_REQUEST_TIMEOUT_MS })
+return aiRequest._requestAiAnalysis(wqId, forceRegenerate, { postAnalysis: (payload, options) => api.post('/ai/error-analysis', payload, options), AI_REQUEST_TIMEOUT_MS, applyAvailability: state => this._applyAiAvailability(state), waitForAvailability: action => aiAvailability.runWhenAvailable(this, wqId, action), isCurrent: this._isCurrentAiRequest.bind(this, this._aiRequestId, wqId) })
 },
 async _enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt) {
 return aiRequest._enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt, { postRecovery: (payload, options) => api.post('/ai/error-analysis/recover', payload, options) })
@@ -220,7 +220,7 @@ _analysisFailureState(model, result) {
 return aiRequest._analysisFailureState(model, result, { _fallbackMessage })
 },
 onTapAiAnalysis() {
-return aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options) })
+return aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options), runWhenAvailable: (wqId, action) => aiAvailability.runWhenAvailable(this, wqId, action) })
 },
 toggleTeacherActions() {
 return teacherInteraction.toggleTeacherActions(this)
@@ -276,7 +276,7 @@ return aiGeneration._commitAiAnalysisSuccess(this, result, normalized, wqId, { _
 return aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError, _shouldRecoverAiRequest: error => aiState._shouldRecoverAiRequest(error) })
 },
   async regenerateAiAnalysis() {
-return aiRegeneration.regenerateAiAnalysis(this, { _generationMarker })
+return aiRegeneration.regenerateAiAnalysis(this, { _generationMarker, runWhenAvailable: (wqId, action) => aiAvailability.runWhenAvailable(this, wqId, action) })
 },
 
   async _applyRegenerateResult(result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {

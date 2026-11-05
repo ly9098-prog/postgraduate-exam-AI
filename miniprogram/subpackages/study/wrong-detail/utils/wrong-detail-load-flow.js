@@ -16,7 +16,7 @@ async function loadData(page, wqId, { requestClient }) {
       page._prefetchWrongQuestion(page.data.currentIdx - 1)
       page._prefetchWrongQuestion(page.data.currentIdx + 1)
       page._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
-      if (page._refreshAiAvailability) page._refreshAiAvailability({ force: true })
+      if (page._refreshAiAvailability) page._refreshAiAvailability({ silent: true })
       page._checkLoadedRenderInvariant(data)
     } catch (e) {
       page._handleLoadDataError(e, loadSeq)

@@ -67,16 +67,14 @@ function _resolveQuestionIds(options, currentId, deps) {
     return questionIds
   }
 
-function onShow(page) {
+function onShow(page, { resumeAvailability }) {
 if (page._alive && page.data.wq) page._showBottomActions()
-if (page._alive && page.data.wq && page._refreshAiAvailability) {
-  page._refreshAiAvailability({ force: true, silent: true })
-}
+resumeAvailability()
 }
 
-function onHide(page) {
+function onHide(page, { pauseAvailability }) {
 page._clearBottomActionsTimer()
-if (page._clearAiAvailabilityRetry) page._clearAiAvailabilityRetry()
+pauseAvailability()
 }
 
 function onPageScroll(page) {

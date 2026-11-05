@@ -1,7 +1,10 @@
-async function regenerateAiAnalysis(page, { _generationMarker }) {
+async function regenerateAiAnalysis(page, { _generationMarker, runWhenAvailable }) {
     const wqId = page._currentWqId || (page.data.wq && page.data.wq.id)
     if (!wqId || page.data.aiLoading || page.data.aiRegenerating) return
     if (page.data.aiAvailabilityEnabled !== true) {
+      if (page.data.aiAvailabilityStatus === 'checking') {
+        return runWhenAvailable(wqId, () => page.regenerateAiAnalysis())
+      }
       if (page._refreshAiAvailability && page.data.aiAvailabilityStatus !== 'checking') {
         page._refreshAiAvailability({ force: true, silent: true })
       }

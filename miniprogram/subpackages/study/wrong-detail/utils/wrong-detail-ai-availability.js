@@ -14,7 +14,7 @@ function _checkingState() {
 }
 
 function _applyAvailability(page, state) {
-  if (!page._alive) return false
+  if (!page._alive || page._aiAvailabilityPaused) return false
   page._aiAvailabilitySeq = (page._aiAvailabilitySeq || 0) + 1
   _clearAiAvailabilityRetry(page)
   const value = state && typeof state === 'object' ? state : {}
@@ -33,17 +33,19 @@ function _applyAvailability(page, state) {
     aiAvailabilityReason: reason,
     aiAvailabilityMessage: message,
   })
-  if (!enabled) {
-    page._scheduleAiAvailabilityRetry(
-      checking
-        ? Math.max(
-          1000,
-          Number(value.retry_after_ms) || AVAILABILITY_CHECKING_RETRY_MS,
-        )
-        : Math.max(5000, Number(value.retry_after_ms) || AVAILABILITY_RETRY_MS),
-    )
-  }
+  _resumeAvailabilityRetry(page)
   return enabled
+}
+
+function _resumeAvailabilityRetry(page) {
+  if (page.data.aiAvailabilityEnabled || page._aiAvailabilityIntent) return
+  const state = page._aiAvailability || {}
+  const checking = state.status === 'checking'
+  const minimum = checking ? 1000 : AVAILABILITY_RETRY_MS
+  const fallback = checking ? AVAILABILITY_CHECKING_RETRY_MS : AVAILABILITY_RETRY_MS
+  const delay = Math.max(minimum, Number(state.retry_after_ms) || fallback)
+  const elapsed = Math.max(0, Date.now() - Number(page._aiAvailabilityCheckedAt || 0))
+  page._scheduleAiAvailabilityRetry(Math.max(1000, delay - elapsed))
 }
 
 function _availabilityCacheFresh(page) {
@@ -51,13 +53,15 @@ function _availabilityCacheFresh(page) {
     Date.now() - Number(page._aiAvailabilityCheckedAt || 0) < AVAILABILITY_CACHE_MS
 }
 
-async function _refreshAiAvailability(page, { requestClient, force } = {}) {
-  const seq = ++page._aiAvailabilitySeq
+async function _refreshAiAvailability(page, { requestClient, force, silent } = {}) {
+  if (!page._alive || page._aiAvailabilityPaused) return false
   if (!force && _availabilityCacheFresh(page) && !page.data.aiAvailabilityChecking) {
+    _resumeAvailabilityRetry(page)
     return page.data.aiAvailabilityEnabled
   }
+  const seq = page._aiAvailabilitySeq = (page._aiAvailabilitySeq || 0) + 1
   page._clearAiAvailabilityRetry()
-  page.setData(_checkingState())
+  if (!silent || (!page._aiAvailability && !page.data.aiAvailabilityEnabled)) page.setData(_checkingState())
   let timer = null
   try {
     const request = requestClient.get('/ai/error-analysis/availability', {}, {
@@ -98,11 +102,46 @@ async function _refreshAiAvailability(page, { requestClient, force } = {}) {
   }
 }
 
+async function runWhenAvailable(page, wqId, action) {
+  if (page._aiAvailabilityPaused) return
+  if (page.data.aiAvailabilityEnabled) return action()
+  if (page._aiAvailabilityIntent || page.data.aiAvailabilityStatus !== 'checking') return
+  const intent = { wqId, requestId: page._aiRequestId }
+  const deadline = Date.now() + 65000
+  page._aiAvailabilityIntent = intent
+  page.setData({ aiAvailabilityPending: true })
+  const isCurrent = () => page._alive && page._aiAvailabilityIntent === intent &&
+    page._aiRequestId === intent.requestId &&
+    Number(page._currentWqId || (page.data.wq && page.data.wq.id)) === Number(wqId)
+  try {
+    for (let attempt = 0; attempt < 32 && isCurrent() && Date.now() < deadline; attempt++) {
+      const enabled = await page._refreshAiAvailability({ force: true, silent: true })
+      if (!isCurrent()) return
+      if (enabled) {
+        page._aiAvailabilityIntent = null
+        page.setData({ aiAvailabilityPending: false })
+        return action()
+      }
+      if (page.data.aiAvailabilityStatus !== 'checking') return
+      await new Promise(resolve => setTimeout(resolve, AVAILABILITY_CHECKING_RETRY_MS))
+    }
+  } finally {
+    if (page._aiAvailabilityIntent === intent) {
+      page._aiAvailabilityIntent = null
+      if (page._alive) {
+        page.setData({ aiAvailabilityPending: false })
+        if (!page.data.aiAvailabilityEnabled) page._scheduleAiAvailabilityRetry(
+          Number((page._aiAvailability || {}).retry_after_ms) || AVAILABILITY_RETRY_MS)
+      }
+    }
+  }
+}
+
 function _scheduleAiAvailabilityRetry(page, delay) {
-  if (!page._alive || page._aiAvailabilityRetryTimer) return
+  if (!page._alive || page._aiAvailabilityPaused || page._aiAvailabilityRetryTimer) return
   page._aiAvailabilityRetryTimer = setTimeout(() => {
     page._aiAvailabilityRetryTimer = null
-    if (page._alive) page._refreshAiAvailability({ force: true, silent: true })
+    if (page._alive && !page._aiAvailabilityPaused) page._refreshAiAvailability({ force: true, silent: true })
   }, Math.max(1000, Number(delay) || AVAILABILITY_RETRY_MS))
 }
 
@@ -113,6 +152,8 @@ function _clearAiAvailabilityRetry(page) {
 }
 
 function _initAiAvailabilityState(page) {
+  page._aiAvailabilityPaused = false
+  page._aiAvailabilityIntent = null
   page._aiAvailabilitySeq = 0
   page._aiAvailability = null
   page._aiAvailabilityCheckedAt = 0
@@ -120,10 +161,22 @@ function _initAiAvailabilityState(page) {
 }
 
 function _clearAiAvailabilityState(page) {
-  page._aiAvailabilitySeq = (page._aiAvailabilitySeq || 0) + 1
+  pauseAvailability(page)
   page._aiAvailability = null
   page._aiAvailabilityCheckedAt = 0
+}
+
+function pauseAvailability(page) {
+  page._aiAvailabilityPaused = true
+  page._aiAvailabilitySeq = (page._aiAvailabilitySeq || 0) + 1
+  page._aiAvailabilityIntent = null
   page._clearAiAvailabilityRetry()
+  if (page._alive && page.data.aiAvailabilityPending) page.setData({ aiAvailabilityPending: false })
+}
+
+function resumeAvailability(page) {
+  page._aiAvailabilityPaused = false
+  if (page._alive && page.data.wq) return page._refreshAiAvailability({ silent: true })
 }
 
 function _availabilityFromError(error) {
@@ -152,4 +205,7 @@ module.exports = {
   _initAiAvailabilityState,
   _clearAiAvailabilityState,
   _availabilityFromError,
+  runWhenAvailable,
+  pauseAvailability,
+  resumeAvailability,
 }

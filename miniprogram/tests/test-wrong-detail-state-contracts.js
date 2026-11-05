@@ -9,6 +9,46 @@ const helpers = ['_aiPollDelayMs', '_isTimeoutError', '_generationMarker',
   '_fallbackMessage', '_processWqData', '_hasStoredAnalysisValue',
   '_detectAiCache', '_resolvePreferredAnalysis', '_isWqMastered']
 const clone = value => JSON.parse(JSON.stringify(value))
+const availability = require('../subpackages/study/wrong-detail/utils/wrong-detail-ai-availability')
+
+test('silent shared-health refresh keeps available controls enabled while fetching', async () => {
+  let resolve
+  const patches = []
+  const page = {
+    _alive: true, data: { aiAvailabilityEnabled: true },
+    _clearAiAvailabilityRetry() {}, _scheduleAiAvailabilityRetry() {},
+    setData(patch) { patches.push(patch); Object.assign(this.data, patch) },
+  }
+  const task = availability._refreshAiAvailability(page, {
+    force: true, silent: true,
+    requestClient: { get: () => new Promise(done => { resolve = done }) },
+  })
+  assert.deepEqual(patches, [])
+  assert.equal(page.data.aiAvailabilityEnabled, true)
+  resolve({ enabled: true, status: 'available' })
+  assert.equal(await task, true)
+  assert.ok(patches.every(patch => patch.aiAvailabilityEnabled !== false))
+})
+
+test('silent refresh retains a confirmed disabled state until the response arrives', async () => {
+  let resolve
+  const patches = []
+  const state = { enabled: false, status: 'unavailable', reason: 'configuration' }
+  const page = {
+    _alive: true, _aiAvailability: state,
+    data: { aiAvailabilityEnabled: false, aiAvailabilityChecking: false },
+    _clearAiAvailabilityRetry() {}, _scheduleAiAvailabilityRetry() {},
+    setData(patch) { patches.push(patch); Object.assign(this.data, patch) },
+  }
+  const task = availability._refreshAiAvailability(page, {
+    force: true, silent: true,
+    requestClient: { get: () => new Promise(done => { resolve = done }) },
+  })
+  assert.deepEqual(patches, [])
+  resolve(state)
+  assert.equal(await task, false)
+  assert.equal(page.data.aiAvailabilityChecking, false)
+})
 
 function fixture() {
   let definition

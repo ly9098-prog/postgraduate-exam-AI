@@ -61,6 +61,21 @@ function fixture() {
   return { page, calls, api, adapter, context }
 }
 
+test('guest repeat requests a fresh configuration once instead of restoring a draft', () => {
+  const { page, calls } = fixture()
+  page._guestMode = true
+  page.repeatGuestPractice()
+  page.repeatGuestPractice()
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][0], 'redirect')
+  const navigation = calls[0][1]
+  assert.equal(navigation.url, '/subpackages/study/practice/practice?guest=1&fresh=1')
+  navigation.fail()
+  assert.equal(page._navigationLocked, false)
+  page.repeatGuestPractice()
+  assert.equal(calls.length, 2)
+})
+
 test('result page memoizes controllers and payload ports per page instance', () => {
   const { page } = fixture()
   const other = fixture().page

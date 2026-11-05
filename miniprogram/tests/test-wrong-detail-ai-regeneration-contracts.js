@@ -10,6 +10,28 @@ function setup() {
   return f
 }
 
+test('regeneration continues after a shared probe without requiring a second click', async () => {
+  const { page } = setup(), pending = deferred(), requests = []
+  page.data.aiAvailabilityEnabled = false
+  page.data.aiAvailabilityStatus = 'checking'
+  page._refreshAiAvailability = async () => {
+    await pending.promise
+    page.data.aiAvailabilityEnabled = true
+    return true
+  }
+  page._requestAiAnalysis = async (...args) => {
+    requests.push(args)
+    return { content: 'fresh' }
+  }
+  page._applyRegenerateResult = async () => {}
+  const task = page.regenerateAiAnalysis()
+  await page.regenerateAiAnalysis()
+  pending.resolve()
+  await task
+  assert.deepEqual(requests, [[12, true]])
+  assert.equal(page.data.aiAvailabilityPending, false)
+})
+
 test('first regeneration failure always renders an error instead of an empty review panel', async () => {
   const { page, api } = setup()
   page.data.aiRequested = true

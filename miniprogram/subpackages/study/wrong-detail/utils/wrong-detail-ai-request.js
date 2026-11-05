@@ -16,14 +16,21 @@ if (generatedAt !== undefined) patch.ai_analysis_generated_at = String(generated
 entry.data = Object.assign({}, entry.data, patch)
 }
 
-async function _requestAiAnalysis(wqId, forceRegenerate, { postAnalysis, AI_REQUEST_TIMEOUT_MS }) {
-return postAnalysis({
+async function _requestAiAnalysis(wqId, forceRegenerate, { postAnalysis, AI_REQUEST_TIMEOUT_MS, applyAvailability, waitForAvailability, isCurrent }) {
+const request = () => postAnalysis({
 wrong_question_id: wqId,
 force_regenerate: !!forceRegenerate,
 }, {
 timeout: AI_REQUEST_TIMEOUT_MS,
 suppressNetworkToast: true,
 })
+const result = await request()
+if (result && result.error_code === 'ai_service_unavailable' && result.availability &&
+  result.availability.status === 'checking' && waitForAvailability && isCurrent()) {
+applyAvailability(result.availability)
+return await waitForAvailability(request) || result
+}
+return result
 }
 
 async function _enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt, { postRecovery }) {
@@ -68,8 +75,13 @@ aiRetryable: availability ? true
 }
 }
 
-function onTapAiAnalysis(page, { showToast }) {
+function onTapAiAnalysis(page, { showToast, runWhenAvailable }) {
 if (page.data.aiLoading || page.data.aiRegenerating) return
+if (page.data.aiAvailabilityStatus === 'checking' && page.data.aiAvailabilityEnabled !== true) {
+const wqId = page._currentWqId || (page.data.wq && page.data.wq.id)
+if (wqId) return runWhenAvailable(wqId, () => page.loadAiAnalysis(wqId))
+return
+}
 if (page.data.aiAvailabilityEnabled !== true) {
 showToast({ title: page.data.aiAvailabilityMessage || 'AI 服务暂不可用', icon: 'none' })
 if (page.data.aiAvailabilityStatus !== 'checking' && page._refreshAiAvailability) {

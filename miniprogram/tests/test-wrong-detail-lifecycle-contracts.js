@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
-const { fixture } = require('./helpers/wrong-detail-ai-recovery-fixture')
+const { fixture, deferred } = require('./helpers/wrong-detail-ai-recovery-fixture')
 const plain = value => JSON.parse(JSON.stringify(value))
 
 function setup() {
@@ -25,6 +25,70 @@ function setup() {
     fire(id) { const timer = timers.get(id); assert.ok(timer); timers.delete(id); timer.fn() },
   }
 }
+
+function availabilitySetup() {
+  const f = setup()
+  f.page._initAiAvailabilityState()
+  f.page._showBottomActions = () => {}
+  f.page._refreshAiAvailability = function (options) {
+    return f.definition._refreshAiAvailability.call(this, options)
+  }
+  return f
+}
+
+test('returning within negative cache TTL restores remaining cooldown and observes recovery', async () => {
+  const f = availabilitySetup()
+  let requests = 0
+  f.api.get = async () => {
+    requests++
+    return { enabled: true, status: 'available' }
+  }
+  f.page._applyAiAvailability({
+    enabled: false, status: 'unavailable', reason: 'transient', retry_after_ms: 30000,
+  })
+  f.page.onHide()
+  assert.equal(f.page._aiAvailabilityRetryTimer, null)
+  f.now(15000)
+  f.page.onShow()
+  assert.equal(requests, 0)
+  const timer = f.page._aiAvailabilityRetryTimer
+  assert.ok(timer, 'cached failure must resume polling')
+  assert.equal(f.timers.get(timer).ms, 25000)
+  f.now(40000)
+  f.fire(timer)
+  for (let tick = 0; tick < 8; tick++) await Promise.resolve()
+  assert.equal(requests, 1)
+  assert.equal(f.page.data.aiAvailabilityEnabled, true)
+  assert.equal(f.page._aiAvailabilityRetryTimer, null)
+})
+
+test('hidden in-flight health response cannot update controls or restart polling', async () => {
+  const f = availabilitySetup(), pending = deferred()
+  f.page.data.aiAvailabilityEnabled = false
+  f.api.get = () => pending.promise
+  const request = f.page._refreshAiAvailability({ force: true, silent: true })
+  f.page.onHide()
+  pending.resolve({ enabled: true, status: 'available' })
+  await request
+  assert.equal(f.page.data.aiAvailabilityEnabled, false)
+  assert.equal(f.page._aiAvailabilityRetryTimer, null)
+  assert.equal(f.timers.size, 0)
+  f.api.get = async () => ({ enabled: true, status: 'available' })
+  f.page.onShow()
+  for (let tick = 0; tick < 8; tick++) await Promise.resolve()
+  assert.equal(f.page.data.aiAvailabilityEnabled, true)
+})
+
+test('returning with healthy fresh cache does not refetch or schedule polling', () => {
+  const f = availabilitySetup()
+  f.api.get = () => { throw new Error('fresh healthy state must be reused') }
+  f.page._applyAiAvailability({ enabled: true, status: 'available' })
+  f.page.onHide()
+  f.page.onShow()
+  assert.equal(f.page.data.aiAvailabilityEnabled, true)
+  assert.equal(f.page._aiAvailabilityRetryTimer, null)
+  assert.equal(f.timers.size, 0)
+})
 
 test('onLoad resolves both page hooks dynamically, preserves receiver and does not return', () => {
   const f = setup(), options = { id: '12' }

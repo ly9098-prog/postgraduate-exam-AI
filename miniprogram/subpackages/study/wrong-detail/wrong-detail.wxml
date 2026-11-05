@@ -168,7 +168,7 @@
 <image class="ai-history-icon-image" src="/assets/icons/wrong-detail/layers.svg" mode="aspectFit" aria-hidden="true" />
 <text class="ai-hint">{{aiFromQuestionAnalysis ? '当前展示题库解析' : (aiFromCache ? '来自历史复盘，仅供参考' : '内容由 AI 生成，仅供参考')}}</text>
 </view>
-<button class="ai-regenerate-link" hover-class="ai-control-pressed" hover-stay-time="90" disabled="{{aiRegenerating || !aiAvailabilityEnabled}}" bindtap="regenerateAiAnalysis" aria-label="重新生成 AI 复盘"><image class="ai-refresh-icon-image {{aiRegenerating ? 'is-spinning' : ''}}" src="/assets/icons/wrong-detail/refresh-cw.svg" mode="aspectFit" aria-hidden="true" /><text>{{aiRegenerating ? '更新中…' : '重新生成'}}</text></button>
+<button class="ai-regenerate-link" hover-class="ai-control-pressed" hover-stay-time="90" disabled="{{aiRegenerating || aiAvailabilityPending || (!aiAvailabilityEnabled && !aiAvailabilityChecking)}}" bindtap="regenerateAiAnalysis" aria-label="重新生成 AI 复盘"><image class="ai-refresh-icon-image {{aiRegenerating ? 'is-spinning' : ''}}" src="/assets/icons/wrong-detail/refresh-cw.svg" mode="aspectFit" aria-hidden="true" /><text>{{aiRegenerating ? '更新中…' : (aiAvailabilityPending ? '确认服务中…' : '重新生成')}}</text></button>
 </view>
 </view>
 <view wx:elif="{{aiFallback && !aiCards}}" class="ai-fallback ai-review-error" aria-live="polite">
@@ -178,9 +178,9 @@
 </view>
 <text user-select="true" class="fallback-desc">{{aiErrorText || 'AI 服务暂时不可用，请稍后重试'}}</text>
 <text class="ai-error-help">题目与参考答案仍可正常查看</text>
-<button wx:if="{{aiRetryable}}" class="ai-action-btn ai-retry-btn" hover-class="ai-control-pressed" disabled="{{!aiAvailabilityEnabled || aiRegenerating}}" bindtap="regenerateAiAnalysis">
+<button wx:if="{{aiRetryable}}" class="ai-action-btn ai-retry-btn" hover-class="ai-control-pressed" disabled="{{aiRegenerating || aiAvailabilityPending || (!aiAvailabilityEnabled && !aiAvailabilityChecking)}}" bindtap="regenerateAiAnalysis">
 <image wx:if="{{aiAvailabilityEnabled}}" class="ai-refresh-icon-image" src="/assets/icons/wrong-detail/refresh-cw.svg" mode="aspectFit" aria-hidden="true" />
-<text>{{aiAvailabilityEnabled ? '重试复盘' : (aiAvailabilityChecking ? '正在检查服务' : '等待服务恢复')}}</text>
+<text>{{aiAvailabilityPending ? '确认服务中…' : (aiAvailabilityEnabled || aiAvailabilityChecking ? '重试复盘' : '等待服务恢复')}}</text>
 </button>
 </view>
 <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle">
@@ -188,8 +188,8 @@
 <text class="ai-idle-title">生成完整复盘</text>
 <text class="ai-idle-desc">结合你的答案，梳理错因、补漏重点和下一步</text>
 </view>
-<button class="ai-action-btn ai-generate-btn" hover-class="ai-control-pressed" hover-stay-time="90" disabled="{{!aiAvailabilityEnabled}}" bindtap="onTapAiAnalysis">
-<text class="ai-action-btn-label">开始复盘</text>
+<button class="ai-action-btn ai-generate-btn" hover-class="ai-control-pressed" hover-stay-time="90" disabled="{{aiAvailabilityPending || (!aiAvailabilityEnabled && !aiAvailabilityChecking)}}" bindtap="onTapAiAnalysis">
+<text class="ai-action-btn-label">{{aiAvailabilityPending ? '确认服务中…' : '开始复盘'}}</text>
 <text class="ai-action-arrow">→</text>
 </button>
 </view>

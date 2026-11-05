@@ -51,7 +51,7 @@ const AI_GENERATION_DELEGATES = {
   "_handleAiAnalysisError": "async _handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt) {\nreturn aiGeneration._handleAiAnalysisError(this, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError, _shouldRecoverAiRequest: error => aiState._shouldRecoverAiRequest(error) })\n}"
 }
 const AI_REGENERATION_DELEGATES = {
-  "regenerateAiAnalysis": "async regenerateAiAnalysis() {\nreturn aiRegeneration.regenerateAiAnalysis(this, { _generationMarker })\n}",
+  "regenerateAiAnalysis": "async regenerateAiAnalysis() {\nreturn aiRegeneration.regenerateAiAnalysis(this, { _generationMarker, runWhenAvailable: (wqId, action) => aiAvailability.runWhenAvailable(this, wqId, action) })\n}",
   "_applyRegenerateResult": "async _applyRegenerateResult(result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {\nreturn aiRegeneration._applyRegenerateResult(this, result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { _normalizeAiPayload: value => _normalizeAiPayload(value), _hasAiContent: value => _hasAiContent(value) })\n}",
   "_handleRegeneratingModel": "async _handleRegeneratingModel(wqId, requestId, baselineGeneratedAt) {\nreturn aiRegeneration._handleRegeneratingModel(this, wqId, requestId, baselineGeneratedAt, { showToast: options => wx.showToast(options) })\n}",
   "_commitRegenerateCachePreserved": "_commitRegenerateCachePreserved(result, normalized, wqId, baselineGeneratedAt) {\nreturn aiRegeneration._commitRegenerateCachePreserved(this, result, normalized, wqId, baselineGeneratedAt, { _normalizeAiResult: value => _normalizeAiResult(value), showToast: options => wx.showToast(options) })\n}",
@@ -65,10 +65,10 @@ const AI_REGENERATION_DELEGATES = {
 const AI_REQUEST_DELEGATES = {
   "_resetAiLoadingState": "_resetAiLoadingState() {\nreturn aiRequest._resetAiLoadingState(this)\n}",
   "_syncWqCacheAi": "_syncWqCacheAi(wqId, normalized, generatedAt) {\nreturn aiRequest._syncWqCacheAi(this, wqId, normalized, generatedAt)\n}",
-  "_requestAiAnalysis": "async _requestAiAnalysis(wqId, forceRegenerate) {\nreturn aiRequest._requestAiAnalysis(wqId, forceRegenerate, { postAnalysis: (payload, options) => api.post('/ai/error-analysis', payload, options), AI_REQUEST_TIMEOUT_MS })\n}",
+  "_requestAiAnalysis": "async _requestAiAnalysis(wqId, forceRegenerate) {\nreturn aiRequest._requestAiAnalysis(wqId, forceRegenerate, { postAnalysis: (payload, options) => api.post('/ai/error-analysis', payload, options), AI_REQUEST_TIMEOUT_MS, applyAvailability: state => this._applyAiAvailability(state), waitForAvailability: action => aiAvailability.runWhenAvailable(this, wqId, action), isCurrent: this._isCurrentAiRequest.bind(this, this._aiRequestId, wqId) })\n}",
   "_enqueueAiRecovery": "async _enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt) {\nreturn aiRequest._enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt, { postRecovery: (payload, options) => api.post('/ai/error-analysis/recover', payload, options) })\n}",
   "_analysisFailureState": "_analysisFailureState(model, result) {\nreturn aiRequest._analysisFailureState(model, result, { _fallbackMessage })\n}",
-  "onTapAiAnalysis": "onTapAiAnalysis() {\nreturn aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options) })\n}"
+  "onTapAiAnalysis": "onTapAiAnalysis() {\nreturn aiRequest.onTapAiAnalysis(this, { showToast: options => wx.showToast(options), runWhenAvailable: (wqId, action) => aiAvailability.runWhenAvailable(this, wqId, action) })\n}"
 }
 const AI_AVAILABILITY_DELEGATES = {
   "_initAiAvailabilityState": "_initAiAvailabilityState() { return aiAvailability._initAiAvailabilityState(this) }",
@@ -103,8 +103,8 @@ const LIFECYCLE_DELEGATES = {
   "_initWrongDetailState": "_initWrongDetailState() {\nreturn lifecycle._initWrongDetailState(this, { setRenderGuardPage })\n}",
   "_initWrongDetailFromOptions": "_initWrongDetailFromOptions(options) {\nreturn lifecycle._initWrongDetailFromOptions(this, options)\n}",
   "_resolveQuestionIds": "_resolveQuestionIds(options, currentId) {\nreturn lifecycle._resolveQuestionIds(options, currentId, { get platform() { return wx } })\n}",
-  "onShow": "onShow() {\nreturn lifecycle.onShow(this)\n}",
-  "onHide": "onHide() {\nreturn lifecycle.onHide(this)\n}",
+  "onShow": "onShow() {\nreturn lifecycle.onShow(this, { resumeAvailability: () => aiAvailability.resumeAvailability(this) })\n}",
+  "onHide": "onHide() {\nreturn lifecycle.onHide(this, { pauseAvailability: () => aiAvailability.pauseAvailability(this) })\n}",
   "onPageScroll": "onPageScroll() {\nreturn lifecycle.onPageScroll(this)\n}",
   "onPageInteraction": "onPageInteraction() {\nreturn lifecycle.onPageInteraction(this)\n}",
   "_clearBottomActionsTimer": "_clearBottomActionsTimer() {\nreturn lifecycle._clearBottomActionsTimer(this)\n}",

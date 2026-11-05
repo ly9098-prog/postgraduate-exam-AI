@@ -16,14 +16,26 @@ if (process.argv[2]) test('compiled AI errors keep reference content, recovery a
     loading: false, aiFallback: true, aiCards: null, aiRetryable: true, aiRequested: true,
     aiErrorText: 'AI 服务暂时繁忙，请稍后重试', aiAvailabilityMessage: '服务不可用',
   })
-  for (const enabled of [true, false]) {
-    const tree = render({ ...base, aiAvailabilityEnabled: enabled })
+  for (const [enabled, checking, pending, disabled] of [
+    [true, false, false, false], [false, false, false, true],
+    [false, true, false, false], [false, true, true, true],
+  ]) {
+    const tree = render({
+      ...base, aiAvailabilityEnabled: enabled, aiAvailabilityChecking: checking,
+      aiAvailabilityPending: pending,
+    })
     assert.equal(byClass(tree, 'ai-review-error').length, 1)
     assert.equal(byClass(tree, 'ai-retry-btn').length, 1)
-    assert.equal(Boolean(byClass(tree, 'ai-retry-btn')[0].attr.disabled), !enabled)
+    assert.equal(Boolean(byClass(tree, 'ai-retry-btn')[0].attr.disabled), disabled)
     assert.equal(byClass(tree, 'ai-availability-note').length, 0)
     assert.equal(byClass(tree, 'ai-loading-state').length, 0)
     assert.equal(all(tree).filter(node => node.tag === 'wx-quiz-runner').length, 1)
+    const idle = render({
+      ...base, aiFallback: false, aiRequested: false,
+      aiAvailabilityEnabled: enabled, aiAvailabilityChecking: checking,
+      aiAvailabilityPending: pending,
+    })
+    assert.equal(Boolean(byClass(idle, 'ai-generate-btn')[0].attr.disabled), pending || (!enabled && !checking))
   }
   const terminal = render({ ...base, aiRetryable: false })
   assert.equal(byClass(terminal, 'ai-review-error').length, 1)
