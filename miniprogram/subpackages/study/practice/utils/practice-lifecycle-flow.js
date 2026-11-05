@@ -5,6 +5,7 @@ const { resetRenderGuard, setRenderGuardPage } = dependencies
 page._pageAlive = true
 page._visible = true
 page.setData({ guestMode: Boolean(options && String(options.guest) === '1') })
+if (page.data.guestMode && String(options.fresh) === '1') coldResume.clear(page)
 page._coldResumeRequested = Boolean(options && String(options.resume) === '1')
 page._coldResumeOwner = coldResume.userId()
 page._coldResumeCreatedAt = undefined
@@ -160,9 +161,8 @@ page.setData({ statusBarHeight: 20, navBarHeight: 44 })
 }
 }
 
-function _resetPracticeStateAfterExit(page, preserveGuest) {
-  if (preserveGuest && page.data.guestMode) coldResume.persist(page)
-  else coldResume.clear(page)
+function _resetPracticeStateAfterExit(page) {
+  coldResume.clear(page)
   page._resetSession()
   page._pendingResultUrl = ''
   page._submittedResultPayload = null

@@ -175,7 +175,8 @@ setUnloadGuard: (enabled, message) => page._setPracticeUnloadGuard(enabled, mess
 }
 
 async function evaluateGuest(page, api, platform, saveGuestResult) {
-  if (page.data.submitting || page.data.submitted || !page.data.questions.length) return
+  if (page.data.submitting || !page.data.questions.length) return
+  if (page.data.submitted) return openGuestResult(page, platform)
   const session = page._practiceSession
   if (Date.now() >= session.expiresAt) return resetGuest(page, '本次体验已过期，请重新取题')
   const answers = Object.entries(session.answerMap).map(([id, answer]) => ({
@@ -207,10 +208,7 @@ async function evaluateGuest(page, api, platform, saveGuestResult) {
         ? Math.round(result.objective_correct / result.objective_total * 100) : 0,
       guest_mode: true,
     }
-    if (!completeGuestResult(page, payload, platform, saveGuestResult)) return
-    page._clearTimer()
-    coldResume.clear(page)
-    page._setPracticeUnloadGuard(false)
+    completeGuestResult(page, payload, platform, saveGuestResult)
   } catch (error) {
     if (!page._pageAlive || page._practiceSession !== session) return
     page.setData({ submitting: false })
@@ -226,9 +224,38 @@ function completeGuestResult(page, payload, platform, saveGuestResult) {
     platform.showToast({ title: '无法保存体验结果，请检查存储空间后重试', icon: 'none' })
     return false
   }
-  page.setData({ submitting: false })
-  platform.redirectTo({ url: '/subpackages/study/practice-result/index?guest=1' })
+  page.setData({ submitted: true })
+  page._clearTimer()
+  coldResume.clear(page)
+  openGuestResult(page, platform)
   return true
+}
+
+function openGuestResult(page, platform) {
+  if (!page._pageAlive || page._returnNavigationLocked) return
+  page._returnNavigationLocked = true
+  page._setPracticeUnloadGuard(false)
+  page.setData({ submitting: true, practiceExitGuardVisible: false }, () => {
+    const navigate = () => {
+      if (!page._pageAlive) return
+      platform.redirectTo({
+        url: '/subpackages/study/practice-result/index?guest=1',
+        fail: () => {
+          if (!page._pageAlive) return
+          page._returnNavigationLocked = false
+          page.setData({ submitting: false })
+          page._setPracticeUnloadGuard(false)
+          page._showSubmitConfirm({
+            scenario: 'info', layout: 'minimal', title: '结果页打开失败',
+            message: '本组结果已保存在本机，是否重新打开？',
+            confirmText: '重新打开', cancelText: '稍后再试', hideEyebrow: true,
+          }).then(confirmed => { if (confirmed) openGuestResult(page, platform) })
+        },
+      })
+    }
+    if (typeof platform.nextTick === 'function') platform.nextTick(navigate)
+    else navigate()
+  })
 }
 
 function resetGuest(page, notice) {

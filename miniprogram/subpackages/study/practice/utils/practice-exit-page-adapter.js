@@ -77,7 +77,7 @@ const { createExitRequestController, getClearTimeout, getPlatform } = dependenci
           page._feedbackTimer = null
         }
       },
-      resetPracticeState: () => page._resetPracticeStateAfterExit(page.data.guestMode),
+      resetPracticeState: () => page._resetPracticeStateAfterExit(),
       setLastExitSource: value => { page._lastExitSource = value || '' },
       scrollToSetupTop: () => {
         if (typeof getPlatform().pageScrollTo === 'function') getPlatform().pageScrollTo({ scrollTop: 0, duration: 0 })

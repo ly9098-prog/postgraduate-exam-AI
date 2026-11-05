@@ -5,7 +5,7 @@ const path = require('node:path')
 const vm = require('node:vm')
 const miniRoot = path.join(__dirname, '..')
 const memory = new Map()
-let definition, mono = 10000
+let definition, mono = 10000, onRedirect
 const requests = [], toasts = [], redirects = []
 global.wx = {
   getStorageSync: key => memory.get(key),
@@ -13,7 +13,7 @@ global.wx = {
   removeStorageSync: key => memory.delete(key),
   getPerformance: () => ({ now: () => mono }),
   showToast: value => toasts.push(value), pageScrollTo() {},
-  redirectTo: value => redirects.push(value.url),
+  redirectTo: value => { redirects.push(value.url); if (onRedirect) onRedirect(value) },
 }
 global.getCurrentPages = () => []
 global.Page = value => { definition = value }
@@ -34,6 +34,7 @@ function batch() {
     expires_at: Math.floor(Date.now() / 1000) + 86400 }
 }
 function reset() {
+  onRedirect = null
   memory.clear()
   requests.length = toasts.length = redirects.length = 0
   api.get = async (url, params, options) => {
@@ -191,9 +192,11 @@ test('real shared page grades anonymously and redirects to the existing result p
   assert.equal(memory.get('practice_pending_submission_v1:42').submission.requestId, 'private')
   assert.ok(requests.every(request => request.options.auth === 'none'))
   assert.ok([...memory.keys()].every(key => !key.startsWith('practice_resume_v1:')))
-  await instance.startPractice()
-  assert.equal(instance.data.submitted, false)
-  assert.deepEqual(instance._practiceSession.answerMap, {})
+  const next = page({ guest: '1', fresh: '1' })
+  await next.onReady()
+  await next.startPractice()
+  assert.equal(next.data.submitted, false)
+  assert.deepEqual(next._practiceSession.answerMap, {})
 })
 
 test('guest result persists for the existing result page with bounded TTL and reference status', () => {
@@ -222,6 +225,120 @@ test('guest result persists for the existing result page with bounded TTL and re
   assert.ok(resultTemplate.includes('guestMode ? \'GUEST REPORT\''))
   assert.ok(resultTemplate.includes('bindtap="repeatGuestPractice"'))
   assert.ok(!resultTemplate.includes('guest-result-primary'))
+})
+
+test('guest submission stays terminal during redirect, hide, guard leave and unload', async () => {
+  reset()
+  const instance = await started()
+  instance.selectOption({ detail: { option: 'A' } })
+  instance.onHide()
+  instance.onShow()
+  assert.ok(store.readGuest().snapshot)
+  onRedirect = () => {
+    assert.equal(instance.data.submitted, true)
+    assert.equal(instance.data.submitting, true, 'keep the grading mask until navigation completes')
+    assert.equal(instance._returnNavigationLocked, true)
+    assert.equal(instance.data.practiceExitGuardVisible, false)
+    assert.equal(store.readGuest().snapshot, null, 'clear the draft before navigation')
+    instance.onPracticeExitGuardLeave()
+    instance.onHide()
+    instance.onUnload()
+  }
+  await instance.doSubmit()
+  assert.deepEqual(redirects, ['/subpackages/study/practice-result/index?guest=1'])
+  assert.equal(store.readGuest().snapshot, null)
+  assert.ok(store.readGuestResult())
+  const fresh = page()
+  await fresh.onReady()
+  assert.equal(fresh.data.started, false)
+  assert.deepEqual(fresh._practiceSession.answerMap, {})
+})
+
+test('guest result redirect failure keeps terminal answers and allows navigation-only retry', async () => {
+  reset()
+  const instance = await started()
+  instance.selectOption({ detail: { option: 'B' } })
+  let retry
+  instance._showSubmitConfirm = () => new Promise(resolve => { retry = resolve })
+  onRedirect = options => options.fail({ errMsg: 'redirectTo:fail' })
+  await instance.doSubmit()
+  assert.equal(instance.data.submitted, true)
+  assert.equal(instance.data.submitting, false)
+  assert.equal(instance._returnNavigationLocked, false)
+  instance.onHide()
+  assert.equal(store.readGuest().snapshot, null)
+  instance.onShow()
+  instance.selectOption({ detail: { option: 'A' } })
+  assert.equal(instance._practiceSession.answerMap[1], 'B')
+  onRedirect = null
+  retry(true)
+  await Promise.resolve()
+  assert.equal(requests.filter(item => item.url === '/guest/practice/evaluate').length, 1)
+  assert.equal(redirects.length, 2)
+})
+
+test('guest redirect waits for the guard-close render tick without revealing the answer page', async () => {
+  reset()
+  const instance = await started()
+  const ticks = []
+  const previousNextTick = wx.nextTick
+  wx.nextTick = callback => ticks.push(callback)
+  try {
+    await instance.doSubmit()
+    assert.equal(redirects.length, 0)
+    assert.equal(ticks.length, 1)
+    assert.equal(instance.data.practiceExitGuardVisible, false)
+    assert.equal(instance._returnNavigationLocked, true)
+    assert.equal(instance.data.submitting, true)
+    assert.equal(store.readGuest().snapshot, null)
+    ticks.shift()()
+    assert.equal(redirects.length, 1)
+    assert.equal(instance.data.submitting, true)
+  } finally {
+    wx.nextTick = previousNextTick
+  }
+})
+
+test('guest result storage failure keeps answers recoverable and does not enter the submitted state', async () => {
+  reset()
+  const instance = await started()
+  instance.selectOption({ detail: { option: 'A' } })
+  const previousSetStorage = wx.setStorageSync
+  wx.setStorageSync = (key, value) => {
+    if (key === 'guestPracticeResult') throw new Error('storage full')
+    previousSetStorage(key, value)
+  }
+  try {
+    await instance.doSubmit()
+    assert.equal(instance.data.submitted, false)
+    assert.equal(instance.data.submitting, false)
+    assert.equal(instance._returnNavigationLocked, false)
+    assert.equal(redirects.length, 0)
+    instance.onHide()
+    assert.equal(store.readGuest().snapshot.answerMap[1], 'A')
+    assert.match(toasts.at(-1).title, /无法保存体验结果/)
+  } finally {
+    wx.setStorageSync = previousSetStorage
+  }
+})
+
+test('fresh guest entry discards an earlier draft and waits at configuration before fetching', async () => {
+  reset()
+  const previous = await started()
+  previous.selectOption({ detail: { option: 'B' } })
+  previous.onHide()
+  assert.ok(store.readGuest().snapshot)
+  const requestsBeforeEntry = requests.filter(item => item.url.endsWith('/questions')).length
+  const fresh = page({ guest: '1', fresh: '1' })
+  await fresh.onReady()
+  assert.equal(fresh.data.started, false)
+  assert.deepEqual(fresh._practiceSession.answerMap, {})
+  assert.equal(store.readGuest().snapshot, null)
+  assert.equal(requests.filter(item => item.url.endsWith('/questions')).length, requestsBeforeEntry)
+  await fresh.startPractice()
+  assert.equal(requests.filter(item => item.url.endsWith('/questions')).length, requestsBeforeEntry + 1)
+  assert.equal(fresh.data.answeredCount, 0)
+  assert.deepEqual(fresh._practiceSession.answerMap, {})
 })
 
 test('guest interruptions restore in the shared page across login without merging into an account', async () => {
@@ -338,7 +455,7 @@ test('guest invalid batch resets without formal submission or automatic retries'
   assert.equal(store.readGuest().snapshot, null)
 })
 
-test('declining shared exit keeps answers; confirming exit keeps an isolated guest draft', async () => {
+test('declining guest exit keeps answers; confirming exit discards draft through hide and unload', async () => {
   reset()
   const instance = await started()
   instance.selectOption({ detail: { option: 'B' } })
@@ -348,7 +465,13 @@ test('declining shared exit keeps answers; confirming exit keeps an isolated gue
   instance._showSubmitConfirmPaused = async () => true
   await instance.requestExitPractice()
   assert.equal(instance.data.started, false)
-  assert.equal(store.readGuest().snapshot.answerMap[1], 'B')
+  instance.onHide()
+  instance.onUnload()
+  assert.equal(store.readGuest().snapshot, null)
+  const fresh = page()
+  await fresh.onReady()
+  assert.equal(fresh.data.started, false)
+  assert.deepEqual(fresh._practiceSession.answerMap, {})
 })
 
 test('guest browse routes bypass login while personal-only routes return home without prompting', async () => {
@@ -512,7 +635,7 @@ test('guest home clears old account data and only checks an existing session', a
   assert.equal(instance._lastDashboardSubjectStats.length, 0)
   assert.equal(Object.keys(instance._guestBasePatch().user).length, 0)
   instance.startGuestTrial()
-  assert.equal(destination, '/subpackages/study/practice/practice?guest=1')
+  assert.equal(destination, '/subpackages/study/practice/practice?guest=1&fresh=1')
   token = true
   await instance._validateHomeSession()
   assert.equal(validations, 1)

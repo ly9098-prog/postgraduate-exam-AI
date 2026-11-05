@@ -43,7 +43,7 @@ const growthPageMethods = {
   },
 
   startGuestTrial() {
-    wx.navigateTo({ url: '/subpackages/study/practice/practice?guest=1' })
+    wx.navigateTo({ url: '/subpackages/study/practice/practice?guest=1&fresh=1' })
   },
 
   _guestBasePatch() {

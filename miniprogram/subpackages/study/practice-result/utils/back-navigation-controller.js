@@ -12,7 +12,7 @@ function repeatGuestImpl(options) {
   if (options.getNavigationLocked()) return
   options.setNavigationLocked(true)
   options.redirectTo({
-    url: '/subpackages/study/practice/practice?guest=1',
+    url: '/subpackages/study/practice/practice?guest=1&fresh=1',
     fail: () => options.setNavigationLocked(false),
   })
 }
