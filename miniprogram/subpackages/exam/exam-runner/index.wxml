@@ -5,7 +5,7 @@
     <text>{{errorText}}</text>
     <button bindtap="retry">重新加载</button>
   </view>
-  <view class="exam" wx:else style="padding-top: {{statusBarHeight}}px;">
+  <view class="exam route-enter" wx:else style="padding-top: {{statusBarHeight}}px;">
     <quiz-runner
       class="exam-runner"
       mode="exam"

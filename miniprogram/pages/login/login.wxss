@@ -1,5 +1,56 @@
 @import '../../styles/brand-shell.wxss';
 
+.entry-pending {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #F4F4EE;
+}
+
+.entry-pending-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48rpx;
+}
+
+.entry-pending-brand {
+  color: #173426;
+  font-size: 52rpx;
+  font-weight: 700;
+}
+
+.entry-pending-title {
+  margin-top: 32rpx;
+  color: #173426;
+  font-size: 30rpx;
+}
+
+.entry-pending-desc {
+  margin-top: 12rpx;
+  color: #53665A;
+  font-size: 24rpx;
+}
+
+.entry-pending-indicator {
+  width: 36rpx;
+  height: 36rpx;
+  margin-top: 32rpx;
+  border: 3rpx solid #D9E1D9;
+  border-top-color: #173426;
+  border-radius: 50%;
+  animation: entry-pending-spin 900ms linear infinite;
+}
+
+@keyframes entry-pending-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-pending-indicator { animation: none; }
+}
+
 page {
   min-height: 100vh;
   background: #F4F4EE;

@@ -119,7 +119,7 @@
 <view class="batch-loading-option" wx:for="{{skeletonOptions}}" wx:key="*this"></view>
 </view>
 </view>
-<view class="review-practice-content" wx:else>
+<view class="review-practice-content route-enter" wx:else>
 <quiz-runner class="review-runner"
       theme="default"
       mode="review"

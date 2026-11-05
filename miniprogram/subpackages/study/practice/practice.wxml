@@ -19,7 +19,7 @@
 <view class="submit-loading-dots"><view></view><view></view><view></view></view>
 </view>
 </view>
-<view class="setup" wx:if="{{entryResolved && !started && !launchingPreset}}">
+<view class="setup route-enter" wx:if="{{entryResolved && !started && !launchingPreset}}">
 <premium-nav title="刷题" variant="mint" bind:back="goBack" />
 <view class="setup-error-card" wx:if="{{errorText}}">
 <text class="setup-error-icon">⚠</text>
@@ -279,7 +279,7 @@
 </view>
 </view>
 </view>
-<view class="practice" wx:if="{{started && !loading}}" style="padding-top: {{statusBarHeight}}px;">
+<view class="practice route-enter" wx:if="{{started && !loading}}" style="padding-top: {{statusBarHeight}}px;">
 <quiz-runner
       class="practice-runner"
       mode="practice"

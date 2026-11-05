@@ -36,7 +36,7 @@
 
   <scroll-view
     wx:else
-    class="fr-card-scroll"
+    class="fr-card-scroll route-enter"
     scroll-y
     enhanced
     show-scrollbar="{{false}}"

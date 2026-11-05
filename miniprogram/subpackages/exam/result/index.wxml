@@ -17,7 +17,7 @@
     bounces="{{false}}"
     show-scrollbar="{{false}}"
   >
-    <view class="content">
+    <view class="content {{!loading ? 'route-enter' : ''}}">
       <view wx:if="{{loading}}" class="state-card">
         <view class="state-spinner"></view>
         <text class="state-title">正在生成考试结果</text>

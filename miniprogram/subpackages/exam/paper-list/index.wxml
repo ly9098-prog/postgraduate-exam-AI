@@ -53,7 +53,7 @@
     </view>
   </view>
 
-  <view class="content-panel">
+  <view class="content-panel {{!loading ? 'route-enter' : ''}}">
     <view class="section-toolbar" wx:if="{{!loading && !errorText && visiblePapers.length > 0}}">
       <view class="section-toolbar-copy">
         <text class="section-kicker">CHOICE PAPER</text>

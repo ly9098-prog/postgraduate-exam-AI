@@ -21,7 +21,7 @@
       </view>
     </view>
 
-    <view class="stats-content {{contentReady ? 'stats-content-ready' : 'stats-content-pending'}}">
+    <view class="stats-content {{contentReady ? 'stats-content-ready route-enter' : 'stats-content-pending'}}">
         <!-- ===== 累计专注 ===== -->
         <view class="card-section cumulative-focus-card">
           <view class="focus-card-head">

@@ -29,7 +29,7 @@
 <button class="error-primary" bindtap="reloadData">重新加载</button>
 <button class="error-secondary" bindtap="goBack">返回错题本</button>
 </view>
-<view class="page" wx:elif="{{!loading && wq}}">
+<view class="page route-enter" wx:elif="{{!loading && wq}}">
 <view wx:if="{{showSwitchMask}}" class="switch-mask">
 <view class="switch-pill"><view class="switch-dot"></view><text>正在切换题目</text></view>
 </view>

@@ -1,7 +1,7 @@
 <view class="page">
   <premium-nav title="考试历史" variant="light" bind:back="goBack" />
 
-  <view class="history-shell">
+  <view class="history-shell {{!loading || rows.length ? 'route-enter' : ''}}">
     <view class="overview-card" wx:if="{{rows.length}}">
       <view class="overview-icon" aria-hidden="true">
         <view class="bar bar-1"></view>

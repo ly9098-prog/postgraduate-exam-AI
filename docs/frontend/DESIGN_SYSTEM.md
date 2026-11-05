@@ -4,6 +4,10 @@
 
 ---
 
+## 页面切换动效
+
+页面切换动效统一遵循 [[docs/frontend/UI_RULES.md|UI_RULES]]「交互规则」：原生路由负责前进/返回，缺少衔接的正文使用全局 `.route-enter`（180ms、opacity 0.92→1、缓出）。不设置初始隐藏，不对整页施加 transform，不增加 JS 动画计时器；减少动态效果时关闭该动效。加载型页面在正文就绪后接入，已有入场效果的页面保持单一动效。
+
 ## Color Tokens
 
 现行颜色 Token 定义在 `miniprogram/styles/tokens.wxss`，以 `.color-*`、`.bg-*` 工具类提供。

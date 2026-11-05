@@ -1,4 +1,12 @@
-<view class="login-root">
+<view wx:if="{{entryPending}}" class="entry-pending">
+  <view class="entry-pending-content route-enter" role="status" aria-live="polite">
+    <text class="entry-pending-brand">MemoGrad</text>
+    <text class="entry-pending-title">正在打开学习空间</text>
+    <text class="entry-pending-desc">同步你的学习进度</text>
+    <view class="entry-pending-indicator" aria-hidden="true"></view>
+  </view>
+</view>
+<view wx:else class="login-root">
   <view class="memo-nav" style="height: {{navHeight}}px; padding-top: {{statusBarHeight}}px;">
     <view class="memo-nav-inner" style="height: {{navContentHeight}}px; padding-right: {{navRightPadding}}px;">
       <view class="memo-brand-lockup">

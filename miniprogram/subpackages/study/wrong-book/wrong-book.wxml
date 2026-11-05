@@ -2,7 +2,7 @@
 <premium-nav title="错题本" variant="light" bind:back="goBack" />
 <submit-confirm id="actionConfirm" />
 <app-dialog id="appDialog"></app-dialog>
-<view class="page {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 && !showFilter && filterCount === 0 && !listError ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
+<view class="page {{!loading || list.length ? 'route-enter' : ''}} {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 && !showFilter && filterCount === 0 && !listError ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
 <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
 <block wx:if="{{!batchMode}}">
 <view class="view-tabs" role="tablist">

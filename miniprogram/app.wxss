@@ -1,6 +1,7 @@
 @import 'styles/tokens.wxss';
 @import 'styles/components.wxss';
 @import 'styles/practice-subject-sheet.wxss';
+@import 'styles/route-transition.wxss';
 
 /* 全局基础 */
 page {

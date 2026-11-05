@@ -1,7 +1,7 @@
 <view class="plan-page {{configured ? 'is-configured' : 'is-setup'}}" capture-bind:touchstart="onPlanInteraction">
 <app-dialog id="appDialog"></app-dialog>
 <premium-nav title="学习计划" variant="light" bind:back="goBack" />
-<view class="plan-shell">
+<view class="plan-shell {{!loading ? 'route-enter' : ''}}">
 <view class="plan-hero">
 <view class="plan-hero-copy">
 <text class="plan-hero-kicker">PLAN YOUR STUDY</text>

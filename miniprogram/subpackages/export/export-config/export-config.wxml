@@ -11,7 +11,7 @@
     bindscroll="onConfigScroll"
     bindtouchstart="onPageInteraction"
   >
-    <view class="config-content" bindtap="onPageInteraction">
+      <view class="config-content route-enter" bindtap="onPageInteraction">
       <view class="page-intro">
         <view class="page-intro-copy">
           <text class="page-intro-title">生成专属错题练习</text>

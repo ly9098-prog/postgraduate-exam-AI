@@ -13,6 +13,7 @@ Page({
     error: '',
     showDevLogin: false,
     agreed: false,
+    entryPending: true,
     navHeight: 88,
     statusBarHeight: 20,
     navContentHeight: 44,
@@ -39,7 +40,7 @@ Page({
     // acceptance. Restore that state into the checkbox so returning users are
     // not asked to consent again after a token refresh/login boundary.
     const agreed = privacy.hasAcceptedCurrentPrivacy()
-    this.setData({ agreed })
+    this.setData({ agreed, entryPending: auth.isLoggedIn() && agreed })
 
     // 同步检查：token 有效且协议已同意时延迟跳转
     if (this._tryDirectRedirect()) return
@@ -83,6 +84,7 @@ Page({
     this._pendingHomeRedirect = true
     this._clearHomeRedirectTimer()
     if (!this._pageVisible) return
+    this._safeSetData({ entryPending: true })
 
     this._homeRedirectTimer = setTimeout(async () => {
       this._homeRedirectTimer = null
@@ -92,6 +94,7 @@ Page({
       // timer from entering Home after auth/privacy state changed meanwhile.
       if (!auth.isLoggedIn() || !privacy.hasAcceptedCurrentPrivacy()) {
         this._pendingHomeRedirect = false
+        this._safeSetData({ entryPending: false })
         return
       }
 
@@ -107,6 +110,10 @@ Page({
     let target
     try {
       target = await this._launchResume.resolve()
+    } catch (_) {
+      this._pendingHomeRedirect = false
+      this._safeSetData({ entryPending: false, loading: false, error: '进入页面失败，请重试' })
+      return
     } finally {
       this._homeRedirectResolving = false
     }
@@ -118,6 +125,7 @@ Page({
     if (!target || !auth.isLoggedIn() || !privacy.hasAcceptedCurrentPrivacy() ||
       owner !== resumeOwnerId()) {
       this._pendingHomeRedirect = false
+      this._safeSetData({ entryPending: false })
       return
     }
     this._pendingHomeRedirect = false
@@ -126,7 +134,7 @@ Page({
       success: () => this._launchResume.complete(),
       fail: () => {
         if (this._pageDestroyed) return
-        this._safeSetData({ loading: false, error: '进入页面失败，请重试' })
+        this._safeSetData({ entryPending: false, loading: false, error: '进入页面失败，请重试' })
       },
     })
   },
@@ -197,8 +205,16 @@ Page({
     if (this._pageDestroyed) return
     var attemptSeq = ++this._loginAttemptSeq
     this._safeSetData({ loading: true, error: "" })
-    if (await this._tryExistingSession(attemptSeq)) return
-    if (!this.data.agreed) { this._safeSetData({ loading: false }); return }
+    try {
+      if (await this._tryExistingSession(attemptSeq)) return
+    } catch (error) {
+      if (this._isCurrentAttempt(attemptSeq)) {
+        this._safeSetData({ entryPending: false, loading: false,
+          error: this._loginErrorMessage(error, '登录状态校验失败，请重试') })
+      }
+      return
+    }
+    if (!this.data.agreed) { this._safeSetData({ entryPending: false, loading: false }); return }
     await this._tryWxLoginLoop(attemptSeq)
   },
 
@@ -211,7 +227,7 @@ Page({
       this._scheduleHomeRedirect(0)
       return true
     }
-    if (!auth.isLoggedIn()) { this._safeSetData({ loading: false }); return true }
+    if (!auth.isLoggedIn()) { this._safeSetData({ entryPending: false, loading: false }); return true }
     return false
   },
 
@@ -229,7 +245,7 @@ Page({
       }
     }
     if (!this._isCurrentAttempt(attemptSeq)) return
-    this._safeSetData({ error: this._loginErrorMessage(lastErr, "自动登录失败，请点击微信登录重试"), showDevLogin: !!config.DEV, loading: false })
+    this._safeSetData({ entryPending: false, error: this._loginErrorMessage(lastErr, "自动登录失败，请点击微信登录重试"), showDevLogin: !!config.DEV, loading: false })
   },
 
   async _performWxLoginAttempt(attemptSeq) {
@@ -299,7 +315,7 @@ Page({
       this._scheduleHomeRedirect(0)
     } catch (e) {
       if (!this._isCurrentAttempt(attemptSeq)) return
-      this._safeSetData({ error: this._loginErrorMessage(e, '登录失败，请稍后重试') })
+      this._safeSetData({ entryPending: false, error: this._loginErrorMessage(e, '登录失败，请稍后重试') })
     } finally {
       if (this._isCurrentAttempt(attemptSeq) && this.data.loading) {
         this._safeSetData({ loading: false })
@@ -327,7 +343,7 @@ Page({
       this._scheduleHomeRedirect(0)
     } catch (e) {
       if (!this._isCurrentAttempt(attemptSeq)) return
-      this._safeSetData({ error: this._loginErrorMessage(e, '开发模式登录失败，请确保后端已启动') })
+      this._safeSetData({ entryPending: false, error: this._loginErrorMessage(e, '开发模式登录失败，请确保后端已启动') })
     } finally {
       if (this._isCurrentAttempt(attemptSeq) && this.data.loading) {
         this._safeSetData({ loading: false })
