@@ -1,0 +1,774 @@
+{
+  "date": "2026-10-30",
+  "head": "05b62b444791ea02252a09e5828e11f1a77b1e0b",
+  "ledger_item": "MP-08",
+  "status": "DONE structural scope only",
+  "scope": "14 current static consumer contracts (5 review, 8 stats, 1 study-hub overview), bounded by consumer map",
+  "family_counts": {
+    "review": 5,
+    "stats": 8,
+    "study-hub": 1
+  },
+  "contracts": [
+    {
+      "method": "POST",
+      "path": "/review/grade-batch",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/grade-batch",
+        "file": "backend/app/api/v1/review.py",
+        "function": "grade_batch",
+        "line": 116,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.grade_batch_review",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-submit-page-adapter.js",
+          "line": 60,
+          "url": "/review/grade-batch"
+        }
+      ],
+      "current_route_calls": [
+        "router.post",
+        "Depends",
+        "Depends",
+        "item.model_dump",
+        "review_scheduler.grade_batch_review",
+        "cache.delete",
+        "cache.delete",
+        "HTTPException",
+        "str",
+        "data.session.model_dump"
+      ],
+      "current_route_line": 116
+    },
+    {
+      "method": "POST",
+      "path": "/review/today/next-batch",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/today/next-batch",
+        "file": "backend/app/api/v1/review.py",
+        "function": "get_next_today_review_batch",
+        "line": 62,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.get_next_today_review_batch",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js",
+          "line": 81,
+          "url": "/review/today/next-batch"
+        },
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-session-page-adapter.js",
+          "line": 30,
+          "url": "/review/today/next-batch"
+        }
+      ],
+      "current_route_calls": [
+        "router.post",
+        "Depends",
+        "Depends",
+        "review_scheduler.get_next_today_review_batch"
+      ],
+      "current_route_line": 62
+    },
+    {
+      "method": "GET",
+      "path": "/review/today/overview",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/review/today/overview",
+        "file": "backend/app/api/v1/review.py",
+        "function": "get_today_review_overview",
+        "line": 47,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.get_today_review_overview",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-overview-page-adapter.js",
+          "line": 43,
+          "url": "/review/today/overview"
+        },
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-overview-page-adapter.js",
+          "line": 58,
+          "url": "/review/today/overview"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Depends",
+        "Depends",
+        "cache.get",
+        "review_scheduler.get_today_review_overview",
+        "cache.set"
+      ],
+      "current_route_line": 47
+    },
+    {
+      "method": "POST",
+      "path": "/review/{}/master",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/{schedule_id}/master",
+        "file": "backend/app/api/v1/review.py",
+        "function": "master_review_question",
+        "line": 138,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.mark_mastered",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js",
+          "line": 29,
+          "url": "/review/${scheduleId}/master"
+        }
+      ],
+      "current_route_calls": [
+        "router.post",
+        "Depends",
+        "Depends",
+        "MasterUnmasterResponse",
+        "review_scheduler.mark_mastered",
+        "HTTPException",
+        "cache.delete",
+        "cache.delete",
+        "int",
+        "bool"
+      ],
+      "current_route_line": 138
+    },
+    {
+      "method": "POST",
+      "path": "/review/{}/unmaster",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/{schedule_id}/unmaster",
+        "file": "backend/app/api/v1/review.py",
+        "function": "unmaster_review_question",
+        "line": 161,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.unmark_mastered",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js",
+          "line": 30,
+          "url": "/review/${scheduleId}/unmaster"
+        }
+      ],
+      "current_route_calls": [
+        "router.post",
+        "Depends",
+        "Depends",
+        "MasterUnmasterResponse",
+        "HTTPException",
+        "cache.delete",
+        "cache.delete",
+        "review_scheduler.unmark_mastered",
+        "HTTPException",
+        "int",
+        "bool",
+        "str"
+      ],
+      "current_route_line": 161
+    },
+    {
+      "method": "GET",
+      "path": "/stats/ai-diagnosis",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/ai-diagnosis",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_ai_diagnosis",
+        "line": 161,
+        "dependencies": [
+          {
+            "symbol": "svc.get_ai_diagnosis",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-request-flow.js",
+          "line": 44,
+          "url": "/stats/ai-diagnosis"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-request-flow.js",
+          "line": 111,
+          "url": "/stats/ai-diagnosis"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Query",
+        "Depends",
+        "Depends",
+        "AiDiagnosis",
+        "svc.get_ai_diagnosis",
+        "cache.set",
+        "cache.get",
+        "data.get"
+      ],
+      "current_route_line": 161
+    },
+    {
+      "method": "GET",
+      "path": "/stats/behavior",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/behavior",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_behavior",
+        "line": 73,
+        "dependencies": [
+          {
+            "symbol": "svc.get_behavior_stats",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 600,
+          "url": "/api/v1/stats/behavior"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Depends",
+        "Depends",
+        "BehaviorStats",
+        "cache.get",
+        "svc.get_behavior_stats",
+        "cache.set"
+      ],
+      "current_route_line": 73
+    },
+    {
+      "method": "GET",
+      "path": "/stats/dashboard",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/dashboard",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_dashboard",
+        "line": 101,
+        "dependencies": [
+          {
+            "symbol": "svc.get_overview",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_subject_stats",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_trends",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_behavior_stats",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_forgetting_trends",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 542,
+          "url": "/stats/dashboard"
+        },
+        {
+          "file": "miniprogram/pages/home/home.js",
+          "line": 661,
+          "url": "/stats/dashboard"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Depends",
+        "Depends",
+        "DashboardResponse",
+        "cache.get",
+        "svc.get_overview",
+        "svc.get_subject_stats",
+        "svc.get_trends",
+        "svc.get_behavior_stats",
+        "svc.get_forgetting_trends",
+        "cache.set",
+        "OverviewStats",
+        "BehaviorStats",
+        "ForgettingTrend",
+        "result.model_dump",
+        "SubjectStats",
+        "TrendPoint"
+      ],
+      "current_route_line": 101
+    },
+    {
+      "method": "GET",
+      "path": "/stats/dashboard-insights",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/dashboard-insights",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_dashboard_insights",
+        "line": 192,
+        "dependencies": []
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 859,
+          "url": "/stats/dashboard-insights"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Query",
+        "Query",
+        "Query",
+        "Depends",
+        "Depends",
+        "DashboardInsightsResponse",
+        "get_di"
+      ],
+      "current_route_line": 192
+    },
+    {
+      "method": "POST",
+      "path": "/stats/dashboard-llm-analysis",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/stats/dashboard-llm-analysis",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "post_dashboard_llm_analysis",
+        "line": 179,
+        "dependencies": [
+          {
+            "symbol": "svc.get_dashboard_llm_analysis",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 1221,
+          "url": "/stats/dashboard-llm-analysis"
+        }
+      ],
+      "current_route_calls": [
+        "router.post",
+        "Depends",
+        "Depends",
+        "DashboardLlmAnalysisResponse",
+        "svc.get_dashboard_llm_analysis"
+      ],
+      "current_route_line": 179
+    },
+    {
+      "method": "GET",
+      "path": "/stats/dashboard-v2",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/dashboard-v2",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_dashboard_v2",
+        "line": 140,
+        "dependencies": [
+          {
+            "symbol": "svc.get_dashboard_v2",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 575,
+          "url": "/api/v1/stats/dashboard-v2"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 499,
+          "url": "/stats/dashboard-v2"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 1103,
+          "url": "/stats/dashboard-v2"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Query",
+        "Query",
+        "Query",
+        "Query",
+        "Depends",
+        "Depends",
+        "DashboardV2Response",
+        "svc.get_dashboard_v2"
+      ],
+      "current_route_line": 140
+    },
+    {
+      "method": "GET",
+      "path": "/stats/growth",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/growth",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_growth",
+        "line": 126,
+        "dependencies": [
+          {
+            "symbol": "svc.get_growth_profile",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/home/home.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 568,
+          "url": "/api/v1/stats/growth"
+        },
+        {
+          "file": "miniprogram/pages/home/home.js",
+          "line": 662,
+          "url": "/stats/growth"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Depends",
+        "Depends",
+        "GrowthProfile",
+        "cache.get",
+        "svc.get_growth_profile",
+        "cache.set"
+      ],
+      "current_route_line": 126
+    },
+    {
+      "method": "GET",
+      "path": "/stats/trends",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/trends",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_trends",
+        "line": 58,
+        "dependencies": [
+          {
+            "symbol": "svc.get_trends",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/utils/practice-result-trend-page-adapter.js",
+          "line": 11,
+          "url": "/api/v1/stats/trends"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 1167,
+          "url": "/stats/trends"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Query",
+        "Depends",
+        "Depends",
+        "cache.get",
+        "svc.get_trends",
+        "cache.set",
+        "TrendPoint"
+      ],
+      "current_route_line": 58
+    },
+    {
+      "method": "GET",
+      "path": "/study-hub/overview",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/study-hub/overview",
+        "file": "backend/app/api/v1/study_hub.py",
+        "function": "get_study_hub_overview",
+        "line": 17,
+        "dependencies": [
+          {
+            "symbol": "study_hub_service.get_study_hub_overview",
+            "import": [
+              "app.services",
+              "study_hub_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/home/home.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/home/home.js",
+          "line": 663,
+          "url": "/study-hub/overview"
+        }
+      ],
+      "current_route_calls": [
+        "router.get",
+        "Depends",
+        "Depends",
+        "StudyHubOverviewResponse",
+        "study_hub_service.get_study_hub_overview"
+      ],
+      "current_route_line": 17
+    }
+  ],
+  "disposition": {
+    "review": "RETAIN existing protocol/state/version/scheduler split",
+    "study_hub_overview": "RETAIN existing query/candidate/task/projection split",
+    "stats": "RETAIN existing query/projection/AI boundaries; dashboard-insights structural deficit closed by MP-17 commit05b62b44"
+  },
+  "known_defect": "MP-18 DEFECT weak-topic fallback ambiguous SQL compilation is retained; business fix requires separate confirmation",
+  "environment_exit": "ENV-01..06 WAITING-FINAL, no real client/PostgreSQL/Redis/AI/OCR/production acceptance performed; production last",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "06cddc2dbba4874dba35c4d36d7fc13fd0b8a0b820c1fefc87587f340c11c92d",
+    "backend/app/api/v1/review.py": "c653f73ebc77cfe593656d84b0b1fc77099385f3bfead3ce5bb8098b57080172",
+    "backend/app/api/v1/stats.py": "a28df1bf8ff38eeab496ed4581f1482964593f2f0beeb6504aff4630848a0f39",
+    "backend/app/api/v1/study_hub.py": "9e7b5b1e1ab1657fab41665754de2cbd17c4fb822b7a8b9bd7ee77b4ef590d6f",
+    "backend/app/schemas/dashboard_insights.py": "910d7fcced77f1e8c39f15dbf5b30d9d5a6b0bb80aa1434fdec3b1a0ce559eae",
+    "backend/app/services/dashboard_action_projection.py": "0fa5e4c7645a249df50492cc4a92bcb9ad64bb652f199cbafd3c17d9a1732106",
+    "backend/app/services/dashboard_balance_projection.py": "22e5e8ac33fdb14317af272c3426c10bc482f1e68313611f330222d8be121702",
+    "backend/app/services/dashboard_insights_service.py": "31a28b6070ad7dfc909bf6d9bbc8f159fa3507c1b48514b0b9d9b607178ad1f0",
+    "backend/app/services/dashboard_quality_projection.py": "4963091c26cae57c049cbbf089678f5daedbc4dc102bba9cc5d6faac9db74839",
+    "backend/app/services/dashboard_speed_projection.py": "db8884e488ae5cc82a473f4d35c62c8f531292111c6f1313549cca2d1183233a",
+    "backend/app/services/dashboard_topic_projection.py": "4f586ac581a0f2bdb2acb6705fe09fac16d283f0369eb73a39aa89c60d3f1a21",
+    "backend/app/services/review_scheduler.py": "3903a45593edee0e66e16298728db49a5e9d5e8f6dc57fe52229e913bbe89181",
+    "backend/app/services/stats_service.py": "e9ee7d8a8b437240a63e965fed0d30dd5f7920b16684e0f42327cb6dbec3f790",
+    "backend/app/services/study_hub_service.py": "18f3b2c2c1e153dd72e0a7c0f82791fc360e032f95d1a3b272d693b00ad839b9",
+    "backend/tests/architecture/test_dashboard_insights_boundaries.py": "4b8524a163e6fb6d9ba2d1c8a468bd617719f2612c435ba30bc4c010dd11a49f",
+    "backend/tests/architecture/test_learning_time_projection_boundaries.py": "dca065aa4fe876cbf2c66f925b44c3e150a68d07d25f438129de7c917c2e3fd5",
+    "backend/tests/architecture/test_review_scheduler_projection_boundaries.py": "744eee33f9730bbab8ed281128b87350fa7be44c58b7aeda638576f883a8c723",
+    "backend/tests/architecture/test_stats_service_boundaries.py": "959d1675bb00c6ffe07a3d28aa898e197411659edbb0d839ea65163bb6926d4c",
+    "backend/tests/architecture/test_study_hub_overview_boundaries.py": "6131f2db8a6dfabf4c5f190ba3c8c3df26b94a0db594c028551475b93d981eb2",
+    "backend/tests/architecture/test_study_hub_recommendation_boundaries.py": "924c84867682e6b92d705375064ff1b42dd6a9f2888f26539bcb869750659d73",
+    "backend/tests/test_api/test_dashboard_insights_api.py": "17b1eacda759831c57617c962370c64f406d5f99008b86dd8c4d9af840daabf3",
+    "backend/tests/test_api/test_review_api.py": "9fcbf0d8e5143249ce88fd76565545d3e437f59d3ae6403c1f568b0f04257e90",
+    "backend/tests/test_api/test_review_master_api.py": "a35230e4c2f7bb8f4bdc0f34991b37712260c5b953afd237670b8d709bac0901",
+    "backend/tests/test_services/test_dashboard_insights_contract.py": "f5ca35d2a00865e2e9e70db9493620cd24b72e343ba0b58378dc2a30c7058ff2",
+    "backend/tests/test_services/test_dashboard_insights_projection.py": "2209311dc97f38759bedc08f6e9c5491f3cdffb450df6096553e3b25ffee43da",
+    "backend/tests/test_services/test_dashboard_stats_compatibility.py": "d589e85933038e0ca3f67c69983db25b28d8efdd2e2c62123881bc89fe1fddca",
+    "backend/tests/test_services/test_learning_stats_query_bounds.py": "c5d73ce0689a356861b84e4bac3b858ca3bb1bc8645f014e2dc5f2819e2c5644",
+    "backend/tests/test_services/test_review_overview_dirty_schedule.py": "45c07ccca2e7aef599d419a6cb25ef2a5527c172e6159e9e11566ed9df296ca3",
+    "backend/tests/test_services/test_review_scheduler_compatibility.py": "98de5b540ce0ee78d371e88b199292ab282bdaaa4459a5377651c4a52385b871",
+    "backend/tests/test_services/test_review_scheduler_projection_contract.py": "af203277207838e40a8e72d03a41c618adedc974e3a739c307bc1fae6e38a029",
+    "backend/tests/test_services/test_review_session_stats.py": "4dc36f3e12b481363467b3f122432adc6971740577e77df93f31b345805afbca",
+    "backend/tests/test_services/test_stats_recommendation_compatibility.py": "c52d6e3d9769a04db4c21ecd42c6e37f5b56753702062b4602d8759ed098f262",
+    "backend/tests/test_services/test_stats_service_contract.py": "d784535466cedc593313ec3df6944d570601c75b5547f0025b606a281e94e477",
+    "backend/tests/test_services/test_study_hub_overview_contract.py": "334605624a3ec1734befff18aa1c8318c66e0b096c636df64e8e965c9b88a100",
+    "backend/tests/test_services/test_study_hub_plan_token_compatibility.py": "bea03f8688ae82acb17339f2ca35baaa5bdb1d50a96a9a3700f87182bfea0f28",
+    "backend/tests/test_services/test_study_hub_recommendation_contract.py": "b043864a3c1101616762a21752ee1844f907e2d0b6ae5aaff5d16e3deb3ad664",
+    "backend/tests/test_services/test_trends_previous_period.py": "6c6e046577e2937c0376d4f06004d49b4a40ae6dbf847da1c48e852d7ce6e64b",
+    "miniprogram/pages/dashboard/dashboard.js": "cf5c47404e9a6261a82bcd3f5638d91db0f4924c26f900397e99c24e7685c334",
+    "miniprogram/pages/home/home.js": "6cfa24e3c08efb14bb94ce6c5a30f08aa4bd2e80abab5f4eb56b3da43fee194c",
+    "miniprogram/subpackages/study/practice-result/index.js": "a7e982d70e9b7ffdf46a03a2274511ea1fe19c2c6a8ab47a0822fa88f8c93bc1",
+    "miniprogram/subpackages/study/practice-result/utils/practice-result-trend-page-adapter.js": "13112a0639780d3c0de7f6af6a00e908ddcf645d683448c200ebcfd3bcd55a8b",
+    "miniprogram/subpackages/study/review-today/utils/review-overview-page-adapter.js": "874e443ff4782aa18f3f8f1c7e0787e80cad6517219b69a17e9ba20f9cedb8ab",
+    "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js": "0ef33e3902c290cf57c758e19f76f3a91fc0f0fcba75197c5cb096383dcffae7",
+    "miniprogram/subpackages/study/review-today/utils/review-session-page-adapter.js": "5f27545fef7713b35a3f07989eaf3181e84537e9e93a94fa0e9389cbb79f9f24",
+    "miniprogram/subpackages/study/review-today/utils/review-submit-page-adapter.js": "c9ee696da7af152b9270adbe789eec1c204b9f74a35bd5358ac646cb3b58b764",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-request-flow.js": "f251c624e7758299d2997d674883113340b01f1cc80a98dfe633caea70a7b0c1"
+  },
+  "verification": {
+    "ci_static": {
+      "exit_code": 0,
+      "files": 465,
+      "elapsed_seconds": 546.56,
+      "passed": 8049,
+      "command_file": "/tmp/review-stats-hub-closure-2026-10-30/ci-static-command.json",
+      "log": "/tmp/review-stats-hub-closure-2026-10-30/ci-static.log",
+      "scope": "current workflow Static architecture & non-GPU regression tests fixed list only; not all GitHub Actions jobs",
+      "pytest_seconds": 541.8,
+      "warnings": 64
+    },
+    "auxiliary": {
+      "readiness": {
+        "passed": 69,
+        "pytest_seconds": 4.22,
+        "wall_seconds": 6.48,
+        "exit_code": 0,
+        "log": "/tmp/review-stats-hub-closure-2026-10-30/readiness.log"
+      },
+      "cloud": {
+        "passed": 30,
+        "pytest_seconds": 7.18,
+        "wall_seconds": 8.09,
+        "exit_code": 0,
+        "log": "/tmp/review-stats-hub-closure-2026-10-30/cloud.log"
+      }
+    },
+    "openapi": {
+      "result": "equal",
+      "paths": 334,
+      "scope": "Full application OpenAPI from two cold Python processes"
+    },
+    "ruff": "passed existing CI ignore I001,F401,N818; no changed code to claim strict legacy cleanup",
+    "compileall": "passed app",
+    "source_tests_ci_frozen_paths": 2238,
+    "source_tests_ci_changed": false
+  },
+  "independent_review": "completed by knowledge_map_review; scope and final CI/source hashes/limited claims verified; P3 stale context status fixed and narrowly rechecked; no remaining P0-P3",
+  "evidence_dir": "/tmp/review-stats-hub-closure-2026-10-30",
+  "unchanged_specialist_documents": [
+    "REVIEW_WRONG_BOOK_COMPATIBILITY.md",
+    "LEARNING_DECISION_COMPATIBILITY.md",
+    "DASHBOARD_INSIGHTS_COMPATIBILITY.md",
+    "prior result manifests (historical run results retained)"
+  ],
+  "documentation_gate": "original plan and history preserved; docs/index/ledger/capacity/hash consistency checked; collaboration memory increment written at round closure; verification-result.json",
+  "git": "HEAD05b62b44 unchanged, index empty, no new commit/push/deploy; task/related docs remain unstaged"
+}

@@ -1,0 +1,4060 @@
+{
+  "date": "2026-10-30",
+  "head": "d91fab53d8d5c4ffda3d4a225eb2a016c704ef06",
+  "risk": "L1 documentation/static inventory",
+  "index_generation": "2026-10-29T17:24:11Z",
+  "scope": {
+    "registered_pages": 25,
+    "first_party_runtime_js": 500,
+    "public_router_modules": 26,
+    "static_registered_route_declarations": 153,
+    "possible_consumed_contract_shapes": 84,
+    "http_contract_shapes": 83,
+    "websocket_contract_shapes": 1
+  },
+  "limitations": [
+    "Static module reachability is possible ownership, not proof every service export is called by every page.",
+    "No runtime UI/API requests, backend business tests, full CI or external/production acceptance executed.",
+    "84 contracts are method+normalized path shapes, not business completion.",
+    "No direct/static consumer found for practice records/knowledge-states/weak-knowledge-points in this bounded current client; this does not prove no external clients.",
+    "Third party katex/mp-html/lottie/vendor/node_modules and tests/scripts excluded from first-party runtime analysis."
+  ],
+  "pages": [
+    {
+      "page": "miniprogram/pages/login/login.js",
+      "possible_local_routes": [
+        "POST /auth/login"
+      ],
+      "ledger_items": [
+        "MP-12"
+      ],
+      "reachable_module_count": 37
+    },
+    {
+      "page": "miniprogram/pages/home/home.js",
+      "possible_local_routes": [
+        "GET /stats/dashboard",
+        "GET /stats/growth",
+        "GET /study-hub/overview",
+        "GET /study-plan/overview"
+      ],
+      "ledger_items": [
+        "MP-05",
+        "MP-08"
+      ],
+      "reachable_module_count": 36
+    },
+    {
+      "page": "miniprogram/pages/agreement/user.js",
+      "possible_local_routes": [],
+      "ledger_items": [],
+      "reachable_module_count": 38
+    },
+    {
+      "page": "miniprogram/pages/agreement/privacy.js",
+      "possible_local_routes": [],
+      "ledger_items": [],
+      "reachable_module_count": 38
+    },
+    {
+      "page": "miniprogram/pages/agreement/ai.js",
+      "possible_local_routes": [],
+      "ledger_items": [],
+      "reachable_module_count": 38
+    },
+    {
+      "page": "miniprogram/pages/dashboard/dashboard.js",
+      "possible_local_routes": [
+        "POST /ai/feedback",
+        "GET /practice/subjects",
+        "GET /stats/dashboard",
+        "GET /stats/dashboard-insights",
+        "POST /stats/dashboard-llm-analysis",
+        "GET /stats/dashboard-v2",
+        "GET /stats/trends",
+        "GET /study-hub/knowledge-diagnosis",
+        "GET /wrong-questions/diagnosis/stats"
+      ],
+      "ledger_items": [
+        "MP-03",
+        "MP-04",
+        "MP-06",
+        "MP-08",
+        "MP-16"
+      ],
+      "reachable_module_count": 41
+    },
+    {
+      "page": "miniprogram/pages/pomodoro/pomodoro.js",
+      "possible_local_routes": [
+        "GET /pomodoro/active",
+        "POST /pomodoro/start",
+        "GET /pomodoro/stats",
+        "POST /pomodoro/{}/complete",
+        "POST /pomodoro/{}/interrupt",
+        "POST /pomodoro/{}/pause",
+        "POST /pomodoro/{}/resume",
+        "GET /practice/subjects"
+      ],
+      "ledger_items": [
+        "MP-04",
+        "MP-15"
+      ],
+      "reachable_module_count": 128
+    },
+    {
+      "page": "miniprogram/subpackages/animation/animation-index/animation-index.js",
+      "possible_local_routes": [],
+      "ledger_items": [],
+      "reachable_module_count": 36
+    },
+    {
+      "page": "miniprogram/subpackages/formulas/library/index.js",
+      "possible_local_routes": [
+        "GET /formulas",
+        "GET /formulas/catalog",
+        "GET /formulas/favorites/list",
+        "GET /formulas/tags",
+        "DELETE /formulas/{}/favorite",
+        "PUT /formulas/{}/favorite"
+      ],
+      "ledger_items": [
+        "MP-01"
+      ],
+      "reachable_module_count": 40
+    },
+    {
+      "page": "miniprogram/subpackages/formulas/reader/index.js",
+      "possible_local_routes": [
+        "GET /formulas",
+        "GET /formulas/favorites/list",
+        "GET /formulas/random/next",
+        "GET /formulas/{}",
+        "DELETE /formulas/{}/favorite",
+        "PUT /formulas/{}/favorite"
+      ],
+      "ledger_items": [
+        "MP-01"
+      ],
+      "reachable_module_count": 43
+    },
+    {
+      "page": "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+      "possible_local_routes": [
+        "GET /pomodoro/daily-summary",
+        "GET /pomodoro/history",
+        "GET /pomodoro/range-summary",
+        "GET /pomodoro/settings",
+        "PUT /pomodoro/settings",
+        "GET /pomodoro/statistics-overview",
+        "GET /practice/subjects"
+      ],
+      "ledger_items": [
+        "MP-04",
+        "MP-15"
+      ],
+      "reachable_module_count": 106
+    },
+    {
+      "page": "miniprogram/subpackages/study/practice/practice.js",
+      "possible_local_routes": [
+        "POST /practice/batch-submit",
+        "GET /practice/questions",
+        "POST /practice/sequential/reset",
+        "GET /practice/subjects"
+      ],
+      "ledger_items": [
+        "MP-04"
+      ],
+      "reachable_module_count": 132
+    },
+    {
+      "page": "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+      "possible_local_routes": [
+        "POST /ai/feedback",
+        "GET /exports/capabilities",
+        "GET /practice/subjects",
+        "GET /stats/ai-diagnosis",
+        "GET /wrong-questions",
+        "POST /wrong-questions/batch",
+        "GET /wrong-questions/stats",
+        "GET /wrong-questions/task-flow"
+      ],
+      "ledger_items": [
+        "MP-02",
+        "MP-03",
+        "MP-04",
+        "MP-08",
+        "MP-16"
+      ],
+      "reachable_module_count": 76
+    },
+    {
+      "page": "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+      "possible_local_routes": [
+        "POST /ai/408-teacher",
+        "POST /ai/error-analysis",
+        "POST /ai/error-analysis/recover",
+        "GET /ai/error-analysis/status/{}",
+        "POST /ai/feedback",
+        "POST /wrong-questions/batch",
+        "GET /wrong-questions/{}",
+        "GET /wrong-questions/{}/diagnosis",
+        "PUT /wrong-questions/{}/diagnosis"
+      ],
+      "ledger_items": [
+        "MP-03",
+        "MP-16"
+      ],
+      "reachable_module_count": 95
+    },
+    {
+      "page": "miniprogram/subpackages/study/review-today/review-today.js",
+      "possible_local_routes": [
+        "POST /review/grade-batch",
+        "POST /review/today/next-batch",
+        "GET /review/today/overview",
+        "POST /review/{}/master",
+        "POST /review/{}/unmaster"
+      ],
+      "ledger_items": [
+        "MP-08"
+      ],
+      "reachable_module_count": 108
+    },
+    {
+      "page": "miniprogram/subpackages/study/practice-result/index.js",
+      "possible_local_routes": [
+        "POST /ai/408-teacher",
+        "POST /ai/feedback",
+        "POST /practice/batch-submit",
+        "GET /stats/behavior",
+        "GET /stats/dashboard-v2",
+        "GET /stats/growth",
+        "GET /stats/trends",
+        "GET /wrong-questions/{}/diagnosis",
+        "PUT /wrong-questions/{}/diagnosis"
+      ],
+      "ledger_items": [
+        "MP-03",
+        "MP-04",
+        "MP-08",
+        "MP-16"
+      ],
+      "reachable_module_count": 80
+    },
+    {
+      "page": "miniprogram/subpackages/study/study-plan/index.js",
+      "possible_local_routes": [
+        "DELETE /study-plan",
+        "PUT /study-plan",
+        "GET /study-plan/overview"
+      ],
+      "ledger_items": [
+        "MP-05"
+      ],
+      "reachable_module_count": 36
+    },
+    {
+      "page": "miniprogram/subpackages/exam/paper-list/index.js",
+      "possible_local_routes": [
+        "GET /exams/attempts/{}",
+        "POST /exams/attempts/{}/abandon",
+        "GET /exams/papers",
+        "POST /exams/papers/{}/attempts"
+      ],
+      "ledger_items": [
+        "MP-14"
+      ],
+      "reachable_module_count": 41
+    },
+    {
+      "page": "miniprogram/subpackages/exam/exam-runner/index.js",
+      "possible_local_routes": [
+        "GET /exams/attempts/{}",
+        "PATCH /exams/attempts/{}/answers/{}",
+        "POST /exams/attempts/{}/submit"
+      ],
+      "ledger_items": [
+        "MP-14"
+      ],
+      "reachable_module_count": 93
+    },
+    {
+      "page": "miniprogram/subpackages/exam/result/index.js",
+      "possible_local_routes": [
+        "POST /ai/408-teacher",
+        "POST /ai/feedback",
+        "GET /exams/attempts/{}/result",
+        "GET /wrong-questions/{}/diagnosis"
+      ],
+      "ledger_items": [
+        "MP-03",
+        "MP-14",
+        "MP-16"
+      ],
+      "reachable_module_count": 40
+    },
+    {
+      "page": "miniprogram/subpackages/exam/history/index.js",
+      "possible_local_routes": [
+        "GET /exams/history",
+        "GET /exams/history/overview"
+      ],
+      "ledger_items": [
+        "MP-14"
+      ],
+      "reachable_module_count": 36
+    },
+    {
+      "page": "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+      "possible_local_routes": [
+        "GET /knowledge-map/subjects/{}"
+      ],
+      "ledger_items": [
+        "MP-13"
+      ],
+      "reachable_module_count": 38
+    },
+    {
+      "page": "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+      "possible_local_routes": [
+        "GET /knowledge-map/points/{}"
+      ],
+      "ledger_items": [
+        "MP-13"
+      ],
+      "reachable_module_count": 36
+    },
+    {
+      "page": "miniprogram/subpackages/export/export-config/export-config.js",
+      "possible_local_routes": [
+        "GET /exports",
+        "POST /exports",
+        "GET /exports/capabilities",
+        "POST /exports/preview-count",
+        "WEBSOCKET /exports/ws",
+        "DELETE /exports/{}",
+        "GET /exports/{}",
+        "GET /exports/{}/download",
+        "GET /exports/{}/file",
+        "POST /exports/{}/re-export",
+        "POST /exports/{}/retry"
+      ],
+      "ledger_items": [
+        "MP-02"
+      ],
+      "reachable_module_count": 38
+    },
+    {
+      "page": "miniprogram/subpackages/export/export-records/export-records.js",
+      "possible_local_routes": [
+        "GET /exports",
+        "POST /exports",
+        "GET /exports/capabilities",
+        "POST /exports/preview-count",
+        "WEBSOCKET /exports/ws",
+        "DELETE /exports/{}",
+        "GET /exports/{}",
+        "GET /exports/{}/download",
+        "GET /exports/{}/file",
+        "POST /exports/{}/re-export",
+        "POST /exports/{}/retry"
+      ],
+      "ledger_items": [
+        "MP-02"
+      ],
+      "reachable_module_count": 38
+    }
+  ],
+  "contracts": [
+    {
+      "method": "POST",
+      "path": "/ai/408-teacher",
+      "ledger_item": "MP-16",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/ai/408-teacher",
+        "file": "backend/app/api/v1/ai.py",
+        "function": "ai_teacher_408",
+        "line": 408,
+        "dependencies": [
+          {
+            "symbol": "ai_teacher_408_service.run_teacher_action",
+            "import": [
+              "app.services",
+              "ai_teacher_408_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/exam/result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-teacher-page-adapter.js",
+          "line": 30,
+          "url": "/ai/408-teacher"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/result/index.js",
+          "line": 267,
+          "url": "/ai/408-teacher"
+        },
+        {
+          "file": "miniprogram/subpackages/study/practice-result/utils/practice-result-teacher-page-adapter.js",
+          "line": 32,
+          "url": "/ai/408-teacher"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/ai/error-analysis",
+      "ledger_item": "MP-16",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/ai/error-analysis",
+        "file": "backend/app/api/v1/ai.py",
+        "function": "error_analysis",
+        "line": 97,
+        "dependencies": [
+          {
+            "symbol": "svc.analyze_error",
+            "import": [
+              "app.services",
+              "ai_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+          "line": 221,
+          "url": "/ai/error-analysis"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/ai/error-analysis/recover",
+      "ledger_item": "MP-16",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/ai/error-analysis/recover",
+        "file": "backend/app/api/v1/ai.py",
+        "function": "recover_error_analysis",
+        "line": 159,
+        "dependencies": [
+          {
+            "symbol": "svc.ai_analysis_generated_at",
+            "import": [
+              "app.services",
+              "ai_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+          "line": 224,
+          "url": "/ai/error-analysis/recover"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/ai/error-analysis/status/{}",
+      "ledger_item": "MP-16",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/ai/error-analysis/status/{wrong_question_id}",
+        "file": "backend/app/api/v1/ai.py",
+        "function": "error_analysis_status",
+        "line": 127,
+        "dependencies": [
+          {
+            "symbol": "svc.build_any_cached_error_analysis_response",
+            "import": [
+              "app.services",
+              "ai_service"
+            ]
+          },
+          {
+            "symbol": "svc.ai_analysis_generated_at",
+            "import": [
+              "app.services",
+              "ai_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+          "line": 258,
+          "url": "/ai/error-analysis/status/${id}"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/ai/feedback",
+      "ledger_item": "MP-16",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/ai/feedback",
+        "file": "backend/app/api/v1/ai.py",
+        "function": "ai_feedback",
+        "line": 436,
+        "dependencies": []
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/exam/result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/utils/ai-teacher-408.js",
+          "line": 196,
+          "url": "/ai/feedback"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 1281,
+          "url": "/ai/feedback"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/result/index.js",
+          "line": 284,
+          "url": "/ai/feedback"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/utils/ai-teacher-408.js",
+          "line": 215,
+          "url": "/ai/feedback"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-interaction.js",
+          "line": 46,
+          "url": "/ai/feedback"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "login",
+        "line": 34,
+        "dependencies": [
+          {
+            "symbol": "token_service.create_refresh_token",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "user_service.wechat_login",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          },
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 79,
+          "url": "/auth/login"
+        },
+        {
+          "file": "miniprogram/pages/login/login.js",
+          "line": 216,
+          "url": "/auth/login"
+        },
+        {
+          "file": "miniprogram/pages/login/login.js",
+          "line": 295,
+          "url": "/auth/login"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/auth/logout",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/auth/logout",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "logout",
+        "line": 170,
+        "dependencies": [
+          {
+            "symbol": "token_service.revoke_all_user_tokens",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 89,
+          "url": "/auth/logout"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/auth/refresh",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "refresh",
+        "line": 83,
+        "dependencies": [
+          {
+            "symbol": "token_service.verify_refresh_token",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "token_service.revoke_all_user_tokens",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "token_service.revoke_all_user_tokens",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "token_service.rotate_refresh_token",
+            "import": [
+              "app.services",
+              "token_service"
+            ]
+          },
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/api-auth.js",
+          "line": 56,
+          "url": "/auth/refresh"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/attempts/{}",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/attempts/{attempt_id}",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "get_attempt",
+        "line": 73,
+        "dependencies": [
+          {
+            "symbol": "exam_service.get_attempt_view",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/utils/exam-runner-answer-page-adapter.js",
+          "line": 63,
+          "url": "/exams/attempts/${page.data.attemptId}"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 214,
+          "url": "/exams/attempts/${attemptId}"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/exam-runner/index.js",
+          "line": 263,
+          "url": "/exams/attempts/${this.data.attemptId}"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exams/attempts/{}/abandon",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exams/attempts/{attempt_id}/abandon",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "abandon_attempt",
+        "line": 117,
+        "dependencies": [
+          {
+            "symbol": "exam_service.abandon_attempt",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 256,
+          "url": "/exams/attempts/${attemptId}/abandon"
+        }
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/exams/attempts/{}/answers/{}",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "PATCH",
+        "path": "/api/v1/exams/attempts/{attempt_id}/answers/{item_id}",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "save_answer",
+        "line": 88,
+        "dependencies": [
+          {
+            "symbol": "exam_service.save_attempt_answer",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/exam-runner/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/utils/exam-runner-answer-page-adapter.js",
+          "line": 46,
+          "url": "/exams/attempts/${page.data.attemptId}/answers/${itemId}"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/attempts/{}/result",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/attempts/{attempt_id}/result",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "get_result",
+        "line": 147,
+        "dependencies": [
+          {
+            "symbol": "exam_service.get_attempt_result",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/result/index.js",
+          "line": 122,
+          "url": "/exams/attempts/${this.data.attemptId}/result"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exams/attempts/{}/submit",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exams/attempts/{attempt_id}/submit",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "submit_attempt",
+        "line": 129,
+        "dependencies": [
+          {
+            "symbol": "exam_service.submit_attempt",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/exam-runner/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/utils/exam-runner-submit-page-adapter.js",
+          "line": 12,
+          "url": "/exams/attempts/${page.data.attemptId}/submit"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/history",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/history",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "history",
+        "line": 171,
+        "dependencies": [
+          {
+            "symbol": "exam_service.list_exam_history",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/history/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/history/index.js",
+          "line": 146,
+          "url": "/exams/history"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/history/index.js",
+          "line": 160,
+          "url": "/exams/history"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/history/overview",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/history/overview",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "history_overview",
+        "line": 159,
+        "dependencies": [
+          {
+            "symbol": "exam_service.get_exam_history_overview",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/history/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/history/index.js",
+          "line": 151,
+          "url": "/exams/history/overview"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exams/papers",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exams/papers",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "list_papers",
+        "line": 36,
+        "dependencies": [
+          {
+            "symbol": "exam_service.list_published_papers",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 66,
+          "url": "/exams/papers"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exams/papers/{}/attempts",
+      "ledger_item": "MP-14",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exams/papers/{paper_id}/attempts",
+        "file": "backend/app/api/v1/exams.py",
+        "function": "start_attempt",
+        "line": 58,
+        "dependencies": [
+          {
+            "symbol": "exam_service.start_attempt",
+            "import": [
+              "app.services",
+              "exam_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/exam/paper-list/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/exam/paper-list/index.js",
+          "line": 183,
+          "url": "/exams/papers/${id}/attempts"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exports",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exports",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "list_exports",
+        "line": 160,
+        "dependencies": [
+          {
+            "symbol": "_export_api_queries.list_exports",
+            "import": [
+              "app.services.export",
+              "api_queries"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 35,
+          "url": "/exports"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exports",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exports",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "create_export",
+        "line": 143,
+        "dependencies": [
+          {
+            "symbol": "_export_api_creation.create_export",
+            "import": [
+              "app.services.export",
+              "api_creation"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 28,
+          "url": "/exports"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exports/capabilities",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exports/capabilities",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "export_capabilities",
+        "line": 123,
+        "dependencies": [
+          {
+            "symbol": "build_capability",
+            "import": [
+              "app.services.export.capability",
+              "build_capability"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 14,
+          "url": "/exports/capabilities"
+        },
+        {
+          "file": "miniprogram/subpackages/study/utils/export-capability.js",
+          "line": 4,
+          "url": "/exports/capabilities"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exports/preview-count",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exports/preview-count",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "preview_export_count",
+        "line": 131,
+        "dependencies": [
+          {
+            "symbol": "_export_api_queries.preview_export_count",
+            "import": [
+              "app.services.export",
+              "api_queries"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 21,
+          "url": "/exports/preview-count"
+        }
+      ]
+    },
+    {
+      "method": "WEBSOCKET",
+      "path": "/exports/ws",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "WEBSOCKET",
+        "path": "/api/v1/exports/ws",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "export_status_ws",
+        "line": 259,
+        "dependencies": [
+          {
+            "symbol": "_export_api_websocket.export_status_ws",
+            "import": [
+              "app.services.export",
+              "api_websocket"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export_status_sync.js",
+          "line": 266,
+          "url": "/exports/ws",
+          "resolution": "_buildWsUrl -> connectSocket"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/exports/{}",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "DELETE",
+        "path": "/api/v1/exports/{task_id}",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "delete_export",
+        "line": 214,
+        "dependencies": [
+          {
+            "symbol": "_export_api_deletion.delete_export",
+            "import": [
+              "app.services.export",
+              "api_deletion"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 65,
+          "url": "/exports/${taskId}"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exports/{}",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exports/{task_id}",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "get_export",
+        "line": 174,
+        "dependencies": [
+          {
+            "symbol": "_export_api_queries.get_export",
+            "import": [
+              "app.services.export",
+              "api_queries"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 42,
+          "url": "/exports/${taskId}"
+        },
+        {
+          "file": "miniprogram/subpackages/export/services/export_status_sync.js",
+          "line": 447,
+          "url": "/exports/${tid}"
+        },
+        {
+          "file": "miniprogram/subpackages/export/services/export_status_sync.js",
+          "line": 529,
+          "url": "/exports/${tid}"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exports/{}/download",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exports/{task_id}/download",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "download_export",
+        "line": 186,
+        "dependencies": [
+          {
+            "symbol": "_export_api_downloads.download_export",
+            "import": [
+              "app.services.export",
+              "api_downloads"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 49,
+          "url": "/exports/${taskId}/download"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/exports/{}/file",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/exports/{task_id}/file",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "stream_export_file",
+        "line": 202,
+        "dependencies": [
+          {
+            "symbol": "_export_api_downloads.stream_export_file",
+            "import": [
+              "app.services.export",
+              "api_downloads"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 58,
+          "url": "/exports/{taskId}/file",
+          "resolution": "BASE_URL concat file URL -> wx.downloadFile / retry wx.request"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exports/{}/re-export",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exports/{task_id}/re-export",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "re_export",
+        "line": 238,
+        "dependencies": [
+          {
+            "symbol": "_export_api_regeneration.re_export",
+            "import": [
+              "app.services.export",
+              "api_regeneration"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 79,
+          "url": "/exports/${taskId}/re-export"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/exports/{}/retry",
+      "ledger_item": "MP-02",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/exports/{task_id}/retry",
+        "file": "backend/app/api/v1/exports.py",
+        "function": "retry_export",
+        "line": 226,
+        "dependencies": [
+          {
+            "symbol": "_export_api_regeneration.retry_export",
+            "import": [
+              "app.services.export",
+              "api_regeneration"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/export/services/export.js",
+          "line": 72,
+          "url": "/exports/${taskId}/retry"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/formulas",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/formulas",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "list_formulas",
+        "line": 283,
+        "dependencies": [
+          {
+            "symbol": "library_list_formulas",
+            "import": [
+              "app.services.formula_library_listing",
+              "list_formulas"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/reader/index.js",
+          "line": 270,
+          "url": "/formulas"
+        },
+        {
+          "file": "miniprogram/subpackages/formulas/library/index.js",
+          "line": 700,
+          "url": "/formulas"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/formulas/catalog",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/formulas/catalog",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "get_formula_catalog",
+        "line": 184,
+        "dependencies": [
+          {
+            "symbol": "library_get_formula_catalog",
+            "import": [
+              "app.services.formula_library_catalog",
+              "get_formula_catalog"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/library/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/library/index.js",
+          "line": 285,
+          "url": "/formulas/catalog",
+          "resolution": "url assigned at line281, optional query concatenated -> api.request(GET, url) at line285"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/formulas/favorites/list",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/formulas/favorites/list",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "list_favorite_formulas",
+        "line": 333,
+        "dependencies": [
+          {
+            "symbol": "library_list_favorite_formulas",
+            "import": [
+              "app.services.formula_library_listing",
+              "list_favorite_formulas"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/reader/index.js",
+          "line": 336,
+          "url": "/formulas/favorites/list"
+        },
+        {
+          "file": "miniprogram/subpackages/formulas/library/index.js",
+          "line": 790,
+          "url": "/formulas/favorites/list"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/formulas/random/next",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/formulas/random/next",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "get_random_formula",
+        "line": 372,
+        "dependencies": [
+          {
+            "symbol": "library_get_random_formula",
+            "import": [
+              "app.services.formula_library_access",
+              "get_random_formula"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/reader/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/reader/index.js",
+          "line": 297,
+          "url": "/formulas/random/next"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/formulas/tags",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/formulas/tags",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "get_formula_tags",
+        "line": 240,
+        "dependencies": [
+          {
+            "symbol": "library_get_formula_tags",
+            "import": [
+              "app.services.formula_library_catalog",
+              "get_formula_tags"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/library/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/library/index.js",
+          "line": 337,
+          "url": "/formulas/tags"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/formulas/{}",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/formulas/{formula_id}",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "get_formula_detail",
+        "line": 318,
+        "dependencies": [
+          {
+            "symbol": "library_get_formula_detail",
+            "import": [
+              "app.services.formula_library_access",
+              "get_formula_detail"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/reader/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/reader/index.js",
+          "line": 168,
+          "url": "/formulas/${formulaId}"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/formulas/{}/favorite",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "DELETE",
+        "path": "/api/v1/formulas/{formula_id}/favorite",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "remove_formula_favorite",
+        "line": 419,
+        "dependencies": [
+          {
+            "symbol": "library_remove_formula_favorite",
+            "import": [
+              "app.services.formula_library_access",
+              "remove_formula_favorite"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/reader/index.js",
+          "line": 491,
+          "url": "/formulas/${cardId}/favorite"
+        },
+        {
+          "file": "miniprogram/subpackages/formulas/library/index.js",
+          "line": 847,
+          "url": "/formulas/${formulaId}/favorite"
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/formulas/{}/favorite",
+      "ledger_item": "MP-01",
+      "backend": {
+        "method": "PUT",
+        "path": "/api/v1/formulas/{formula_id}/favorite",
+        "file": "backend/app/api/v1/formulas.py",
+        "function": "add_formula_favorite",
+        "line": 407,
+        "dependencies": [
+          {
+            "symbol": "library_add_formula_favorite",
+            "import": [
+              "app.services.formula_library_access",
+              "add_formula_favorite"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/formulas/reader/index.js",
+          "line": 492,
+          "url": "/formulas/${cardId}/favorite"
+        },
+        {
+          "file": "miniprogram/subpackages/formulas/library/index.js",
+          "line": 849,
+          "url": "/formulas/${formulaId}/favorite"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/knowledge-map/points/{}",
+      "ledger_item": "MP-13",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/knowledge-map/points/{knowledge_point_id}",
+        "file": "backend/app/api/v1/knowledge_map.py",
+        "function": "get_knowledge_point_detail",
+        "line": 46,
+        "dependencies": [
+          {
+            "symbol": "knowledge_map_service.get_point_detail",
+            "import": [
+              "app.services",
+              "knowledge_map_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+          "line": 79,
+          "url": "/knowledge-map/points/${id}"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/knowledge-map/subjects/{}",
+      "ledger_item": "MP-13",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/knowledge-map/subjects/{subject_id}",
+        "file": "backend/app/api/v1/knowledge_map.py",
+        "function": "get_subject_knowledge_map",
+        "line": 30,
+        "dependencies": [
+          {
+            "symbol": "knowledge_map_service.get_subject_map",
+            "import": [
+              "app.services",
+              "knowledge_map_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+          "line": 521,
+          "url": "/knowledge-map/subjects/${this.subjectId}"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/pomodoro/active",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/pomodoro/active",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "get_active",
+        "line": 181,
+        "dependencies": [
+          {
+            "symbol": "svc.get_active_session",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/pomodoro/pomodoro.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/resume-error-controller.js",
+          "line": 16,
+          "url": "/pomodoro/active"
+        },
+        {
+          "file": "miniprogram/pages/pomodoro/utils/active-session-reconciler.js",
+          "line": 13,
+          "url": "/pomodoro/active"
+        },
+        {
+          "file": "miniprogram/pages/pomodoro/utils/pomodoro-recovery-page-adapter.js",
+          "line": 140,
+          "url": "/pomodoro/active"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/pomodoro/daily-summary",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/pomodoro/daily-summary",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "get_daily_summary",
+        "line": 271,
+        "dependencies": [
+          {
+            "symbol": "svc.get_daily_summary",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/date-request-page-adapter.js",
+          "line": 32,
+          "url": "/pomodoro/daily-summary"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/pomodoro/history",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/pomodoro/history",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "get_history",
+        "line": 282,
+        "dependencies": [
+          {
+            "symbol": "svc.get_history",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/date-request-page-adapter.js",
+          "line": 33,
+          "url": "/pomodoro/history"
+        },
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/date-request-page-adapter.js",
+          "line": 35,
+          "url": "/pomodoro/history"
+        },
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/load-request-page-adapter.js",
+          "line": 55,
+          "url": "/pomodoro/history"
+        },
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/load-request-page-adapter.js",
+          "line": 61,
+          "url": "/pomodoro/history"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/pomodoro/range-summary",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/pomodoro/range-summary",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "get_range_summary",
+        "line": 244,
+        "dependencies": [
+          {
+            "symbol": "svc.get_range_summary",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/stats-distribution-page-adapter.js",
+          "line": 28,
+          "url": "/pomodoro/range-summary"
+        },
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/stats-distribution-page-adapter.js",
+          "line": 88,
+          "url": "/pomodoro/range-summary"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/pomodoro/settings",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/pomodoro/settings",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "get_pomodoro_settings",
+        "line": 194,
+        "dependencies": [
+          {
+            "symbol": "svc.get_pomodoro_settings",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/stats-lifecycle-page-adapter.js",
+          "line": 40,
+          "url": "/pomodoro/settings"
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/pomodoro/settings",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "PUT",
+        "path": "/api/v1/pomodoro/settings",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "update_pomodoro_settings",
+        "line": 202,
+        "dependencies": [
+          {
+            "symbol": "svc.update_pomodoro_settings",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/stats-date-page-adapter.js",
+          "line": 44,
+          "url": "/pomodoro/settings"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/pomodoro/start",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/pomodoro/start",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "start_session",
+        "line": 41,
+        "dependencies": [
+          {
+            "symbol": "svc.start_session",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/pomodoro/pomodoro.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/unknown-start-controller.js",
+          "line": 21,
+          "url": "/pomodoro/start"
+        },
+        {
+          "file": "miniprogram/pages/pomodoro/utils/unknown-start-controller.js",
+          "line": 156,
+          "url": "/pomodoro/start"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/pomodoro/statistics-overview",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/pomodoro/statistics-overview",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "get_statistics_overview",
+        "line": 222,
+        "dependencies": [
+          {
+            "symbol": "svc.build_pomodoro_statistics_snapshot",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_lifetime_summary",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/load-request-page-adapter.js",
+          "line": 51,
+          "url": "/pomodoro/statistics-overview"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/pomodoro/stats",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/pomodoro/stats",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "get_stats",
+        "line": 213,
+        "dependencies": [
+          {
+            "symbol": "svc.get_stats",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/pomodoro/pomodoro.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/stats-controller.js",
+          "line": 19,
+          "url": "/pomodoro/stats"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/pomodoro/{}/complete",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/pomodoro/{session_id}/complete",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "complete_session",
+        "line": 73,
+        "dependencies": [
+          {
+            "symbol": "svc.complete_session",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/pomodoro/pomodoro.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/pending-sync-controller.js",
+          "line": 45,
+          "url": "/pomodoro/${pending.sessionId}/complete",
+          "resolution": "pending-sync-queue validActions"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/pomodoro/{}/interrupt",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/pomodoro/{session_id}/interrupt",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "interrupt_session",
+        "line": 104,
+        "dependencies": [
+          {
+            "symbol": "svc.interrupt_session",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/pomodoro/pomodoro.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/pending-sync-controller.js",
+          "line": 45,
+          "url": "/pomodoro/${pending.sessionId}/interrupt",
+          "resolution": "pending-sync-queue validActions"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/pomodoro/{}/pause",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/pomodoro/{session_id}/pause",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "pause_session",
+        "line": 156,
+        "dependencies": [
+          {
+            "symbol": "svc.pause_session",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/pomodoro/pomodoro.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/pending-sync-controller.js",
+          "line": 45,
+          "url": "/pomodoro/${pending.sessionId}/pause",
+          "resolution": "pending-sync-queue validActions"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/pomodoro/{}/resume",
+      "ledger_item": "MP-15",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/pomodoro/{session_id}/resume",
+        "file": "backend/app/api/v1/pomodoro.py",
+        "function": "resume_session",
+        "line": 131,
+        "dependencies": [
+          {
+            "symbol": "svc.resume_session",
+            "import": [
+              "app.services",
+              "pomodoro_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/pomodoro/pomodoro.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/pending-sync-controller.js",
+          "line": 45,
+          "url": "/pomodoro/${pending.sessionId}/resume",
+          "resolution": "pending-sync-queue validActions"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/practice/batch-submit",
+      "ledger_item": "MP-04",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/practice/batch-submit",
+        "file": "backend/app/api/v1/practice.py",
+        "function": "batch_submit",
+        "line": 171,
+        "dependencies": [
+          {
+            "symbol": "_request_submission.batch_submit",
+            "import": [
+              "app.services.practice",
+              "request_submission"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 421,
+          "url": "/practice/batch-submit"
+        },
+        {
+          "file": "miniprogram/subpackages/study/practice/utils/practice-submit-page-adapter.js",
+          "line": 77,
+          "url": "/practice/batch-submit"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/practice/questions",
+      "ledger_item": "MP-04",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/practice/questions",
+        "file": "backend/app/api/v1/practice.py",
+        "function": "get_practice_questions",
+        "line": 64,
+        "dependencies": [
+          {
+            "symbol": "PracticeQuestionsRequest",
+            "import": [
+              "app.services.practice.request_assembly",
+              "PracticeQuestionsRequest"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/practice/practice.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice/utils/question-load-wiring.js",
+          "line": 21,
+          "url": "/practice/questions"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/practice/sequential/reset",
+      "ledger_item": "MP-04",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/practice/sequential/reset",
+        "file": "backend/app/api/v1/practice.py",
+        "function": "reset_sequential_practice",
+        "line": 141,
+        "dependencies": [
+          {
+            "symbol": "svc.resolve_subject_id_to_code",
+            "import": [
+              "app.services",
+              "practice_service"
+            ]
+          },
+          {
+            "symbol": "svc.resolve_practice_subject_scope",
+            "import": [
+              "app.services",
+              "practice_service"
+            ]
+          },
+          {
+            "symbol": "svc.reset_sequential_progress",
+            "import": [
+              "app.services",
+              "practice_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/practice/practice.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice/utils/practice-question-page-adapter.js",
+          "line": 129,
+          "url": "/practice/sequential/reset"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/practice/subjects",
+      "ledger_item": "MP-04",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/practice/subjects",
+        "file": "backend/app/api/v1/practice.py",
+        "function": "get_practice_subjects",
+        "line": 55,
+        "dependencies": [
+          {
+            "symbol": "svc.get_practice_subject_tree",
+            "import": [
+              "app.services",
+              "practice_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/pomodoro/utils/pomodoro-session-page-adapter.js",
+          "line": 15,
+          "url": "/practice/subjects"
+        },
+        {
+          "file": "miniprogram/subpackages/productivity/pomodoro-stats/stats-distribution-page-adapter.js",
+          "line": 11,
+          "url": "/practice/subjects"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 639,
+          "url": "/practice/subjects"
+        },
+        {
+          "file": "miniprogram/subpackages/study/practice/utils/practice-subject-load-page-adapter.js",
+          "line": 11,
+          "url": "/practice/subjects"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-request-flow.js",
+          "line": 170,
+          "url": "/practice/subjects"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/review/grade-batch",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/grade-batch",
+        "file": "backend/app/api/v1/review.py",
+        "function": "grade_batch",
+        "line": 116,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.grade_batch_review",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-submit-page-adapter.js",
+          "line": 60,
+          "url": "/review/grade-batch"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/review/today/next-batch",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/today/next-batch",
+        "file": "backend/app/api/v1/review.py",
+        "function": "get_next_today_review_batch",
+        "line": 62,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.get_next_today_review_batch",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js",
+          "line": 81,
+          "url": "/review/today/next-batch"
+        },
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-session-page-adapter.js",
+          "line": 30,
+          "url": "/review/today/next-batch"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/review/today/overview",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/review/today/overview",
+        "file": "backend/app/api/v1/review.py",
+        "function": "get_today_review_overview",
+        "line": 47,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.get_today_review_overview",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-overview-page-adapter.js",
+          "line": 43,
+          "url": "/review/today/overview"
+        },
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-overview-page-adapter.js",
+          "line": 58,
+          "url": "/review/today/overview"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/review/{}/master",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/{schedule_id}/master",
+        "file": "backend/app/api/v1/review.py",
+        "function": "master_review_question",
+        "line": 138,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.mark_mastered",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js",
+          "line": 29,
+          "url": "/review/${scheduleId}/master"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/review/{}/unmaster",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/review/{schedule_id}/unmaster",
+        "file": "backend/app/api/v1/review.py",
+        "function": "unmaster_review_question",
+        "line": 161,
+        "dependencies": [
+          {
+            "symbol": "review_scheduler.unmark_mastered",
+            "import": [
+              "app.services",
+              "review_scheduler"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/review-today/review-today.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js",
+          "line": 30,
+          "url": "/review/${scheduleId}/unmaster"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/stats/ai-diagnosis",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/ai-diagnosis",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_ai_diagnosis",
+        "line": 161,
+        "dependencies": [
+          {
+            "symbol": "svc.get_ai_diagnosis",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-request-flow.js",
+          "line": 44,
+          "url": "/stats/ai-diagnosis"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-request-flow.js",
+          "line": 111,
+          "url": "/stats/ai-diagnosis"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/stats/behavior",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/behavior",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_behavior",
+        "line": 73,
+        "dependencies": [
+          {
+            "symbol": "svc.get_behavior_stats",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 600,
+          "url": "/api/v1/stats/behavior"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/stats/dashboard",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/dashboard",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_dashboard",
+        "line": 101,
+        "dependencies": [
+          {
+            "symbol": "svc.get_overview",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_subject_stats",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_trends",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_behavior_stats",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          },
+          {
+            "symbol": "svc.get_forgetting_trends",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 542,
+          "url": "/stats/dashboard"
+        },
+        {
+          "file": "miniprogram/pages/home/home.js",
+          "line": 661,
+          "url": "/stats/dashboard"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/stats/dashboard-insights",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/dashboard-insights",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_dashboard_insights",
+        "line": 192,
+        "dependencies": []
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 859,
+          "url": "/stats/dashboard-insights"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/stats/dashboard-llm-analysis",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/stats/dashboard-llm-analysis",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "post_dashboard_llm_analysis",
+        "line": 179,
+        "dependencies": [
+          {
+            "symbol": "svc.get_dashboard_llm_analysis",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 1221,
+          "url": "/stats/dashboard-llm-analysis"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/stats/dashboard-v2",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/dashboard-v2",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_dashboard_v2",
+        "line": 140,
+        "dependencies": [
+          {
+            "symbol": "svc.get_dashboard_v2",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 575,
+          "url": "/api/v1/stats/dashboard-v2"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 499,
+          "url": "/stats/dashboard-v2"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 1103,
+          "url": "/stats/dashboard-v2"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/stats/growth",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/growth",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_growth",
+        "line": 126,
+        "dependencies": [
+          {
+            "symbol": "svc.get_growth_profile",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/home/home.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 568,
+          "url": "/api/v1/stats/growth"
+        },
+        {
+          "file": "miniprogram/pages/home/home.js",
+          "line": 662,
+          "url": "/stats/growth"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/stats/trends",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/stats/trends",
+        "file": "backend/app/api/v1/stats.py",
+        "function": "get_trends",
+        "line": 58,
+        "dependencies": [
+          {
+            "symbol": "svc.get_trends",
+            "import": [
+              "app.services",
+              "stats_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/utils/practice-result-trend-page-adapter.js",
+          "line": 11,
+          "url": "/api/v1/stats/trends"
+        },
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 1167,
+          "url": "/stats/trends"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/study-hub/knowledge-diagnosis",
+      "ledger_item": "MP-06",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/study-hub/knowledge-diagnosis",
+        "file": "backend/app/api/v1/study_hub.py",
+        "function": "get_knowledge_diagnosis",
+        "line": 27,
+        "dependencies": [
+          {
+            "symbol": "knowledge_diagnosis_service.get_knowledge_diagnosis",
+            "import": [
+              "app.services",
+              "knowledge_diagnosis_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 753,
+          "url": "/study-hub/knowledge-diagnosis"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/study-hub/overview",
+      "ledger_item": "MP-08",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/study-hub/overview",
+        "file": "backend/app/api/v1/study_hub.py",
+        "function": "get_study_hub_overview",
+        "line": 17,
+        "dependencies": [
+          {
+            "symbol": "study_hub_service.get_study_hub_overview",
+            "import": [
+              "app.services",
+              "study_hub_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/home/home.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/home/home.js",
+          "line": 663,
+          "url": "/study-hub/overview"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/study-plan",
+      "ledger_item": "MP-05",
+      "backend": {
+        "method": "DELETE",
+        "path": "/api/v1/study-plan",
+        "file": "backend/app/api/v1/study_plan.py",
+        "function": "deactivate_plan",
+        "line": 43,
+        "dependencies": [
+          {
+            "symbol": "study_plan_service.deactivate_study_plan",
+            "import": [
+              "app.services",
+              "study_plan_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/study-plan/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/study-plan/index.js",
+          "line": 463,
+          "url": "/study-plan"
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/study-plan",
+      "ledger_item": "MP-05",
+      "backend": {
+        "method": "PUT",
+        "path": "/api/v1/study-plan",
+        "file": "backend/app/api/v1/study_plan.py",
+        "function": "upsert_plan",
+        "line": 28,
+        "dependencies": [
+          {
+            "symbol": "study_plan_service.upsert_study_plan",
+            "import": [
+              "app.services",
+              "study_plan_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/study-plan/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/study-plan/index.js",
+          "line": 439,
+          "url": "/study-plan"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/study-plan/overview",
+      "ledger_item": "MP-05",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/study-plan/overview",
+        "file": "backend/app/api/v1/study_plan.py",
+        "function": "get_overview",
+        "line": 20,
+        "dependencies": [
+          {
+            "symbol": "study_plan_service.get_study_plan_overview",
+            "import": [
+              "app.services",
+              "study_plan_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/home/home.js",
+        "miniprogram/subpackages/study/study-plan/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/home/home.js",
+          "line": 667,
+          "url": "/study-plan/overview"
+        },
+        {
+          "file": "miniprogram/subpackages/study/study-plan/index.js",
+          "line": 207,
+          "url": "/study-plan/overview"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/users/me",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/users/me",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "get_me",
+        "line": 117,
+        "dependencies": [
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 25,
+          "url": "/users/me"
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/users/me",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "PUT",
+        "path": "/api/v1/users/me",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "update_me",
+        "line": 125,
+        "dependencies": [
+          {
+            "symbol": "user_service.update_user",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          },
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 46,
+          "url": "/users/me"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/users/me/avatar",
+      "ledger_item": "MP-12",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/users/me/avatar",
+        "file": "backend/app/api/v1/auth.py",
+        "function": "upload_my_avatar",
+        "line": 137,
+        "dependencies": [
+          {
+            "symbol": "user_service.get_user_response",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          },
+          {
+            "symbol": "user_service.replace_user_avatar",
+            "import": [
+              "app.services",
+              "user_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/login/login.js",
+        "miniprogram/pages/home/home.js",
+        "miniprogram/pages/agreement/user.js",
+        "miniprogram/pages/agreement/privacy.js",
+        "miniprogram/pages/agreement/ai.js",
+        "miniprogram/pages/dashboard/dashboard.js",
+        "miniprogram/pages/pomodoro/pomodoro.js",
+        "miniprogram/subpackages/animation/animation-index/animation-index.js",
+        "miniprogram/subpackages/formulas/library/index.js",
+        "miniprogram/subpackages/formulas/reader/index.js",
+        "miniprogram/subpackages/productivity/pomodoro-stats/index.js",
+        "miniprogram/subpackages/study/practice/practice.js",
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/review-today/review-today.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/study/study-plan/index.js",
+        "miniprogram/subpackages/exam/paper-list/index.js",
+        "miniprogram/subpackages/exam/exam-runner/index.js",
+        "miniprogram/subpackages/exam/result/index.js",
+        "miniprogram/subpackages/exam/history/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-subject/index.js",
+        "miniprogram/subpackages/knowledge/knowledge-detail/index.js",
+        "miniprogram/subpackages/export/export-config/export-config.js",
+        "miniprogram/subpackages/export/export-records/export-records.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/utils/auth.js",
+          "line": 43,
+          "url": "/users/me/avatar"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wrong-questions",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/wrong-questions",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "list_wrong",
+        "line": 247,
+        "dependencies": [
+          {
+            "symbol": "_wrong_wrong_book_reading.list_wrong",
+            "import": [
+              "app.services",
+              "wrong_book_reading"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-request-flow.js",
+          "line": 81,
+          "url": "/wrong-questions"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/wrong-questions/batch",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "POST",
+        "path": "/api/v1/wrong-questions/batch",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "batch_operate",
+        "line": 408,
+        "dependencies": [
+          {
+            "symbol": "_wrong_wrong_book_mutations.batch_operate",
+            "import": [
+              "app.services",
+              "wrong_book_mutations"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js",
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-batch-undo.js",
+          "line": 35,
+          "url": "/wrong-questions/batch"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-batch-flow.js",
+          "line": 37,
+          "url": "/wrong-questions/batch"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-master-undo.js",
+          "line": 23,
+          "url": "/wrong-questions/batch"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-remove-flow.js",
+          "line": 24,
+          "url": "/wrong-questions/batch"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-master-flow.js",
+          "line": 34,
+          "url": "/wrong-questions/batch"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-master-flow.js",
+          "line": 92,
+          "url": "/wrong-questions/batch"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wrong-questions/diagnosis/stats",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/wrong-questions/diagnosis/stats",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "get_error_diagnosis_stats",
+        "line": 330,
+        "dependencies": [
+          {
+            "symbol": "error_diagnosis_service.get_stats",
+            "import": [
+              "app.services",
+              "error_diagnosis_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/pages/dashboard/dashboard.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/pages/dashboard/dashboard.js",
+          "line": 559,
+          "url": "/wrong-questions/diagnosis/stats"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wrong-questions/stats",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/wrong-questions/stats",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "get_stats",
+        "line": 279,
+        "dependencies": [
+          {
+            "symbol": "svc.get_stats",
+            "import": [
+              "app.services",
+              "wrong_question_service"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-request-flow.js",
+          "line": 36,
+          "url": "/wrong-questions/stats"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wrong-questions/task-flow",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/wrong-questions/task-flow",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "get_task_flow",
+        "line": 292,
+        "dependencies": [
+          {
+            "symbol": "_wrong_wrong_book_reading.get_task_flow",
+            "import": [
+              "app.services",
+              "wrong_book_reading"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-book/wrong-book.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-book/utils/wrong-book-request-flow.js",
+          "line": 122,
+          "url": "/wrong-questions/task-flow"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wrong-questions/{}",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/wrong-questions/{wq_id}",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "get_wrong",
+        "line": 350,
+        "dependencies": [
+          {
+            "symbol": "_wrong_wrong_book_reading.get_wrong",
+            "import": [
+              "app.services",
+              "wrong_book_reading"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+          "line": 460,
+          "url": "/wrong-questions/${wqId}"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-load-flow.js",
+          "line": 9,
+          "url": "/wrong-questions/${wqId}"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-load-flow.js",
+          "line": 122,
+          "url": "/wrong-questions/${wqId}"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wrong-questions/{}/diagnosis",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "GET",
+        "path": "/api/v1/wrong-questions/{wq_id}/diagnosis",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "get_wrong_error_diagnosis",
+        "line": 362,
+        "dependencies": [
+          {
+            "symbol": "_wrong_wrong_book_diagnosis.get_wrong_error_diagnosis",
+            "import": [
+              "app.services",
+              "wrong_book_diagnosis"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/practice-result/index.js",
+        "miniprogram/subpackages/exam/result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/index.js",
+          "line": 240,
+          "url": "/wrong-questions/${id}/diagnosis"
+        },
+        {
+          "file": "miniprogram/subpackages/exam/result/index.js",
+          "line": 186,
+          "url": "/wrong-questions/${id}/diagnosis"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-diagnosis-flow.js",
+          "line": 144,
+          "url": "/wrong-questions/${id}/diagnosis"
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/wrong-questions/{}/diagnosis",
+      "ledger_item": "MP-03",
+      "backend": {
+        "method": "PUT",
+        "path": "/api/v1/wrong-questions/{wq_id}/diagnosis",
+        "file": "backend/app/api/v1/wrong_questions.py",
+        "function": "confirm_wrong_error_diagnosis",
+        "line": 373,
+        "dependencies": [
+          {
+            "symbol": "_wrong_wrong_book_diagnosis.confirm_wrong_error_diagnosis",
+            "import": [
+              "app.services",
+              "wrong_book_diagnosis"
+            ]
+          }
+        ]
+      },
+      "possible_pages": [
+        "miniprogram/subpackages/study/wrong-detail/wrong-detail.js",
+        "miniprogram/subpackages/study/practice-result/index.js"
+      ],
+      "sites": [
+        {
+          "file": "miniprogram/subpackages/study/practice-result/utils/practice-result-diagnosis-page-adapter.js",
+          "line": 20,
+          "url": "/wrong-questions/${wqId}/diagnosis"
+        },
+        {
+          "file": "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-diagnosis-flow.js",
+          "line": 53,
+          "url": "/wrong-questions/${wqId}/diagnosis"
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "backend/app/api/router.py": "101e11caa1dbeb32d0a5f7656f04d7eeb9d5846632a83a024d6ea74229e55f93",
+    "backend/app/api/v1/ai.py": "79b2ac112c8bcf2701290cc5e30bb8ab38f215f3908dcdaf62fd06b221644176",
+    "backend/app/api/v1/auth.py": "5b2b0f508c7c4046fa77d1e89f53c4b2aae0b2f837fb55430a7714b12787f43b",
+    "backend/app/api/v1/exams.py": "4150367c87e21c82ef006e7cd71d92e0257847fe23b4659542310dadcc6bdeeb",
+    "backend/app/api/v1/exports.py": "b45dbc71909d9abbc110a6e07b1b1ce23e0cce218a4d32a8a9ef5148aea8201c",
+    "backend/app/api/v1/formulas.py": "3135cc8792256d16014acb19c34aed77f2adfd60a1898a0767d2d51a90a53899",
+    "backend/app/api/v1/knowledge_map.py": "022ab2ffaee26d3d01ac62ddc42abe118c6f254419da47e2230b8059f965b01e",
+    "backend/app/api/v1/pomodoro.py": "5ab7623f1470d61f593e9b452f6aaa0b622205864f22f212f4c92de8563c8070",
+    "backend/app/api/v1/practice.py": "690efda0a252dc5d1501240d64914476f1d6781f1e699bbe3a5699c6f3ba47e1",
+    "backend/app/api/v1/review.py": "c653f73ebc77cfe593656d84b0b1fc77099385f3bfead3ce5bb8098b57080172",
+    "backend/app/api/v1/router.py": "35ca60bc1d9fca29451e51402a33af7601f183ace0d5a8a3d5ba3882a554382d",
+    "backend/app/api/v1/stats.py": "a28df1bf8ff38eeab496ed4581f1482964593f2f0beeb6504aff4630848a0f39",
+    "backend/app/api/v1/study_hub.py": "9e7b5b1e1ab1657fab41665754de2cbd17c4fb822b7a8b9bd7ee77b4ef590d6f",
+    "backend/app/api/v1/study_plan.py": "e282cc79080031eefe0043846629360c9f9c693530ef121f7d51da6cf6dab727",
+    "backend/app/api/v1/wrong_questions.py": "c135a722b575444adaa870b5cb259aef0116f30d5bbcdb13ea377b91a02b61b5",
+    "miniprogram/__mocks__/math-question-fixtures.js": "f77ec134402ef3dd68180b7e605c320c10bebbd1a373edcd9602efada2eef783",
+    "miniprogram/app.js": "1dfbfd15f4432aadd52a06d0252e8c43aeabb83aa1b3f98854ff76a3a6d49c5e",
+    "miniprogram/app.json": "c504de4c993e18dab7987d24826f3333a1b82f7b2c58f4ff51a55662a555f9f6",
+    "miniprogram/components/app-dialog/index.js": "1831a48205666242a707e208d7db7f76bcc02b590810d67b2fbc18552239ecce",
+    "miniprogram/components/app-dialog/index.json": "035503c1a56d8b4b9227ce8bb9145fbd1ef8ec7dce59e55f9d5d55fb5eb7d566",
+    "miniprogram/components/premium-nav/premium-nav.js": "0910623ea9f93f2b7eebbe7dc40ee36413b87be8f4f3f69b96ac67052e402fb6",
+    "miniprogram/components/premium-nav/premium-nav.json": "3cac147888c7f1804ca5c8fd5aeca071cc29e1a776c6c7c6d52d823c4f568ef3",
+    "miniprogram/components/question-filter-panel/date-range.js": "a699838a02637514159ac3b7dbb5384b24a6f43b0e30afa513314a662f1d8a1a",
+    "miniprogram/components/question-filter-panel/index.js": "5be3cc03e57bc1270993f35fcefcf0d339f642656ea5977edecdee05112cbc6a",
+    "miniprogram/components/question-filter-panel/index.json": "2f97104a3787d98b5058f0cab2aec29b5ff87542f95111dc6b2f2108ea38fb8a",
+    "miniprogram/config.js": "87a6f310aaf7de2a390812e32d752946ac4926dade45828df419a9d69947cb38",
+    "miniprogram/pages/agreement/agreement-page.js": "ef4de51c7b11429a6bd795d83fda651ea75a34ae4227c113a2aee6f1a693bedb",
+    "miniprogram/pages/agreement/ai.js": "426ac20168edaf474c07c75828c534239f656a94f9a1393ef77519cf3d56c173",
+    "miniprogram/pages/agreement/ai.json": "d803f10283e5c7419b5f63988623f1d587af23d69985be7df69e4b03974ab027",
+    "miniprogram/pages/agreement/privacy.js": "426ac20168edaf474c07c75828c534239f656a94f9a1393ef77519cf3d56c173",
+    "miniprogram/pages/agreement/privacy.json": "d803f10283e5c7419b5f63988623f1d587af23d69985be7df69e4b03974ab027",
+    "miniprogram/pages/agreement/user.js": "426ac20168edaf474c07c75828c534239f656a94f9a1393ef77519cf3d56c173",
+    "miniprogram/pages/agreement/user.json": "d803f10283e5c7419b5f63988623f1d587af23d69985be7df69e4b03974ab027",
+    "miniprogram/pages/dashboard/dashboard.charts.js": "c7537e2273946062e55095772bc62c867f23bd739af49839f36e171113b3bb4e",
+    "miniprogram/pages/dashboard/dashboard.diagnosis.js": "c36f73188b5485f8bc68118b712492823b48b42e8cc3533c377581ef78ff3eee",
+    "miniprogram/pages/dashboard/dashboard.js": "cf5c47404e9a6261a82bcd3f5638d91db0f4924c26f900397e99c24e7685c334",
+    "miniprogram/pages/dashboard/dashboard.json": "3e8061a0028530954fd997f0be1f92b4c7044b23c5a6ebb5b7365db6801413f0",
+    "miniprogram/pages/dashboard/dashboard.model.js": "bb80d40635676e75fc8e14f1c9bad9b27980d929c5dceb236ee2d509910e3d56",
+    "miniprogram/pages/dashboard/utils/error-diagnosis.js": "42aaf54ff071baf0ef75a908ddf07f3a8881f2f9511597c53919ec56a8fe639a",
+    "miniprogram/pages/dashboard/utils/subject-meta.js": "7ffb445a1a0e2befaf0778e57bd20b17ae1078b3ed6fbbe864088c7d6438de34",
+    "miniprogram/pages/home/home.js": "6cfa24e3c08efb14bb94ce6c5a30f08aa4bd2e80abab5f4eb56b3da43fee194c",
+    "miniprogram/pages/home/home.json": "5d45cefe75ed1889b4cea54f7be5924d490d36f5ccbd9886c5ec6db4680334eb",
+    "miniprogram/pages/login/login.js": "c039759f25d0295487e223559445ac65e7b05d78a16a731af56f3b1cc30aa96f",
+    "miniprogram/pages/login/login.json": "d803f10283e5c7419b5f63988623f1d587af23d69985be7df69e4b03974ab027",
+    "miniprogram/pages/pomodoro/components/AnimatedView/AnimatedView.js": "d386483271a579e5ae117d17949b07f7b3d67586e1b5b184da62763602edfe80",
+    "miniprogram/pages/pomodoro/components/AnimatedView/AnimatedView.json": "035503c1a56d8b4b9227ce8bb9145fbd1ef8ec7dce59e55f9d5d55fb5eb7d566",
+    "miniprogram/pages/pomodoro/pomodoro.js": "8009acafe0d8340d965059a96690a408bf38115b4ffa05d4e631d88831a0b471",
+    "miniprogram/pages/pomodoro/pomodoro.json": "c5883842b2fc6e3a94199a901ca0b42ca088f07f21ec0d0edf973dec8b7920e5",
+    "miniprogram/pages/pomodoro/utils/active-session-reconciler.js": "39c5add058c17cd878671aec750bd12ff8ffb7636b9d8e96e98cf82422bd23ab",
+    "miniprogram/pages/pomodoro/utils/active-session-recovery.js": "7024d02947d0cd68af1808cdf35ae76668cef37c66e92b6654a7409f1b1f2b6a",
+    "miniprogram/pages/pomodoro/utils/active-sync-controller.js": "10a458f3454679953416c5bf5f0d5eddbf6da7e0c726164377681b334f0822e5",
+    "miniprogram/pages/pomodoro/utils/apply-subjects-controller.js": "2a6edd86802768bf28ea135c22c1d8a4bf89b2ef880cf4db91f97dc54f0fee39",
+    "miniprogram/pages/pomodoro/utils/begin-countdown-controller.js": "a9f7d953e1da8a1f9c8a19fc6afc0c12627865a8c78366146825b81145b1eb98",
+    "miniprogram/pages/pomodoro/utils/break-restore-controller.js": "6500fe188750e0c88f86eb655edbeedcef4f5066fca0bd6647509008b50e6fc1",
+    "miniprogram/pages/pomodoro/utils/cached-session-builder.js": "4447c2c76c5819686aee866507d1f72e707c090bf99a3336bba514643863f961",
+    "miniprogram/pages/pomodoro/utils/cancel-confirm-format.js": "c47f4de72112979bca2bab46692360d19e3b43bcb1d9fcbe450784f88a213c1b",
+    "miniprogram/pages/pomodoro/utils/cancel-confirm-state.js": "ffd8eb69c769f629cf18f16e9c98d1d68ea487830b17ce80520014a51ce143c9",
+    "miniprogram/pages/pomodoro/utils/cancel-end-confirm-controller.js": "e889183a88ac6c66987faf5379895dcc5c0afd723fee85c2a945239e6ccc5508",
+    "miniprogram/pages/pomodoro/utils/canvas-init-controller.js": "fc5913bf7a245be4054506289e27c31c134fdedb47b1a961a50abc09eaeaae62",
+    "miniprogram/pages/pomodoro/utils/canvas-layout.js": "97565c6b6dfb097dd8d88100dcfe8dd0c7e18947f3b0d10cde0c8564dcee8c6a",
+    "miniprogram/pages/pomodoro/utils/celebration-dismiss-controller.js": "c90358dd7120c9b4595183c1caf13f7b0512c522706f6a202d628bf7bc33966c",
+    "miniprogram/pages/pomodoro/utils/celebration-dismiss.js": "929cabc2e06d6673f41aab1bb4793c4fa4954dac9f0a492f91bf2fd8abf67533",
+    "miniprogram/pages/pomodoro/utils/celebration-type-controller.js": "25115bad424c5c586c31dad212d5cf1e15f88b8fd32fbaeec8224e0123ff016f",
+    "miniprogram/pages/pomodoro/utils/completion-celebration-controller.js": "15ae8cabb7e69b634986b37263aa51b42a227f0151adad903545d8cb4e47a712",
+    "miniprogram/pages/pomodoro/utils/completion-celebration.js": "6c4b7f5e95c6cef6d25d0c24609e70238da9ec7c7a612c9b6a96e922afd19c27",
+    "miniprogram/pages/pomodoro/utils/completion-recovery.js": "8f177d6782330a14e783e60de715070103c8ab50e7bd51cb4b9c68d16b915054",
+    "miniprogram/pages/pomodoro/utils/confirm-end-free-timer-controller.js": "ce59aad264150fbd9d489489d15903eb2e483147c172527bd28910ca6cfcf118",
+    "miniprogram/pages/pomodoro/utils/confirm-end-timer-controller.js": "93f1dc2da124606a6ee4c670cae95e19bad546d190ae454b20a058fa468fde77",
+    "miniprogram/pages/pomodoro/utils/confirm-interrupt-countdown-controller.js": "7ec141cf58de7b0990e410b94d1ac55b369e0c016d2c8242596672a30f113153",
+    "miniprogram/pages/pomodoro/utils/confirm-recovery.js": "c579f0efc04dc23b5eb0e199464a713189395b6a65f023a92465df96f0d64af7",
+    "miniprogram/pages/pomodoro/utils/countdown-controller.js": "acf8bc88da9746ea525b50aa99443f801e0d2cac90b7524f34645db22e9f1c87",
+    "miniprogram/pages/pomodoro/utils/countdown-session-restore-controller.js": "b0976bf14b68837756ec99f12f601db39847e989e28962ff44892397c74aa710",
+    "miniprogram/pages/pomodoro/utils/date-exam-controller.js": "49cd8c83541264dcf7f6c72b93dc6d172e1ca2907e36887ee37e693b80a9d1dc",
+    "miniprogram/pages/pomodoro/utils/draw-ring-controller.js": "980e1b01b7ce7af4d61e9c63628a3912c25f8e748a03c094a836119226c83326",
+    "miniprogram/pages/pomodoro/utils/effective-paused-ms.js": "1e2ce8d4924fded1e2b0273c10cb6aa5dbcd8c1c0ae7e7cdd5a858d2315496c9",
+    "miniprogram/pages/pomodoro/utils/end-confirm-snapshot.js": "5b2e93278e717bd4d4a17542729bf2855af6aef93b4c27b22b9f51eac8455842",
+    "miniprogram/pages/pomodoro/utils/end-confirm-view-model.js": "0f5b50a10ec8d6ff96dc9fb991a2d6f8a459adeaad451f4efbb46b3d04925031",
+    "miniprogram/pages/pomodoro/utils/end-session-controller.js": "8f09bca7dadabbd8f2fa03cef7524f87731060387e5e5e4a88cbb95203ff9f9f",
+    "miniprogram/pages/pomodoro/utils/font-size-controller.js": "7226e4771a9bd2e911bafbf156255eb08cd0f1da27131681469870a84368aff9",
+    "miniprogram/pages/pomodoro/utils/free-elapsed-controller.js": "c0552e70aa93ea08a1506a104668a7b7430572b11648e78fbfe79ec3dae233e8",
+    "miniprogram/pages/pomodoro/utils/free-session-restore-controller.js": "0153d68b885bb33c741a8a1f42a0481501ee30970e065d81adb2762f817746bf",
+    "miniprogram/pages/pomodoro/utils/free-timer-begin-controller.js": "f34457bfe6960bec417b1fa07635cfdafe2c8df43e03e6a570dbb52ae23b634d",
+    "miniprogram/pages/pomodoro/utils/free-timer-controller.js": "33c24eb0a32d09af71f6442700e05638b14e69219f1e10d6475171178337bb36",
+    "miniprogram/pages/pomodoro/utils/free-timer-limit-controller.js": "f0386e0bf29efeb91fef35a7bff1ac7bffe63a204a5114d1567dcf059e52bc04",
+    "miniprogram/pages/pomodoro/utils/hide-storage.js": "012106f80bb67cc55369c0423f5cd963d52b911a6b09678df04aaad3cabd75c4",
+    "miniprogram/pages/pomodoro/utils/interrupt-session-controller.js": "df55128ac241e068971bdb8d7fa275217da4d21c4dc01bb243daf7b870af27b4",
+    "miniprogram/pages/pomodoro/utils/pause-adjustment.js": "93882a17c2f04a43716216846b23c1514c2706d790b837af67af2785af79d5fc",
+    "miniprogram/pages/pomodoro/utils/pause-countdown-end-confirm-controller.js": "016cf7fe6d4c4d4dd78236018e3d2f43c6b5f0e28167cf141e2e834ed4f9f25b",
+    "miniprogram/pages/pomodoro/utils/pause-free-timer-controller.js": "88cbe44a025789c02ac942e6d4ad6fe58af038302d8a4e4252805e9b13a321b5",
+    "miniprogram/pages/pomodoro/utils/pause-session-controller.js": "7f1045f22c8d3a7320fe4a56128170dd6f2b14e6fc9b10d720d1e1760620cbc2",
+    "miniprogram/pages/pomodoro/utils/pause-sync-controller.js": "c5e0e09e8ca33a41574d709fb5ee943f2b8185c08fa23128fad085f1349a7c61",
+    "miniprogram/pages/pomodoro/utils/pause-toggle-controller.js": "787599992383213e56a28a64a42c4395c98bae77a3acfaec5ba62a56904bf579",
+    "miniprogram/pages/pomodoro/utils/pending-sync-controller.js": "9d20b4d18c3d89b04620d13233a101a723cc8356bbe6c20c512898c77b11812b",
+    "miniprogram/pages/pomodoro/utils/pending-sync-queue.js": "e60174e6b48c2bfb0cf5869959d686dda3d8ca38557f54286cec626f8163a2d1",
+    "miniprogram/pages/pomodoro/utils/pomodoro-celebration-page-adapter.js": "256d703723de6eef231aac16d9fa2bbe8eb46437384d7f54829b3a39c75b74d8",
+    "miniprogram/pages/pomodoro/utils/pomodoro-confirm-page-adapter.js": "a5625f40788e5e33b5c04ee0c63a83128157b36ca3b29830f82156bbe64c9d4f",
+    "miniprogram/pages/pomodoro/utils/pomodoro-page-support.js": "73513cbcf87c52daeddd253fe99816539d9c7a79bee1ad094f823f74e721bf86",
+    "miniprogram/pages/pomodoro/utils/pomodoro-recovery-page-adapter.js": "16cb779fc92d0beb143a1ffd3cae2f88968e55ebfb09ec564d3ccbfe30817636",
+    "miniprogram/pages/pomodoro/utils/pomodoro-restore-page-adapter.js": "f050e71f97df72d2f8773eaca07fc033ee45ae24f9e61654e4f6f1d331810b3e",
+    "miniprogram/pages/pomodoro/utils/pomodoro-session-control-page-adapter.js": "76ea124876b0665309facf03e37c46378006f82b641e8eb2f68ba606e7384b59",
+    "miniprogram/pages/pomodoro/utils/pomodoro-session-page-adapter.js": "3ed49b981088910573c4c6b965b7236aa552cd79a93926e50cef2bed6b29c098",
+    "miniprogram/pages/pomodoro/utils/pomodoro-theme.js": "12b99c74a895ca5dde2f5ae0df30ce84dab68f66b5e8bd31e4053fc4c894a50f",
+    "miniprogram/pages/pomodoro/utils/pomodoro-view-page-adapter.js": "47dd96a8e38b1590bbc53c14f340df22417e1838a82c69f3d94f79867ef4b87b",
+    "miniprogram/pages/pomodoro/utils/preset-view-controller.js": "808ce9f9b69183ec454ca155245b7c9686a18ae20059dab5c3b816e03110de3f",
+    "miniprogram/pages/pomodoro/utils/reset-to-idle-controller.js": "08ba3a2c2ca1ad0d4b549a248cd70dad6d4cfdddccaa02776bb8d275562b616d",
+    "miniprogram/pages/pomodoro/utils/resume-error-controller.js": "d7a806af0b80bbe47fd1f51c6275f55463ae029f1a3b53ff5b8ac084a87359c3",
+    "miniprogram/pages/pomodoro/utils/resume-free-timer-controller.js": "02a5de514b47d5e9cf87727894644f15ae40d3d1a07d01c15e3ac2d2d7f5cb42",
+    "miniprogram/pages/pomodoro/utils/resume-session-controller.js": "af5135c79c10e4bebeb46736afda8ab11d7aa9a9ef95d79d3a1df4922b93b28e",
+    "miniprogram/pages/pomodoro/utils/ring-geometry.js": "ca172138268937f9513a0020c431a064b2f0ab2734a64fa1a025194869bd7505",
+    "miniprogram/pages/pomodoro/utils/route-params.js": "88a2d734738fee649944b5d3fd43f8d51d15f0f48721df8dfad53002f666ac1f",
+    "miniprogram/pages/pomodoro/utils/running-state-migrator.js": "4047bfdb58a89c8cf738ea2ebbbb075a194b6346afb6005d6cfe1aa1d5bc35db",
+    "miniprogram/pages/pomodoro/utils/session-action-dropper.js": "ba8e1900e8af3c06754aeaacb25749a921bb3846cdf9bd5e7fffb6a2e7529c0a",
+    "miniprogram/pages/pomodoro/utils/session-restore.js": "f4a37c8b9aaabf5b8090770e9b1f3fc45006be8f4fbce0cc2c97852a2dccd1d5",
+    "miniprogram/pages/pomodoro/utils/session-storage.js": "2b64feac8ef00d049c628c959419be53b8d2ca0ce7971d716e30dde8220ad3cd",
+    "miniprogram/pages/pomodoro/utils/show-countdown-interrupt-confirm-controller.js": "7716f249a1217726bb3b9ef191d7b57bf47a789445843e9401c0656970a57b51",
+    "miniprogram/pages/pomodoro/utils/show-end-free-confirm-controller.js": "14f4daef7f1a7a048f7f35c1c3e86047e46e299822513ac04923052c8eb65267",
+    "miniprogram/pages/pomodoro/utils/show-recovery.js": "dd78681f721b621196718070947090c2f229ce2ab8707519b8b9da88b9e4b98d",
+    "miniprogram/pages/pomodoro/utils/skip-break-controller.js": "58bde6ef1472c5d0a0d1e234c900aa9ddf54f6917e348f17c3e70ef6694cef71",
+    "miniprogram/pages/pomodoro/utils/start-break-controller.js": "16dce7795c589848915d1721fec40a8af0a093ea81025284c9b58fa762f65484",
+    "miniprogram/pages/pomodoro/utils/start-session-controller.js": "73fa132a81da3866cdead28cbe330c44341aaea5004deb6e8b19a787815e142d",
+    "miniprogram/pages/pomodoro/utils/start-timer-controller.js": "51c37743bf91f0ad88d9cebfc03f3580ad1a806862224382ee43d462c5b8ba8d",
+    "miniprogram/pages/pomodoro/utils/stats-controller.js": "a2135b4750e675b194eff034af567cab1da7dfafaa5fc5fc9d08d32e3db9b506",
+    "miniprogram/pages/pomodoro/utils/subject-cache.js": "98cc510b5e07cc5d681f1a6cc45773195477a945d50b32ed6fe0371206dc9684",
+    "miniprogram/pages/pomodoro/utils/subject-meta.js": "7ffb445a1a0e2befaf0778e57bd20b17ae1078b3ed6fbbe864088c7d6438de34",
+    "miniprogram/pages/pomodoro/utils/subject-options.js": "f75c9e904f2ae615d7f132ab1699e81e06aa7d32eaf035bf1947f1678ee10a71",
+    "miniprogram/pages/pomodoro/utils/subject-scope.js": "f17d8a6014751d04888b0670cb442e1cabe3b5414b3ba06e5c01f94cc16b9108",
+    "miniprogram/pages/pomodoro/utils/subject-selection.js": "13a2d4fb6f01e28bc085da28bf22e42a9f4bb73b367be264c6119c4ddee065b1",
+    "miniprogram/pages/pomodoro/utils/subject-view-controller.js": "901b61cdfb6277d697a236f45c313891d167535abd4e1925aeb5a5e07f0bfb92",
+    "miniprogram/pages/pomodoro/utils/sync-reconciliation.js": "7f91c354ac72de7518250a4321eb6705b822b65c33c977594ef1396c4db28e5c",
+    "miniprogram/pages/pomodoro/utils/sync-retry-controller.js": "9720241b74f678f4f3479a2274f39a21afbc9ee7a1bacfaa46a75e451d0d2ca1",
+    "miniprogram/pages/pomodoro/utils/terminal-conflict-controller.js": "9741b87fea77b3a5c17d3de2ea5d655eda4ccd85677336aa693f9cd7425d5357",
+    "miniprogram/pages/pomodoro/utils/terminal-conflict-handler.js": "10f7c35deb2ceb315323ed664b905cfe0a2d52022e0ced56bb20778e7654ad46",
+    "miniprogram/pages/pomodoro/utils/terminal-conflict-state.js": "bd2917e2485cec77e6dd34936ba391015e50d00e267174d175251408c441eb0e",
+    "miniprogram/pages/pomodoro/utils/theme-controller.js": "f4ce38f065488607cf9ba885707f0163ffbdf56d550b821118c55365ee8b1b48",
+    "miniprogram/pages/pomodoro/utils/timer-math.js": "0af4fb3c681e0976fdc01ec2723d2217eedaba11977b24c87ec622893e2ea5c5",
+    "miniprogram/pages/pomodoro/utils/unknown-start-controller.js": "d9beca5e13f12cb04ae377c66e20edc73003368b916d08aa51ce01437dbc22d7",
+    "miniprogram/pages/pomodoro/utils/unknown-start-helpers.js": "a67f1137c501d073fec18190bcbc2fe913bbd57ce5d69f518f7772ae26594a79",
+    "miniprogram/pages/pomodoro/utils/update-free-elapsed-controller.js": "f7126a8e050666a488b752bade41f93398c11b9dd58fadbfe41af720e6128c45",
+    "miniprogram/pages/pomodoro/utils/work-complete-controller.js": "21c900e99951ffb53474da365910dffeaa1f2a611176adfb68c0552595428e45",
+    "miniprogram/subpackages/animation/animation-index/animation-index.js": "b7d36508e13daf583e438a270dad7dcd987d7d61756a46d443456b3489e8deeb",
+    "miniprogram/subpackages/animation/animation-index/animation-index.json": "80732e1c83562bb560dd0d7aadffb4b3ec3190af0f3ef2aa49f8549ca7294e30",
+    "miniprogram/subpackages/animation/lottie-loader.js": "d9934b114d99da22b27b849d5ac27fd4d4285aceec59318d39be88df648a231b",
+    "miniprogram/subpackages/exam/components/math-question/math-question.js": "16e4a8596f7c6c8c240b147bc04e9df131dda8856835ce56bad0a811c71187d3",
+    "miniprogram/subpackages/exam/components/math-question/math-question.json": "e43553b48c8805452a5eedffb3ae5950e7b1e756abdb9adf08390829e5903eda",
+    "miniprogram/subpackages/exam/components/quiz-runner/navigation-methods.js": "a87e970ef3599a7565ee99c093b07cd9921060297d3dc074086ddf9e525bc848",
+    "miniprogram/subpackages/exam/components/quiz-runner/question-answer-patch.js": "5584c3e263ab8c3ae4652b883344ceaa3577df25e8d57165e6d700d790b979bf",
+    "miniprogram/subpackages/exam/components/quiz-runner/question-render-patch.js": "4c8fb632f9e0889ae2f77883b4e7044d08395c05a5efb8cb20a8c44e70dac709",
+    "miniprogram/subpackages/exam/components/quiz-runner/question-sync.js": "5329670d0868d52ad07c3bd9459e6c1b04e81701d777489d783bac5a73d8365f",
+    "miniprogram/subpackages/exam/components/quiz-runner/question-view-commit.js": "8ae41ad9b7f03800aad536b4bc83e6707fb04de0fcaa6a70d012e9c3cd2f5c03",
+    "miniprogram/subpackages/exam/components/quiz-runner/quiz-runner.js": "7cc6f234d20eec8523b4851533861f2a7dcd6a0b9c7a7ce204263dd6eca9e7df",
+    "miniprogram/subpackages/exam/components/quiz-runner/quiz-runner.json": "54de364ca9fe7dfa8c1dad808abbaf6c545c646dcb33cd7a8c84877369d9e8b8",
+    "miniprogram/subpackages/exam/exam-runner/index.js": "53650bb21e96b835e60a4b2849fb6f87138948a86ce9977afbbec7aeb7bf2e09",
+    "miniprogram/subpackages/exam/exam-runner/index.json": "4f920fcf760cf96ffdb7971ecfebf7a11581971481aa7923732463ea744e411e",
+    "miniprogram/subpackages/exam/history/index.js": "5d49caac36e1efcc9413a554ff88d8fe6b7f7d2652057e2dda7e78e1d0f2260d",
+    "miniprogram/subpackages/exam/history/index.json": "2757f624b1433a9dc86c29701ae9a7b577d6437c92770666ca551fbc03cbc8f8",
+    "miniprogram/subpackages/exam/paper-list/index.js": "02e3c4bc4ddbd38fc9195f32aa25ab3a710503fb568dfeaf9d0e73315e6e896c",
+    "miniprogram/subpackages/exam/paper-list/index.json": "f2c72378821fc9b248b0b5951e6fe7db2ba0999d7d3f83ce8ecd944d40b40f21",
+    "miniprogram/subpackages/exam/result/index.js": "3a2f4ce6cbf3141452a7466f6c05a506d5d09031a98e03eca395eadac0dbc6e9",
+    "miniprogram/subpackages/exam/result/index.json": "cbb18f98d7c050b51888c3bd0769dbb909a1fde14a86f98d877360d1020bf8b8",
+    "miniprogram/subpackages/exam/utils/ai-teacher-408.js": "bce020a2afa64cf8bb5bc81d75b518968228d34fac62a98d482f7e763fd25be3",
+    "miniprogram/subpackages/exam/utils/answer.js": "33d94dc73ac252117cf5b7765db33ff9d4b4d4ce72af40fff4f9f654dad7513e",
+    "miniprogram/subpackages/exam/utils/code-block-render.js": "b66ec4d93036e74841c4ee6bcfdc37dc8d73d35a16930560b595860b9c7bec47",
+    "miniprogram/subpackages/exam/utils/code-reconstructor-artifacts.js": "3bc6a80cb24530be261545511369bdc07d372aa57475711e726aa432009ecd76",
+    "miniprogram/subpackages/exam/utils/code-reconstructor-signals.js": "6bc6198e615a21375c2db0c3b03393cfc7a0566af600a3485663e3390ac305f3",
+    "miniprogram/subpackages/exam/utils/code-reconstructor-strings.js": "4b39fe5265b027b21e3f70c162c54af238638a0dccee110dc865a7075576bf57",
+    "miniprogram/subpackages/exam/utils/code-reconstructor-structure.js": "4a1f7ebc50bf84a43dd3c0879128373a4934c76dec4eaea705689da2ed8b8ee1",
+    "miniprogram/subpackages/exam/utils/code-reconstructor.js": "d19ef9accfc02913cfd3e30bf4e1039e48cc83712804fdebd59850a01a11912d",
+    "miniprogram/subpackages/exam/utils/error-diagnosis.js": "42aaf54ff071baf0ef75a908ddf07f3a8881f2f9511597c53919ec56a8fe639a",
+    "miniprogram/subpackages/exam/utils/exam-408-teacher-controller.js": "54599185028a1339243f0a28d135d37f5b6ec3948e6d32ed61fa0fc2ddb4ecf1",
+    "miniprogram/subpackages/exam/utils/exam-answer-sync-controller.js": "a93bfd8fee09360baa38575f9ac22b9877087a21e2547993259fdc19444e15a9",
+    "miniprogram/subpackages/exam/utils/exam-attempt-cache.js": "3bfa74858621fd3b68ba6ef88ab02d9d1f2f68939a484a5fce607a26de5697f6",
+    "miniprogram/subpackages/exam/utils/exam-attempt-reconcile-controller.js": "62bdb1dac3d4ba6113f6f1cdba8bbd25ac125f1b7c5aafb79db869e1adccfbfd",
+    "miniprogram/subpackages/exam/utils/exam-exit-request-controller.js": "e64fd3ecd7fbf092b30ff97b46f985d578a5847ecafafaa7df3e5ffcc74b834a",
+    "miniprogram/subpackages/exam/utils/exam-interaction-controller.js": "37e22b3aa34126340990f9c8ed8a3c15c8cafbd50f8759f78f4285dc024086f7",
+    "miniprogram/subpackages/exam/utils/exam-pending-cache-controller.js": "86dc5b54050033e1494e1e6fd73462afa829f91007c608ab29436a316030df65",
+    "miniprogram/subpackages/exam/utils/exam-question-navigation-controller.js": "765edbed229a8f2202e4bb3f5766d90767ab02cc70357ad65e26690b5c481e9e",
+    "miniprogram/subpackages/exam/utils/exam-question-time-controller.js": "31b653ce441f2ca42bdc851a8f36ebfb218089f8272feec687050f53892e66c6",
+    "miniprogram/subpackages/exam/utils/exam-reconnect-controller.js": "cb36f5a62fb5084c1af15f6a0d5418c991a0d9500b4ea8551ea2d9860e068bf3",
+    "miniprogram/subpackages/exam/utils/exam-result-load-controller.js": "157b8f198d1ca70d18dc58d5a2a722c5170163a0665dd2cc2df630f11588019e",
+    "miniprogram/subpackages/exam/utils/exam-result-view.js": "20bce386da54010a4c6547fa7e8f5984a46cbc0cbd27ba932f74f4008fe7f3c3",
+    "miniprogram/subpackages/exam/utils/exam-runner-answer-page-adapter.js": "f13f1554dde2124aec1193e027ddcdc472f71b588d69cdde38dd1eaca2ee7269",
+    "miniprogram/subpackages/exam/utils/exam-runner-navigation-page-adapter.js": "53dd35a95ee1d25caac72cf6229fc3a835e03ecf159e36c86d462e405e30f873",
+    "miniprogram/subpackages/exam/utils/exam-runner-pending-cache-page-adapter.js": "f587e49e60930f31c22eee808d116f4478a20c317d4e77796bc87eae05fcf32d",
+    "miniprogram/subpackages/exam/utils/exam-runner-reconnect-page-adapter.js": "791dc30eb77cf329fbe09739cf057469f9f0354ba4cf6cb629f2657a5084e30a",
+    "miniprogram/subpackages/exam/utils/exam-runner-submit-page-adapter.js": "4dd76deb70544fdcf7c404ce46ca4ad95bcbeb0610788cbb5831b5d3ac980a8a",
+    "miniprogram/subpackages/exam/utils/exam-runner-timer-page-adapter.js": "6e82cfde90b282654cc011b32bac891452f7d86a3cc107ca2fd4a21abfa4ffaf",
+    "miniprogram/subpackages/exam/utils/exam-runner-view.js": "f9e47e7d0b965093a52f330a84b0c7d068f29e6b02610541e20dac199c6e534d",
+    "miniprogram/subpackages/exam/utils/exam-submit-entry-controller.js": "6b3d9e71eb5a914bcbafe8e97900491f6d5a7ca646ddd07996d284d9214a8f52",
+    "miniprogram/subpackages/exam/utils/exam-submit-outcome-controller.js": "40d392bb8916c557c29560911eed186f46c65e4ebe52597c64df3d4474540e61",
+    "miniprogram/subpackages/exam/utils/exam-submit-preparation-controller.js": "bd39188db82700e3e84333a815a5883c9c1dd28b7ed6cacfe2ac6adc1d9c9000",
+    "miniprogram/subpackages/exam/utils/exam-submit-retry-controller.js": "1570fa8a5e677ce21cc02531ec167922693988eed7a92d09088015c59730b5a4",
+    "miniprogram/subpackages/exam/utils/exam-timer-controller.js": "15d05db5b55d22e7a283dc703bf035d15463f4c899f9e33f9b6fe1cefe78f6cd",
+    "miniprogram/subpackages/exam/utils/hydrate-helpers.js": "62d2477c813fcfadcf8dbfa03536b85003324af9040058289602e57896af4b38",
+    "miniprogram/subpackages/exam/utils/latex-symbols.js": "f1571338b806eb7c1451b9da93534d674b649bc48cd825b15a207cdbba08296d",
+    "miniprogram/subpackages/exam/utils/math-format.js": "3e9ffdc8cfed7f3c2398ab6e662f47d08138175b5bf4df40c4e07d5522a83902",
+    "miniprogram/subpackages/exam/utils/paper-cancel-resume-controller.js": "5e8e083cfd566b65cc7632c461b614b9573fdf3dbcd913e85fce3c613afd7934",
+    "miniprogram/subpackages/exam/utils/paper-list-load-controller.js": "5fddb12d66f65f56d9d60a229ebb200c87c74512f89b9100b69c798076995be4",
+    "miniprogram/subpackages/exam/utils/paper-list-mapper.js": "665bec2f02b2d64d05538a69eeca7cdc4f3216624a7358970b27925a9b9be790",
+    "miniprogram/subpackages/exam/utils/paper-search.js": "7c60458431836253eea736bcfe419bf346327625b4f413c538d9ca9666ce3445",
+    "miniprogram/subpackages/exam/utils/question-adapter-answers.js": "c9ec34616e1aa2fa50ae21db3d5cfb964904d7e456dce43b3b2391c072b36461",
+    "miniprogram/subpackages/exam/utils/question-adapter-dependencies.js": "261ebf7e8311affb2ca1958df3c7db7ca50e922948d038da9dc798afd7d1d6a8",
+    "miniprogram/subpackages/exam/utils/question-adapter-groups.js": "c6803df3a541d2b7c4651432b67da6a4887621dd7077a5d7b5891447059088d9",
+    "miniprogram/subpackages/exam/utils/question-adapter-images.js": "b062b545fc7b2d3e899abc1a9d929d7aa8921b12587b45e3526388c6597a942f",
+    "miniprogram/subpackages/exam/utils/question-adapter-options.js": "fb88838a2e1ee9148a85234b6397b99d4826c2e2f4f1cb29e59b330cd9e05fc4",
+    "miniprogram/subpackages/exam/utils/question-adapter-views.js": "f1e69ccbdae09693b7d8916eed70aba2bd7b19a7b5c2d3b0e1ca048d6a6c10ca",
+    "miniprogram/subpackages/exam/utils/question-image-cache.js": "89029c29ade8b47c7c072e0c93130e0c5f7841f8d9276f78d89f245637f61aa5",
+    "miniprogram/subpackages/exam/utils/question-runner-adapter.js": "4701bc971e5648be82d5d4ad72c5f56629324dbd3501c3cf4f40a8ad5dda7bf8",
+    "miniprogram/subpackages/exam/utils/stem-render-blocks.js": "58fe692ef71dce78f8d60e1a4f0483a5862a72a09122fbec5c651a41cd219cd8",
+    "miniprogram/subpackages/exam/utils/stem-render-dependencies.js": "007c514057480831ba174a7d40589d65687b699290cfe258f3fb856333589542",
+    "miniprogram/subpackages/exam/utils/stem-render-diagnostics.js": "62a9a75f6c6a3772ec6439b8ded8a31c9b7ac10a88670746abc75d2e6bb34e53",
+    "miniprogram/subpackages/exam/utils/stem-render-model.js": "186c549f5f48800a8450c1fa5fb310c64bba13e8c10aca52ff9f12f953db7e57",
+    "miniprogram/subpackages/exam/utils/stem-render-options.js": "708d290cc5656cbc0a1f6eb9eb2434256721929f1f61b40ee36e40d1874aa29a",
+    "miniprogram/subpackages/exam/utils/stem-render-segments.js": "78e69340893e004546a41b44231c125b4c6f35ff1ed0118e93966d5ff7379ff2",
+    "miniprogram/subpackages/exam/utils/stem-render-text.js": "4810deff56cacfb4b2ce9cce7a072a969045a53e011b838149b4e0c7b8cf9c97",
+    "miniprogram/subpackages/exam/utils/stem-render.js": "b81ead2bbebf8958456674bc7cf3f8af045bda5b76d3c892d61c48167c94a3d0",
+    "miniprogram/subpackages/exam/utils/submit-helpers.js": "6de1f5e8e41ab610e4ae0a8e423b51589ae422d7dfdeedbdd898b73ff5c247b9",
+    "miniprogram/subpackages/exam/utils/table-structure.js": "b465a7a99162dea1391cb54c3567c5e5fed467025384f59b492ab3b56d526c27",
+    "miniprogram/subpackages/export/export-config/export-config.js": "afb23bc46972db014fbf37009672e45911345e7012c8e57a5b4f633d752a2255",
+    "miniprogram/subpackages/export/export-config/export-config.json": "4923a78ca6fcdecc48b2f3a82ba24f2383a5a0a81fa1b1e98fdf4d5412858000",
+    "miniprogram/subpackages/export/export-records/export-records.js": "2cbabf25f288007782947fbae4b86f80fca0cee147287334f6b885219bf1662b",
+    "miniprogram/subpackages/export/export-records/export-records.json": "abfaed943e2558753a9dd2681f5c8dc4998e81924c7d548ec8c1bd3c4211aa1a",
+    "miniprogram/subpackages/export/services/export.js": "d29ee79588ba3ffef04e77ee43690c43e429fe5066fc5db5554dffea19b0f144",
+    "miniprogram/subpackages/export/services/export_status_sync.js": "8981c0e377b744cd43954b973ddb3e3b346e92aab9d6b16fc2dedc4dfb392951",
+    "miniprogram/subpackages/formulas/components/formula-card/index.js": "04e676c8544e1c03c540ada1c899fba6212fc3ae68cfb4a5c99ac50ee9065ea4",
+    "miniprogram/subpackages/formulas/components/formula-card/index.json": "3cac147888c7f1804ca5c8fd5aeca071cc29e1a776c6c7c6d52d823c4f568ef3",
+    "miniprogram/subpackages/formulas/library/index.js": "d3b5cae34b75094d42d1a723b8f4cddfc4d491035f971ec2580906b08d63d2e5",
+    "miniprogram/subpackages/formulas/library/index.json": "ee47861e82eac18c12e87066ca6a3eace883d036ac1cd146ed53a558d635a5d5",
+    "miniprogram/subpackages/formulas/reader/index.js": "62d4ac626f8a751bd905a167e26d5f6f4b2b0a19ea3ab3cc92320fa994e5de11",
+    "miniprogram/subpackages/formulas/reader/index.json": "3d16537f1dcbfe47a172aa6165a5716d53c7741498755d2b06b4e741f554745d",
+    "miniprogram/subpackages/formulas/utils/formula-content.js": "70f45b7690e5b86a165f1723421559a4b254a9d099fe9e8dcccd5ca15cc30aea",
+    "miniprogram/subpackages/formulas/utils/formula-graph.js": "22f1511a2d62e598349f2fd496901d7425e275b7c4779ad13423c5632ac21d72",
+    "miniprogram/subpackages/formulas/utils/formula-reading-layout.js": "2b3292cf10f12c56b5978fca1746d90acd000278f28fa2f32157110fa3d09391",
+    "miniprogram/subpackages/formulas/utils/mp-html-parser.js": "a498f7b07934082f1be8eccfc679c70aa53a5e4b015bb2f78121922f8936884d",
+    "miniprogram/subpackages/knowledge/knowledge-detail/index.js": "85cc9b5750bcb5bf811b0a8d59aa7e94f3c28423c772051da8d2e28434cc448f",
+    "miniprogram/subpackages/knowledge/knowledge-detail/index.json": "121d01aaa345a94738225f3a6d64494bc405a7af4748359f7ae91a15b6c92d44",
+    "miniprogram/subpackages/knowledge/knowledge-subject/graph-layout.js": "75d0fe80d8e795a878acdd3801d0653663c682b70e7ffb6f2fde1536833c1c9f",
+    "miniprogram/subpackages/knowledge/knowledge-subject/index.js": "1f255fd09d83738b059944838618d088016a93345ff49b73df94349c09c56576",
+    "miniprogram/subpackages/knowledge/knowledge-subject/index.json": "c84e36b7f1ccea3c82f18b760819601c6d729527f40e940ab58e1116e05bd9fa",
+    "miniprogram/subpackages/knowledge/knowledge-subject/tree-groups.js": "90de20c0f843cbf7c127b14e7cd1a9ac2acc0c199e9f31bfbb0a05b4bd2b94eb",
+    "miniprogram/subpackages/productivity/pomodoro-stats/cancel-work-controller.js": "218aa2cb36a734aeac09860624c9e018e41deb9ce9077b9be51317c6d4cdc4c5",
+    "miniprogram/subpackages/productivity/pomodoro-stats/canvas-init-controller.js": "63e9ea76065478ddd30939839b7ac2d692d946cab0b96d526de816601a7970af",
+    "miniprogram/subpackages/productivity/pomodoro-stats/canvas-palette.js": "e77e3a104ae1fd950e354c1cf1ed30a3e8b0c298ee4e7a1e164dc104740730a2",
+    "miniprogram/subpackages/productivity/pomodoro-stats/chart-mode-controller.js": "620bdbf25d4e947828e3b57ed6d1f2b96c6d8f7cd4b62e7f3482c9b47e93f97f",
+    "miniprogram/subpackages/productivity/pomodoro-stats/close-detail-controller.js": "1ca216be8cc994434c7f8a375824912b8fb2cb8759a9cb048b045f2158684b7f",
+    "miniprogram/subpackages/productivity/pomodoro-stats/cumulative-refresh-controller.js": "4d5a8d023ef7c65f52caf935f01a8292872d746d557be91ac469094f9d921878",
+    "miniprogram/subpackages/productivity/pomodoro-stats/cumulative-start-controller.js": "8771eac25968ea6f7a3587a692d7a58dec3b6e5d9915c19b007431e393e6a9fa",
+    "miniprogram/subpackages/productivity/pomodoro-stats/cumulative-summary-patch.js": "35eb40f7465378ce2c0f67c797d6241e1deb648e117c60c9e0a89f7eec9fe913",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-commit-controller.js": "89b60886580660f18b15053d4169deb2ae76ee481251e5754ed7f14daec92d7a",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-commit-page-adapter.js": "a87d9ce588c8d39157166263e811a63c84e683f7dc42f52dbd5b22a3f74415c3",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-failure-controller.js": "1f717dc563f83df70aa3650fcfe44c56b0fa4f2aca5c5ed471c17cf238104a42",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-failure-page-adapter.js": "92d8f54cd14825d6fbb8849a01ef168b32b346f4e3eb8d4228fa6e21fb0ee218",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-navigation-controller.js": "e91957cd35e908247c731d4af01520c1a8ae8661e48165649cf256df8d0b3f45",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-request-controller.js": "779add8ef266329aa40ab62a06d0b6db5d4158b1bf9e32ebba0b94d8340070e5",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-request-page-adapter.js": "23d7a391908f68fbaa88a31d01113a002ff301d8c59f802a77fa5d39e433f7a6",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-utils.js": "d4c45b5ccefb50b73ba27583becbe4db62187d19f10422e26b141aba911edd36",
+    "miniprogram/subpackages/productivity/pomodoro-stats/date-view-state.js": "df0a2a537965e8da089e387dab1dfe06da3d2bd9e1856d11cf5ed2f560ebf4ef",
+    "miniprogram/subpackages/productivity/pomodoro-stats/day-start-entry-controller.js": "a63da2df5268e9b3d4f417c5abf0c20f27111bf4bb731d371feeb5caf25815f2",
+    "miniprogram/subpackages/productivity/pomodoro-stats/deferred-history-controller.js": "ef3de0d1128d357cf32eff9ece495e11d1c0d79130f49000ac709f026cc22228",
+    "miniprogram/subpackages/productivity/pomodoro-stats/distribution-commit-controller.js": "a2edf0b6e2d103dc5cc1c224180d893cef97e8027103b0992293485aacd7c06c",
+    "miniprogram/subpackages/productivity/pomodoro-stats/distribution-entry-controller.js": "583876663e42f10c29e690f937ec6182182daea50e91d85c6093f15bbe1fea08",
+    "miniprogram/subpackages/productivity/pomodoro-stats/distribution-load-controller.js": "4d5d34d7256c50da15688d3cae6d4229f5cbe8536f27c1ccd315cb6070c02857",
+    "miniprogram/subpackages/productivity/pomodoro-stats/duration-animation-controller.js": "c3a1dcc973f636f461fb11856e295b3faa75a8e02bc1178d681da3ca0e2e51f4",
+    "miniprogram/subpackages/productivity/pomodoro-stats/duration-formatter.js": "c69983457cea025909edca3b7887ed01d21c3600c9693dbf405c0227493280d3",
+    "miniprogram/subpackages/productivity/pomodoro-stats/dynamic-refresh-controller.js": "481d7b4139a6f62f1f6006bcc931feb39d2cebd1fac3dd886bd024ec0c66d412",
+    "miniprogram/subpackages/productivity/pomodoro-stats/index.js": "c43fc807fa85c57e1375bce55d8c65d36f991afefe2a1335e44e703ed8af8c91",
+    "miniprogram/subpackages/productivity/pomodoro-stats/index.json": "59b731441928e912bc31e776516c97417f5fa7b658a0e9ddbbf69a9fbeb6f737",
+    "miniprogram/subpackages/productivity/pomodoro-stats/lifecycle-controller.js": "2b63cc16c280ca8f277aada7564eede25967936e1f00cfcbf3166bc897d9322a",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-commit-controller.js": "c18605c49171f5d0d1ae5d406a8724a2a97bef70ea7515945ebe4a776b20da8a",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-commit-page-adapter.js": "924df5c70303029e09a24da895844267bebdc1f68a06b57c3bb2df0c208e74d5",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-failure-controller.js": "435c67eae2e4917580053c12c8e77b6776e4fc8a647f22f9123b086c2a187812",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-failure-page-adapter.js": "1eda356c69e1ed511356cbe94b379ab61c1d829dd8cf8567512da769f4f7bb81",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-request-controller-capabilities.js": "db2c7dfebb0476370fd9c19eac581b674ded97f91b4123ab646480364d084850",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-request-controller-factory.js": "17324d66702c158032c2395b46fa6557309c3a49ea8eb6c642b23e030909f67f",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-request-controller.js": "3aee6b3a8ece8bda38e1abadb1db5eb6d81a47edcfff2b4fcbbcaf02d6b3eec7",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-request-page-adapter.js": "bd57cb8c89602981e2481a7f5b5088d26d90c8ffad4d7e3e4da448d97b165d83",
+    "miniprogram/subpackages/productivity/pomodoro-stats/load-view-state.js": "bd8cab716e09d24d8913b50ba0f652b8fedb0a7aeacd535ddf9d04a6ad56173d",
+    "miniprogram/subpackages/productivity/pomodoro-stats/overview-mapping.js": "c61135a9fec32f089365e0a380c48008158cff39ad6926a75892f2c539f9b9e4",
+    "miniprogram/subpackages/productivity/pomodoro-stats/page-init-controller.js": "dbd2c92d71ea1ade078b6b46cedd668f05a1aa8a00177c340a87abddce55b43d",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-animation-controller.js": "5248dc3a34e0f97ab96bcedab67bc73a72aaab72bc8702b858ba7520ceb8ea11",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-geometry.js": "8a32612a219a3df7f446976ad47de7508bcc83f974c0157c2a8e2722d9b3f999",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-label-layout.js": "265dafb87531fd4d42a860c5c2443e44a963b6c1fe60805e86616b798f5cac48",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-label-renderer.js": "f41e4b2ca64170786a3619579ea7f048257a3dfc821b4ccbc49f63ec787a4732",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-label-reveal-controller.js": "9c8c938468e69524a4f2b850d2ad3817ad975bbdc0d503da283ab00896554707",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-render-capabilities.js": "984a70a7de626f469e33b9741a64d259a9b7daeb9934fac73be5fa760501b94a",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-renderer.js": "8c3d5bcff3b9af169aa69d00b130f0f2a3b12f0911d51e0b5a28fad85753fef8",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-sector-builder.js": "a28d97d646463f5967e77699a4a9901d71e04937a687518424a2b86ff615c4ce",
+    "miniprogram/subpackages/productivity/pomodoro-stats/pie-tap-controller.js": "e8107c2baae257cdeb6ce36f27cae386e22bd0c9af89a275fc1f46768910dbd3",
+    "miniprogram/subpackages/productivity/pomodoro-stats/reconcile-controller.js": "405a910dee95a0aa501d6d22e59429c70b2e5acd940a6b540889ed51b9ea726a",
+    "miniprogram/subpackages/productivity/pomodoro-stats/save-day-start-controller.js": "5ee637e97d87b13e766a84432ab87977354d35b9d747a09daa53224e7f2005b7",
+    "miniprogram/subpackages/productivity/pomodoro-stats/select-date-controller.js": "25f9888d55fb327e99854f5fcda7a03b9feec0e872aa3bdb11bcbbdf310c51cd",
+    "miniprogram/subpackages/productivity/pomodoro-stats/session-view-model.js": "6bd7d97de78ebe233fc527772562a34648fec48f418757c6a799e16b2ab174ab",
+    "miniprogram/subpackages/productivity/pomodoro-stats/settings-controller.js": "2c51453bacca5a293853649d6f128a2873e6a87de019177b22d286da6a6a986b",
+    "miniprogram/subpackages/productivity/pomodoro-stats/shade-color-cache.js": "eb38a4981fc5aa0df903551ca4be21013cd0103ff199c4c2207ad22dc5d594ce",
+    "miniprogram/subpackages/productivity/pomodoro-stats/start-animations-controller.js": "6afd508f531032b11a157bf6c6173980451efa384e2a245de2801b0bae5347fc",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-animation-page-adapter.js": "faa432b3a6bb96ae2cb11175ea366ff474e23b6e28a37e8930e6af3e78e437ca",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-canvas-init-page-adapter.js": "37a382f4ecc40080f669d4ade3d1fc6a912b4736804579faea55d6557ba661a4",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-canvas-page-adapter.js": "1a57b7ce264b4d11109b4d026d900511bf044e1e949e8e1c0e85906c40629903",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-date-page-adapter.js": "f8b87fae0b27efdb26f09f002155279a5d4743806b9f9b5f537711716010a6c5",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-distribution-page-adapter.js": "927a627accf141a7389b7712db589b7a951ef1d8dc5f84fdb13437f9d6df9146",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-lifecycle-page-adapter.js": "af89a591a1a02943cce95018cf9d99a3adc93d6a59b1578a3054bf5c4c822559",
+    "miniprogram/subpackages/productivity/pomodoro-stats/stats-load-view-flow.js": "3c755574011c07d3c5bc59fcc4c4f2dc407647e6481f21ccd549be240b83468c",
+    "miniprogram/subpackages/productivity/pomodoro-stats/study-day-range-text.js": "199f7d8b6db2044646bb7229073ab55b95b9850b16b3f27c12401062d9f467dd",
+    "miniprogram/subpackages/productivity/pomodoro-stats/subject-distribution.js": "104a08e70223b920da3cae2190ce0e9493d60e87bd335966504963b055695f3f",
+    "miniprogram/subpackages/productivity/pomodoro-stats/subject-items.js": "0d1045d510093158f3b7f4f87b57e1147da5a29421908c28b52987b401cb3e10",
+    "miniprogram/subpackages/productivity/pomodoro-stats/subject-meta-controller.js": "134cb41e9ac2e0ef34f9edc77745e7427ecde2e2b732a81be499bfcd5b2abf72",
+    "miniprogram/subpackages/productivity/pomodoro-stats/theme-sync-controller.js": "3896984534010d1520e16aa327341b7126d20ea3447d3edfbc4d8db6c71b5439",
+    "miniprogram/subpackages/productivity/pomodoro-stats/trend-animation-controller.js": "3334412c660488a0ba2bedc6d36a3b435dd864fd7f40d0b782c9bef6f5cbaf45",
+    "miniprogram/subpackages/productivity/pomodoro-stats/trend-chart.js": "1b5e5c383b47539d404fb7ad5006075410134eb40416815cd29f7fe2402c99d7",
+    "miniprogram/subpackages/productivity/pomodoro-stats/view-helpers.js": "191bad02147b1e5a37163acc00348927531d7559cab4d62b08622ec4b427a85c",
+    "miniprogram/subpackages/productivity/utils/china-time.js": "1780cb620bd74fb7b8463b4688b8c387691484d215e783f2cac4f0f92f94b00c",
+    "miniprogram/subpackages/productivity/utils/pomodoro-theme.js": "12b99c74a895ca5dde2f5ae0df30ce84dab68f66b5e8bd31e4053fc4c894a50f",
+    "miniprogram/subpackages/study/components/loading-lottie/loading-lottie.js": "62f409c8b08105ab512831806f9a8a853218c67012ea1d08ea50929ecfa51afd",
+    "miniprogram/subpackages/study/components/loading-lottie/loading-lottie.json": "035503c1a56d8b4b9227ce8bb9145fbd1ef8ec7dce59e55f9d5d55fb5eb7d566",
+    "miniprogram/subpackages/study/components/math-question/math-question.js": "c84c26cc471402926b81cfdb30c48bcd61a314051707dac7c2d41d2075c6399f",
+    "miniprogram/subpackages/study/components/math-question/math-question.json": "0bd2857bd6e1c70fa18e1742e9db0728793910320d43bf28a2fbb7c3862797af",
+    "miniprogram/subpackages/study/components/quiz-runner/navigation-methods.js": "a87e970ef3599a7565ee99c093b07cd9921060297d3dc074086ddf9e525bc848",
+    "miniprogram/subpackages/study/components/quiz-runner/question-answer-patch.js": "5584c3e263ab8c3ae4652b883344ceaa3577df25e8d57165e6d700d790b979bf",
+    "miniprogram/subpackages/study/components/quiz-runner/question-render-patch.js": "4c8fb632f9e0889ae2f77883b4e7044d08395c05a5efb8cb20a8c44e70dac709",
+    "miniprogram/subpackages/study/components/quiz-runner/question-sync.js": "5329670d0868d52ad07c3bd9459e6c1b04e81701d777489d783bac5a73d8365f",
+    "miniprogram/subpackages/study/components/quiz-runner/question-view-commit.js": "8ae41ad9b7f03800aad536b4bc83e6707fb04de0fcaa6a70d012e9c3cd2f5c03",
+    "miniprogram/subpackages/study/components/quiz-runner/quiz-runner.js": "7cc6f234d20eec8523b4851533861f2a7dcd6a0b9c7a7ce204263dd6eca9e7df",
+    "miniprogram/subpackages/study/components/quiz-runner/quiz-runner.json": "78bfb1332c59ce0e286235756dd2810a1048af982ce8d3d3e1a86d5aff20cde3",
+    "miniprogram/subpackages/study/components/submit-confirm/submit-confirm.js": "7e4183a64741faa902ccc3811a4b8747f01cd0fd303e219481b6eeb97e16c4d9",
+    "miniprogram/subpackages/study/components/submit-confirm/submit-confirm.json": "035503c1a56d8b4b9227ce8bb9145fbd1ef8ec7dce59e55f9d5d55fb5eb7d566",
+    "miniprogram/subpackages/study/components/wrong-book-empty/index.js": "021fdd462b19a134038b1fc92228c540b81ce6715ad26e1ddb035f29786c6cc2",
+    "miniprogram/subpackages/study/components/wrong-book-empty/index.json": "3cac147888c7f1804ca5c8fd5aeca071cc29e1a776c6c7c6d52d823c4f568ef3",
+    "miniprogram/subpackages/study/practice-result/index.js": "a7e982d70e9b7ffdf46a03a2274511ea1fe19c2c6a8ab47a0822fa88f8c93bc1",
+    "miniprogram/subpackages/study/practice-result/index.json": "fbdea1a896d2296b743bc66903d34aeb1c4978cd63444046b442c40654eebb85",
+    "miniprogram/subpackages/study/practice-result/utils/back-navigation-controller.js": "94ef30f04c73b44bfa6527c4c5ecf85190635cb2b0502c029cf848877a879b6c",
+    "miniprogram/subpackages/study/practice-result/utils/batch-diagnosis-controller.js": "2b0187d0ec8f9c50ad7f13d544e5cd24fdc8430b6ebf10463fbb8a0f4787a897",
+    "miniprogram/subpackages/study/practice-result/utils/cache-validation.js": "a7d69f13fd635632889d09a084970955f8983a0df844a407cae1e67e85d70f27",
+    "miniprogram/subpackages/study/practice-result/utils/format-helpers.js": "fca448072e9af2d69d6c81c32a046d729e4d0823403c3492b707dfb71082667d",
+    "miniprogram/subpackages/study/practice-result/utils/growth-helpers.js": "b82feee3effae5f4ebf2c46cc1e657159914b811d54a07b9bb62af276565165a",
+    "miniprogram/subpackages/study/practice-result/utils/payload-readers.js": "405bc135c5db71abe1b884550e43142850bd042f2c814e39c276f7ee05606abc",
+    "miniprogram/subpackages/study/practice-result/utils/practice-payload-mapper.js": "e7015a51404089f1cde20fc2d7ff3ef578b16ecd66e673a245039818ce019228",
+    "miniprogram/subpackages/study/practice-result/utils/practice-result-diagnosis-page-adapter.js": "25176cbbe6beb6a66f4b4d072a182cb5437f2d4be9c7547d7536770f08d3e759",
+    "miniprogram/subpackages/study/practice-result/utils/practice-result-navigation-page-adapter.js": "0425cd39bf0f25f83b9a74c0bacf446f3be18fc242572e24af68174f10930031",
+    "miniprogram/subpackages/study/practice-result/utils/practice-result-payload-page-adapter.js": "9479492bbcd9edc28810d880a9fba00e74ba10281d393b3d083512332cfaa42c",
+    "miniprogram/subpackages/study/practice-result/utils/practice-result-teacher-page-adapter.js": "26b330dfdaf19e272d9a8d07c840a885b7b395ae0251631d7cbf9bb020aaf0a9",
+    "miniprogram/subpackages/study/practice-result/utils/practice-result-trend-page-adapter.js": "13112a0639780d3c0de7f6af6a00e908ddcf645d683448c200ebcfd3bcd55a8b",
+    "miniprogram/subpackages/study/practice-result/utils/recovered-payload-builder.js": "d1e9eea73f044e47ac48d0fca8ee172f0f1a5b7334c5525c892e2077e9c62c57",
+    "miniprogram/subpackages/study/practice-result/utils/result-counts.js": "718062102b18120c0278351d50ab2f797f313b89c4409b3582470fcd33cdd91b",
+    "miniprogram/subpackages/study/practice-result/utils/result-tips.js": "b0476c9000241494911db9fd934a49d7bac147519487e72c70976efb29093d76",
+    "miniprogram/subpackages/study/practice-result/utils/review-408-teacher-controller.js": "601088a2b1ee61d1249df73abc597300333cfe936d43712484cfb0d1570c71c5",
+    "miniprogram/subpackages/study/practice-result/utils/review-analysis-view.js": "a7c65140822640abc78f3be36933a55f9b2ae90498e713095583664456f4d657",
+    "miniprogram/subpackages/study/practice-result/utils/review-item-builder.js": "798eb377fb9cc1c12be02da2bc413fbb2e88ebd5c984fe8ebde7d010eccc0694",
+    "miniprogram/subpackages/study/practice-result/utils/review-preview-format.js": "2aafca71b043f92f126abb81414862ce149ba698a147c33d642af517f7135d5b",
+    "miniprogram/subpackages/study/practice-result/utils/route-helpers.js": "a6916d12ae9815d6513d65ec154b18f1ee5544f90ab12dbfd4676466d2cdd6a1",
+    "miniprogram/subpackages/study/practice-result/utils/trend-load-controller.js": "c77fd83334b66c170af5ea811ef795785038a80374766bf59f36a90faf56eaa4",
+    "miniprogram/subpackages/study/practice-result/utils/trend-plot-builder.js": "5f36f8958ed44d4391342c4b497e70bb953330204957e711df4e7ce70159b9c7",
+    "miniprogram/subpackages/study/practice/practice.js": "e894ae1c5442222dbe0a9678272ed46672ee9ad144dc50af613094e1d30b58a4",
+    "miniprogram/subpackages/study/practice/practice.json": "3f9d67e4ccc1113e7ef4c3d89073bcaadf538b67accf38e79a2981ddf91fea2d",
+    "miniprogram/subpackages/study/practice/utils/answer-classification.js": "42a39f43ca4c09ba7326be56aa1cc38496063ce23c973ab02930025c786f4c00",
+    "miniprogram/subpackages/study/practice/utils/answer-feedback-controller.js": "f063ac6c1f40ec92f7dfef1d7f7273ee5b8b0b363a63c4da766c40cf8c3b2c08",
+    "miniprogram/subpackages/study/practice/utils/answer-feedback-state.js": "d24bcddbb1a566e675e6281f380fdd5f33b4c8f7df7a4c390e3e95e335f003aa",
+    "miniprogram/subpackages/study/practice/utils/answer-interaction-controller.js": "f876d9c23dd012aab888540e08a2386665421977d7e2e3fc5137b7f7aea4fc6f",
+    "miniprogram/subpackages/study/practice/utils/batch-error-recovery.js": "826a750023e90cd730c015d5c9ee08c0c719ca8db8ca29827bd5de699ef44b53",
+    "miniprogram/subpackages/study/practice/utils/computed-fields-controller.js": "3a5d7e268417bbe97d4f2ba6de4aedee630679a771d1d8b1e4d40bbf866104c3",
+    "miniprogram/subpackages/study/practice/utils/exit-guard-controller.js": "398e46a1ca82a3ade54a252930249a6199084ecd2564909a715a2429db8779bd",
+    "miniprogram/subpackages/study/practice/utils/exit-request-controller.js": "421b9499995fdec0928f361afbb92ca745a26c606ca460f4715a7519f43cad7d",
+    "miniprogram/subpackages/study/practice/utils/exit-request-state.js": "ffec339aa5ceb086b65f3d369709d2768d4307b98e0071d0dfcd18887cf4ff2e",
+    "miniprogram/subpackages/study/practice/utils/image-warm-controller.js": "da34adc8c59ecdcb3c8f7163b08b1e92a5bb9ee8046b46a184571cf907684092",
+    "miniprogram/subpackages/study/practice/utils/launch-preset.js": "97f2e7ab3db0cd7653baf0d36d1f035269f002e31b982793ed55e8a6a895c63f",
+    "miniprogram/subpackages/study/practice/utils/launch-return-controller.js": "dfadf27cb26eed477f43bdb85d43f66e8bb6743fc6d19379f93109683bd6d24f",
+    "miniprogram/subpackages/study/practice/utils/launch-return-state.js": "324422edc1d3038fc795aadb9a33fb3ff76e90bcedc5139c9cb05fd8aeebd0bc",
+    "miniprogram/subpackages/study/practice/utils/monotonic-clock.js": "ade7d771b783768cead20159086856dba7e2c81ef6293f02ba24d407d6189209",
+    "miniprogram/subpackages/study/practice/utils/paused-confirm-controller.js": "8fab2246bd1db2d039466433391668b6673b086c4ae06bae243eeedba77eed95",
+    "miniprogram/subpackages/study/practice/utils/pending-submission-controller.js": "bc435e457806236a4dc905cc84b89a2f3618938c44e68256d54f64021f5d2b06",
+    "miniprogram/subpackages/study/practice/utils/practice-exit-page-adapter.js": "848956597d10d704d0bb4625ef37c6677752e9f119b38c95f90dd5b948ea3a2a",
+    "miniprogram/subpackages/study/practice/utils/practice-launch-flow.js": "edbafe135e1ca585e4ff5d1255d729a4314fc979fed0dc8ed6634ce3b965669c",
+    "miniprogram/subpackages/study/practice/utils/practice-lifecycle-controller.js": "69c9f50237dc787bfb63173208de59418e759e819722e8010cc004efe4e069ed",
+    "miniprogram/subpackages/study/practice/utils/practice-lifecycle-flow.js": "5643492327c58fa8776c15326cd6d127f0a653a4ffc5ead04e4dfd12f4bcb18c",
+    "miniprogram/subpackages/study/practice/utils/practice-lifecycle-page-adapter.js": "44c7928055e7c328167b75944c9f11845f29cb4dd2dddf5ccf697f2823b72566",
+    "miniprogram/subpackages/study/practice/utils/practice-question-page-adapter.js": "f9e82c3961b8df9171e44b9843c496b608d720100ea82746a83a8236bf9a4562",
+    "miniprogram/subpackages/study/practice/utils/practice-session-timer-controller.js": "13559e8920743059b54d7ee705dfa51a5f73e6b4f7052662a53dd0b78cd8e659",
+    "miniprogram/subpackages/study/practice/utils/practice-session-timer-page-adapter.js": "9660d1fd5ff571a2b8892e6764b4586a2946b907cd670b17b717b4071a91954a",
+    "miniprogram/subpackages/study/practice/utils/practice-subject-load-controller.js": "9a8407297f91c9701c984c3fdd0620dd8878c91ea4c53b5f31aa344b6a72316c",
+    "miniprogram/subpackages/study/practice/utils/practice-subject-load-page-adapter.js": "74029acdbb74c385bf80f28f72dbc5d4f061db1894c2c1e98bb93c6fec84b816",
+    "miniprogram/subpackages/study/practice/utils/practice-subject-page-adapter.js": "1b60d8b6a2fa4a1fd4cccb16f66af858b2b6927196f51df4b11ed7c024407ca2",
+    "miniprogram/subpackages/study/practice/utils/practice-submit-page-adapter.js": "b54a06d9a233dbb515e7f2f15dec832f6842c4c1fb374216a5e127082c5d2713",
+    "miniprogram/subpackages/study/practice/utils/question-batch-validation.js": "3721acdb85642972cdfe72dc9709f3dd28d9123b84740b5403a14306bea41624",
+    "miniprogram/subpackages/study/practice/utils/question-batch.js": "0a8c8fe11d07d575e86304b9c778292e2d4bfc95ddb57245d5d9d6d810148068",
+    "miniprogram/subpackages/study/practice/utils/question-display-controller.js": "d5f8870393475743ce81549ccd93336c4efc882a565c7887ee7c29a947526c20",
+    "miniprogram/subpackages/study/practice/utils/question-load-controller.js": "51ab86df45559c1e77277b41c9a3d25c7b48ccddce6d634a54eb6549af228b71",
+    "miniprogram/subpackages/study/practice/utils/question-load-state.js": "157470487d6a65877fca49bcf3f3841bf551498d453a17dda8fd47b66b19b50e",
+    "miniprogram/subpackages/study/practice/utils/question-load-wiring.js": "35f531b92fb7743e59691639528bcd5c877fc7d9aa6f0078a9df89e664db82d4",
+    "miniprogram/subpackages/study/practice/utils/question-timer-controller.js": "46b2df0766c800286e1939faae78f86e0ededf63420f350d627638dbc65afa56",
+    "miniprogram/subpackages/study/practice/utils/recent-subject-controller.js": "f1c3c10b27b9f0174106261848b9c2843d42749a6d49e8f138c1f2b08ba7cd96",
+    "miniprogram/subpackages/study/practice/utils/recent-subjects.js": "5b10542347bcbe86201eaed99c18090e2eb5059dee6390b5c8ca3097a6bbb228",
+    "miniprogram/subpackages/study/practice/utils/recovery-questions-builder.js": "f9f0fc4ed462787c2f877912b2f662021f723737eb91df5e175a70ec21102960",
+    "miniprogram/subpackages/study/practice/utils/render-invariant-controller.js": "478629ed95264fa8e7adad94beb27661c54ec8f321ddf60f509241d758f0fcf5",
+    "miniprogram/subpackages/study/practice/utils/result-url-builder.js": "dffed7d149d793003045080beba504db8ca92f5d006e6f2b0e361d6907fa48de",
+    "miniprogram/subpackages/study/practice/utils/self-heal-controller.js": "e6fd99a904055c6c6e1fa67124de134dd1d4eee96a53a93c69515a39c0d565cb",
+    "miniprogram/subpackages/study/practice/utils/sequential-restart-controller.js": "38aad2efb7165981e1b84c066e7e0ed6fc9d3dc7c6a763bfbf93b5ec32ba40a8",
+    "miniprogram/subpackages/study/practice/utils/start-practice-controller.js": "60806ae79926bf995f5f058781c3bf20277e847864f2a7f97fe76c2d4b0b4288",
+    "miniprogram/subpackages/study/practice/utils/subject-selection-controller.js": "4ddc861952b1ff6b58eb004a740b17cecd30537360a4f6ce9b560f1893851a54",
+    "miniprogram/subpackages/study/practice/utils/subject-sheet-controller.js": "8c97f39a4bd20f5b311698828875ef75beb17fa3c865a40435cc3e297ef14521",
+    "miniprogram/subpackages/study/practice/utils/subject-tree.js": "67226a53b8bc83ce6151915f85781b80fc8b97edafdca08f687150c6ae833035",
+    "miniprogram/subpackages/study/practice/utils/submission-lock-controller.js": "08b8e68b199a913ab85503302054125660cf4715a35e2e72505eebccd80f808f",
+    "miniprogram/subpackages/study/practice/utils/submission-snapshot-builder.js": "1b932ff046ebf130dc79aede1607b676278e4167f4730d9de4ed51e1509c4595",
+    "miniprogram/subpackages/study/practice/utils/submit-entry-controller.js": "018cb871b289f4fd26409be053e4102402022f37111046598370b58f0d8c8518",
+    "miniprogram/subpackages/study/practice/utils/submit-error-controller.js": "a5674be202a9c013dbc95609b46b86c6cbc4dd8b44aa797d77a21c454ba7fa85",
+    "miniprogram/subpackages/study/practice/utils/submit-flow-controller.js": "db251d5d0f76789ed3cc01c4a4cb4d013f85955247ec15bdef5be5376bf41a77",
+    "miniprogram/subpackages/study/practice/utils/submit-payload-builder.js": "582bcedf77448cffbfd043525e4c4537963ab6f6a9bbcf687674611091acf6b1",
+    "miniprogram/subpackages/study/practice/utils/submit-result-builder.js": "b55632251d5e67eff3c6df805ecc431566d5b9e13726208dbc209f65b4a88f68",
+    "miniprogram/subpackages/study/practice/utils/submit-result-payload.js": "c53acea24b783e2eb3ac1295f8170ad41d498f499d1122e211789a4e7d23d459",
+    "miniprogram/subpackages/study/practice/utils/submit-session-builder.js": "2b547fff3fc438621341172977451d9731bd2788a6bebf1b2b4d4910e5e46258",
+    "miniprogram/subpackages/study/practice/utils/submit-success-controller.js": "98e895ea765cc0b3ec7030c31dd7a2d306a05fc68d263ed55b9b8df426be95a1",
+    "miniprogram/subpackages/study/practice/utils/submit-success-state.js": "82665757d0ff87f917d736587cef538bab27dbc721635fcdf7b0bee785335a4d",
+    "miniprogram/subpackages/study/practice/utils/submitted-result-controller.js": "aa65d0f18c4a4780d771b721c154b8fe9297de6403226c6ea562337f8a1022ee",
+    "miniprogram/subpackages/study/review-today/review-today.js": "7b8117af83ac04944956a570098379c74f3220ce352ae8581c64f9f64a8c9099",
+    "miniprogram/subpackages/study/review-today/review-today.json": "d5eff9c7f77dd83962c13ddb1afcecb732f5e2cd0dc790daeaca13e93917349d",
+    "miniprogram/subpackages/study/review-today/utils/answer-interaction-controller.js": "f6cdda7991ee869c76c5b2d19e8293ffa8dd516cfe2203482a10e9ea9bebdf20",
+    "miniprogram/subpackages/study/review-today/utils/batch-size-sheet-controller.js": "58006a932deac0978cdba5ff3d9affc0804a3298454f120f2b9eb40a9b0d3749",
+    "miniprogram/subpackages/study/review-today/utils/day-sync-controller.js": "0ea533af1cc164cab7cd537539b5a82ba750a31656065e1fbd9c2ee952e690f9",
+    "miniprogram/subpackages/study/review-today/utils/draft-controller.js": "b7f2fc48271f89eb11b9021d4b5478ab780a64915015683e917b5d276a37abc6",
+    "miniprogram/subpackages/study/review-today/utils/group-submission.js": "b14acb43bffc6875a80223fc4277b54afa53caa40a2cd2accc968962076829de",
+    "miniprogram/subpackages/study/review-today/utils/group-submit-flow-controller.js": "3ac0512a7d4cfb0c9679a1e33dd4822607936e30e1a28ce868684ac05828e87e",
+    "miniprogram/subpackages/study/review-today/utils/master-controller.js": "fc9bc21df3099f1a788a1690ee27b1eaf8e3ed0f35aa4cacb829aa1417d99b97",
+    "miniprogram/subpackages/study/review-today/utils/nav-back-controller.js": "1913d1de55412350e8f5fd883ca97f93a54e5c32b582d4ba7ad181762ab5ff06",
+    "miniprogram/subpackages/study/review-today/utils/next-group-controller.js": "7beb8d357bbc7ef416f8b65787852080dfabc551c526a861bb745dce25bc366d",
+    "miniprogram/subpackages/study/review-today/utils/next-remote-batch-controller.js": "05b4023687aabc393ff20209a3d2de2dee3c449478ce3957ad0904eea9e4b90a",
+    "miniprogram/subpackages/study/review-today/utils/next-remote-batch-state.js": "17acd41fe78498e986c148454d4281a9b60ef46add89e14fe23818f16b6307e5",
+    "miniprogram/subpackages/study/review-today/utils/next-retry-group-controller.js": "bf78be17fcb30d8c13d6ad8327cef6d32645675202349bbcb18cee22ef3416a9",
+    "miniprogram/subpackages/study/review-today/utils/overview-load-controller.js": "61c8a499e288f9e81340d9ca1defdc3c13a19adebc733eaf3503436ff94ac1bf",
+    "miniprogram/subpackages/study/review-today/utils/overview-sync-controller.js": "661834091493ee806e9ef1658dc5075c6cc8767215dd2e10160b07abc865ed30",
+    "miniprogram/subpackages/study/review-today/utils/overview-vm-controller.js": "f3cc9725f8a3ab4d96c19a0630cb760cd2a0678c869309890b5b3a101590a166",
+    "miniprogram/subpackages/study/review-today/utils/question-display-controller.js": "4dc55e5c10a58d61fde4f304d211d84c9f8eba7115ed657fb983befd80d4f9cb",
+    "miniprogram/subpackages/study/review-today/utils/question-enrichment-controller.js": "5a8b6f79cb977bad175bf012e1b53b43072f985c4150401748ce48cb4d893851",
+    "miniprogram/subpackages/study/review-today/utils/render-safety-controller.js": "348cc3fc60e4a0694db327f75df836f86592c60a86806b954972948f236b1f99",
+    "miniprogram/subpackages/study/review-today/utils/result-dock-controller.js": "4206ec4f6925fe525719f239f943b9dd64ef5d1c70b7924978847c18f79a8ac6",
+    "miniprogram/subpackages/study/review-today/utils/review-answer-page-adapter.js": "3064d9b448f70e8753aa0695c021f30f800652bf8dde35b1a400e6fa3a0f18fb",
+    "miniprogram/subpackages/study/review-today/utils/review-draft-page-adapter.js": "208255e573aa53dfed71e2c99820136d95420bf03133efdba17552c4ee654b32",
+    "miniprogram/subpackages/study/review-today/utils/review-overview-page-adapter.js": "874e443ff4782aa18f3f8f1c7e0787e80cad6517219b69a17e9ba20f9cedb8ab",
+    "miniprogram/subpackages/study/review-today/utils/review-progress-page-adapter.js": "0ef33e3902c290cf57c758e19f76f3a91fc0f0fcba75197c5cb096383dcffae7",
+    "miniprogram/subpackages/study/review-today/utils/review-runner-support.js": "5c6d036672f899143338cae7fa8fa1bce9597b316d576c5dffcbef59b53a604a",
+    "miniprogram/subpackages/study/review-today/utils/review-session-controller.js": "2f87712beddf12d28791c75fb3eec780766be91483348ef4623eb60bb72514b9",
+    "miniprogram/subpackages/study/review-today/utils/review-session-page-adapter.js": "5f27545fef7713b35a3f07989eaf3181e84537e9e93a94fa0e9389cbb79f9f24",
+    "miniprogram/subpackages/study/review-today/utils/review-submit-page-adapter.js": "c9ee696da7af152b9270adbe789eec1c204b9f74a35bd5358ac646cb3b58b764",
+    "miniprogram/subpackages/study/review-today/utils/review-timer-controller.js": "87698bea9c2598b9c58bc0197bf85ea9cdb89234c32cbf7c2addc3478f1804c5",
+    "miniprogram/subpackages/study/review-today/utils/review-timer-state.js": "015ee7eb3c88af30da5b6f20289795841395e035b39ace7d07eface43abb8b2c",
+    "miniprogram/subpackages/study/review-today/utils/self-heal-controller.js": "bdb59218d44b89919d7b3b6daca3b96827f8c0f4e8743ec6c2104213a7c51e2a",
+    "miniprogram/subpackages/study/review-today/utils/start-batch-controller.js": "6bfa0b638a10e37b82168210d3333dc9ff4d0285755b718457732d563a5d6bb8",
+    "miniprogram/subpackages/study/review-today/utils/submit-confirm-controller.js": "39a588ab3fc9f6f844478b4e80e749209397e861fed59e902759822f22937e4e",
+    "miniprogram/subpackages/study/review-today/utils/submit-entry-controller.js": "6f2aa47432d1a7800d6ea21c8eb28b243a1b4077476db89c97e438aa16e3e5a7",
+    "miniprogram/subpackages/study/review-today/utils/submit-request-controller.js": "90675946277e2b499c2609d95440c15a09642a17ac0e910c4a361b8496b1032f",
+    "miniprogram/subpackages/study/review-today/utils/submit-request-state.js": "c1ce4bed6640589c6cf801b27af88675ab5721801c4052d3d53cc51e8dec0ca0",
+    "miniprogram/subpackages/study/review-today/utils/submit-result-controller.js": "0786a714a1e28981e5be0152ff4ef9ad8af9bd841eef5dc5155025c835bf75a0",
+    "miniprogram/subpackages/study/study-plan/index.js": "34571b585102e9c96ac9ebb46adb231ef7faf380d804a8628f8a794c3e6d2826",
+    "miniprogram/subpackages/study/study-plan/index.json": "fdbcb42d6e39bd53d9e6dae867ae6ec88236659e19072e5a2dc371da026362fe",
+    "miniprogram/subpackages/study/utils/ai-analysis-normalizer.js": "a63c8c3a76e3553b3ca1fd5aeab34f38c0542930a980a1273a06c26c047a0661",
+    "miniprogram/subpackages/study/utils/ai-diagnosis-cache.js": "c02d531377590ca548991dff239c8e1f10d5edebe5ee3fe6d32afb5c71f76b74",
+    "miniprogram/subpackages/study/utils/ai-math-render.js": "5eeb798495b0997733f1abe2f77f09dd19c429907cce25ee44a8f4ddee3ca452",
+    "miniprogram/subpackages/study/utils/ai-teacher-408.js": "4174e52bbfcfbb9537f3ecf8f9a1b2ee19139a6a60c21c522ae8030391fa28dd",
+    "miniprogram/subpackages/study/utils/answer.js": "33d94dc73ac252117cf5b7765db33ff9d4b4d4ce72af40fff4f9f654dad7513e",
+    "miniprogram/subpackages/study/utils/code-block-render.js": "b66ec4d93036e74841c4ee6bcfdc37dc8d73d35a16930560b595860b9c7bec47",
+    "miniprogram/subpackages/study/utils/code-reconstructor-artifacts.js": "3bc6a80cb24530be261545511369bdc07d372aa57475711e726aa432009ecd76",
+    "miniprogram/subpackages/study/utils/code-reconstructor-signals.js": "6bc6198e615a21375c2db0c3b03393cfc7a0566af600a3485663e3390ac305f3",
+    "miniprogram/subpackages/study/utils/code-reconstructor-strings.js": "4b39fe5265b027b21e3f70c162c54af238638a0dccee110dc865a7075576bf57",
+    "miniprogram/subpackages/study/utils/code-reconstructor-structure.js": "4a1f7ebc50bf84a43dd3c0879128373a4934c76dec4eaea705689da2ed8b8ee1",
+    "miniprogram/subpackages/study/utils/code-reconstructor.js": "d19ef9accfc02913cfd3e30bf4e1039e48cc83712804fdebd59850a01a11912d",
+    "miniprogram/subpackages/study/utils/error-diagnosis.js": "8e260c8a9ee492ddcf1ff8d532e1f64dc751d10263709c98154a14eae8a8fb99",
+    "miniprogram/subpackages/study/utils/export-capability.js": "5b0f5daef0e4fd60a16231c55485d4c89b3143ae972bbf2e6aa99fc2d6f8d34e",
+    "miniprogram/subpackages/study/utils/latex-symbols.js": "f1571338b806eb7c1451b9da93534d674b649bc48cd825b15a207cdbba08296d",
+    "miniprogram/subpackages/study/utils/math-format.js": "3e9ffdc8cfed7f3c2398ab6e662f47d08138175b5bf4df40c4e07d5522a83902",
+    "miniprogram/subpackages/study/utils/question-adapter-answers.js": "c9ec34616e1aa2fa50ae21db3d5cfb964904d7e456dce43b3b2391c072b36461",
+    "miniprogram/subpackages/study/utils/question-adapter-dependencies.js": "261ebf7e8311affb2ca1958df3c7db7ca50e922948d038da9dc798afd7d1d6a8",
+    "miniprogram/subpackages/study/utils/question-adapter-groups.js": "c6803df3a541d2b7c4651432b67da6a4887621dd7077a5d7b5891447059088d9",
+    "miniprogram/subpackages/study/utils/question-adapter-images.js": "b062b545fc7b2d3e899abc1a9d929d7aa8921b12587b45e3526388c6597a942f",
+    "miniprogram/subpackages/study/utils/question-adapter-options.js": "fb88838a2e1ee9148a85234b6397b99d4826c2e2f4f1cb29e59b330cd9e05fc4",
+    "miniprogram/subpackages/study/utils/question-adapter-views.js": "f1e69ccbdae09693b7d8916eed70aba2bd7b19a7b5c2d3b0e1ca048d6a6c10ca",
+    "miniprogram/subpackages/study/utils/question-image-cache.js": "89029c29ade8b47c7c072e0c93130e0c5f7841f8d9276f78d89f245637f61aa5",
+    "miniprogram/subpackages/study/utils/question-runner-adapter.js": "4701bc971e5648be82d5d4ad72c5f56629324dbd3501c3cf4f40a8ad5dda7bf8",
+    "miniprogram/subpackages/study/utils/route-params.js": "56c7e8d4e443d623b078f8e141d4ea2300f9e4a0921e8c7481c29c2c439fa60f",
+    "miniprogram/subpackages/study/utils/stem-render-blocks.js": "58fe692ef71dce78f8d60e1a4f0483a5862a72a09122fbec5c651a41cd219cd8",
+    "miniprogram/subpackages/study/utils/stem-render-dependencies.js": "007c514057480831ba174a7d40589d65687b699290cfe258f3fb856333589542",
+    "miniprogram/subpackages/study/utils/stem-render-diagnostics.js": "62a9a75f6c6a3772ec6439b8ded8a31c9b7ac10a88670746abc75d2e6bb34e53",
+    "miniprogram/subpackages/study/utils/stem-render-model.js": "186c549f5f48800a8450c1fa5fb310c64bba13e8c10aca52ff9f12f953db7e57",
+    "miniprogram/subpackages/study/utils/stem-render-options.js": "708d290cc5656cbc0a1f6eb9eb2434256721929f1f61b40ee36e40d1874aa29a",
+    "miniprogram/subpackages/study/utils/stem-render-segments.js": "78e69340893e004546a41b44231c125b4c6f35ff1ed0118e93966d5ff7379ff2",
+    "miniprogram/subpackages/study/utils/stem-render-text.js": "4810deff56cacfb4b2ce9cce7a072a969045a53e011b838149b4e0c7b8cf9c97",
+    "miniprogram/subpackages/study/utils/stem-render.js": "b81ead2bbebf8958456674bc7cf3f8af045bda5b76d3c892d61c48167c94a3d0",
+    "miniprogram/subpackages/study/utils/subject-meta.js": "7ffb445a1a0e2befaf0778e57bd20b17ae1078b3ed6fbbe864088c7d6438de34",
+    "miniprogram/subpackages/study/utils/subject-scope.js": "783166ba28711df448caa0cb0db98bc0c176fb3270c64c8355d2a65524b06197",
+    "miniprogram/subpackages/study/utils/table-structure.js": "b465a7a99162dea1391cb54c3567c5e5fed467025384f59b492ab3b56d526c27",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-interaction.js": "c54c7558e84c225242ba77705d95a38a744513d2fc2a8d974df09b50ac6aeac3",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-persistence.js": "a13930bb856523e09de1c322389743cd863781f9beeb2501692e5fb4dd6f314b",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-request-flow.js": "f251c624e7758299d2997d674883113340b01f1cc80a98dfe633caea70a7b0c1",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-ai-state.js": "2e237c58d2b81b5742a261553b89b914469216946089ce0d9d7fcb9d3637c3f8",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-analysis-view.js": "25b5d85ae510879625a6a0c1f80299fa8aba480b7a620ad56001adee898ad445",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-batch-flow.js": "6d7f34d29fb94d00df248c5f0feeea3566a17cc0fe07091c11256daacc3641ef",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-batch-undo.js": "f565eecff0dc33b705616b9c86799c7ff34e67abb40ba0a50bfed7808e05a43c",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-filter-flow.js": "f1ae5727782c1f529f2a19d4088ad07b19aa5105f097981713564c91842a4a8d",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-item-view.js": "d7995a7aab4b77381bf963bd229af106525122fc105cf8a6003f36976e39a1c4",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-lifecycle.js": "4b8a7ecab4d3885be59ee44b591bc763146e835559b2d387f5af5d35dfe91fe3",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-navigation-flow.js": "7c33ab57c0386fc3b3992d894457961603869203496d163c990b93fd03c85d08",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-request-flow.js": "daa06c7c0eea26d383a37094fe6f5af095848645a98ffd9bd7fdef2cf9e47c30",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-selection-flow.js": "15c55e9d77dd0d471e2b4488d8b152c72e8a1a71099d951e0ca6d7c1117e5f91",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-value-view.js": "eb013ffdff40dcc1d9d1578981073af708758e7e200c83c2aa3aad82c48d48a8",
+    "miniprogram/subpackages/study/wrong-book/utils/wrong-book-view-page-adapter.js": "4ce9359216763fd44c7fc684e1683d6f8eef89c41364f0e0bf6cf468820bcba2",
+    "miniprogram/subpackages/study/wrong-book/wrong-book.js": "b4c2309d65116ed956f9093afe254a3f578ea091efbee95db638a024aed3b426",
+    "miniprogram/subpackages/study/wrong-book/wrong-book.json": "75a1b8d7eaccf7028783ddee4ee68117d57727603f7285045604e3d92386f1c6",
+    "miniprogram/subpackages/study/wrong-detail/teacher-presentation.js": "07a66a4a0885396d04ad6e61f073443364cd8782c55f2cfa616430f93fd7e412",
+    "miniprogram/subpackages/study/wrong-detail/utils/teacher-action-controller.js": "4a67eb3f3eb6df457f4aaf2507c88854c34c9b1ca1970c9c9916f4eec18e9eed",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-ai-generation.js": "9c7f9b77ee1cca76bbe97024253a3e44e7fc4b842f93ac46122bfb80b24d2cce",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-ai-recovery.js": "837481c1a93c596abea0206027a457afa6c6869969e1e9b0612b5ef5bbe21548",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-ai-regeneration.js": "683808cb8e610e784a7123aab86a2d2e9440e280a67529dca555edda348a565f",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-ai-request.js": "a13a241f884ce776bdb23e5a056214f084fad9c0fdc3727ea55f2118d5e64f39",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-ai-state.js": "737ceacb600d7da2285bf2ceaef4bd8f524ea50b0cf5a520d3f19c7a3def5ed1",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-content-transition.js": "1396681a1c442dfeb229b508ed3eff7b06e0dbbb6dae13467e735046ff2805fa",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-diagnosis-flow.js": "65bb18a32201ec0ed05640d05d743bcb7b2967851c65efe6d8cf05f802f995dc",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-lifecycle.js": "a6d44ff625fc515e323c4453f6bff432978c3efc46b417e12e3b17cf63db429c",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-load-flow.js": "9b3ad22410160c6a3d6de0e5960a53e4163ede24cb28b73468e5dbd938a9dff8",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-master-flow.js": "241aa796d6266491e9860a680df8870c176f659af19b36368c73e0ecb617adce",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-master-undo.js": "3e13bfae80a9fdbe852c6da3a7a7d35d271eb4cb6cee53b3ab6f2dd29e1cda02",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-navigation-data.js": "5129b7ab9b52f2a459d15ef37492d3b7b4c736099e5f54fda4b7c02fd6615b2f",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-navigation-flow.js": "9bc280a6e15608ee85307817db50497e1da6945598270be401c72eef3b935dc1",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-question-view.js": "fe71e980c7c1909467af1c16c5acd307ed0b19d3f8624dbe2a5808dcdcd7618d",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-remove-flow.js": "356cd8d8c3b81cd5491a3bec6ac2f280f1a65e60a4f5a0b2b6a2d3b48109aa59",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-render-safety.js": "e24b954cb1148c9e6b1755cf5f6050dcc5cd82d26be488057339686597a420d8",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-teacher-interaction.js": "528d7302be15f3b88fa3e67eb2b3179ff77ea401cd0bf4ce15b1b9fe30a83003",
+    "miniprogram/subpackages/study/wrong-detail/utils/wrong-detail-teacher-page-adapter.js": "aacc0fff0bbc966ef7d4789ac06f75910288013a880d6d0aeb1eab28b0423704",
+    "miniprogram/subpackages/study/wrong-detail/wrong-detail.js": "43c58026a05cb416381466f0eee5e0d01bb3e21cadeeec9aada2748e70f174e3",
+    "miniprogram/subpackages/study/wrong-detail/wrong-detail.json": "f405278448113de40a8c925abfbf2b4fb3522ed10c4663818aa1a3769588d5db",
+    "miniprogram/utils/animation-loader.js": "31bca269fdaf20ab7a5300fddf59b20eb394d8e88a7bbca7d55e24958a3b07ae",
+    "miniprogram/utils/api-auth.js": "1a379b6b85b8780a4bcb95ee11432589bf547d39023c85f2b53eb03bc9a0a3d2",
+    "miniprogram/utils/api-clock.js": "5e9648cf5f2d0c716eaa3aad3cd32654eb4376562a8c125fd82d059d6150403a",
+    "miniprogram/utils/api-correlation.js": "2e6b6fd946197bffc81d9e93021f5cba29731295a9a96306fc4d75b84a57cbeb",
+    "miniprogram/utils/api-error.js": "704ef1cde25bc4a454c54e669bcf5719d053ed975560f137936070fa7e635474",
+    "miniprogram/utils/api-request.js": "26f6b2588c94cb7a2fc149a1b5a197c5853a1868d2b62a3b1a6ce552c6c107cf",
+    "miniprogram/utils/api-transport.js": "3e5f31c104a0a8f807188aa50249ffd3f1b1632bcb9da17a8a267b4d8dee4e4a",
+    "miniprogram/utils/api-upload.js": "2cad1cc7bab3cf69889fc34cf3d06aa89a55a0a99f3a3cc3d493e64389c564c4",
+    "miniprogram/utils/api.js": "3b194a923cbc767b9ac5093bcb68bc8b1b7eba0f86908af4cb37f632251cd600",
+    "miniprogram/utils/auth.js": "b3ee4f2452f43931af99583dbcae324addc3a88878d8d055fc065576c2175599",
+    "miniprogram/utils/china-time.js": "887dbdf9b8a6ddf57b0b8681e128b4cd3be317b2be4250b7cac826d2f5ade645",
+    "miniprogram/utils/debug.js": "c857266f0bf4816084299a82522fd93f33d518facdb5c5a965208de9a8ca0ef0",
+    "miniprogram/utils/error-diagnosis.js": "42aaf54ff071baf0ef75a908ddf07f3a8881f2f9511597c53919ec56a8fe639a",
+    "miniprogram/utils/exam-attempt-cache.js": "3bfa74858621fd3b68ba6ef88ab02d9d1f2f68939a484a5fce607a26de5697f6",
+    "miniprogram/utils/knowledge-practice-sync.js": "556e44e2c0732aba9b1dca9e62b80ac55adebebc10300cc83614e189102ff448",
+    "miniprogram/utils/navigation.js": "25e4f75f574eea2e6664bcd1edd9130fc6a401bc10e4ba1c1f499c2278cdd239",
+    "miniprogram/utils/pomodoro-task-types.js": "b37d8557957779692249c4f93a9227912305500200e7cc9b55c109b3eec744e0",
+    "miniprogram/utils/pomodoro-theme.js": "c7d8cde002f2d6f8744e9af481bf9e3204d674b9adc27425e6bdd85a1b8a0293",
+    "miniprogram/utils/preview-temp-files.js": "6d10708b522ff10e49b0d4abf5bdec2dec052902ba1f90e2edf2f15c01b49835",
+    "miniprogram/utils/privacy.js": "549979de55179cc6efce4f9807b2409d1aebf1f2eb2f5c920c544d504ca19ccc",
+    "miniprogram/utils/route-params.js": "88a2d734738fee649944b5d3fd43f8d51d15f0f48721df8dfad53002f666ac1f",
+    "miniprogram/utils/storage-core.js": "2b28a3e59b2904f3892e1243400733d1f45c8c4ddb5d963c42768254d1a5599c",
+    "miniprogram/utils/storage.js": "b740dc622cc0e676508a5191657fab35219e47d862e98aa8d9c72c921cb9b031",
+    "miniprogram/utils/study-strategy-meta.js": "7edabc42b97fcd9dc16a11d3cf9da0181ab816b466afa5098ece3d1b7a3ea8c7",
+    "miniprogram/utils/study-strategy-plan.js": "da60c0adcf55bfe41551c28ed065c3156e40fabfed5a391f5019f483ba37c09c",
+    "miniprogram/utils/study-strategy-profile.js": "914f440018ad46653c22657ad7b63dca374ca7723dc9736371ea1c408335c374",
+    "miniprogram/utils/study-strategy.js": "bb6e95e964ef5c4af07711e304dfed75e707551fe82b551abca7271a3b6eb6ba",
+    "miniprogram/utils/subject-meta.js": "7ffb445a1a0e2befaf0778e57bd20b17ae1078b3ed6fbbe864088c7d6438de34",
+    "miniprogram/utils/subject-scope.js": "f17d8a6014751d04888b0670cb442e1cabe3b5414b3ba06e5c01f94cc16b9108"
+  }
+}

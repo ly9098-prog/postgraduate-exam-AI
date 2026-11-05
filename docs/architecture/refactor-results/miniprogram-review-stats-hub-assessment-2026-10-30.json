@@ -1,0 +1,135 @@
+{
+  "date": "2026-10-30",
+  "head": "d91fab53d8d5c4ffda3d4a225eb2a016c704ef06",
+  "ledger_item": "MP-08",
+  "risk": "L1 read-only chain assessment; next MP-17 implementation L2",
+  "decision": {
+    "review_5_contracts": "RETAIN existing request protocol, service rules and existing gates",
+    "study_hub_overview_1_contract": "RETAIN existing overview/recommendation/token rules and gates",
+    "stats_8_contracts": "OPEN until dashboard-insights request chain MP-17 addressed; existing stats_service query/projection decomposition retained"
+  },
+  "defect": {
+    "item": "MP-17",
+    "consumer": "miniprogram/pages/dashboard/dashboard.js -> GET /api/v1/stats/dashboard-insights",
+    "authority": "backend/app/api/v1/stats.py:get_dashboard_insights -> dashboard_insights_service.get_dashboard_insights",
+    "evidence": [
+      "compute_weekly_consistency mixes SQL execution with day filling, dispersion, score weighting, labels and output shape",
+      "compute_weak_topic_ranking/compute_speed_accuracy/compute_new_vs_review/compute_input_output mix database access with independent metric/projection rules",
+      "existing stats_service query/projection gate scope does not cover dashboard_insights_service pure metric boundaries"
+    ],
+    "goal": "Make eight metric outputs independently testable from database/route/async query setup, retain service SQL and existing request/error/cache/flag/ordering semantics",
+    "exit_conditions": [
+      "One complete dashboard-insights request chain batch, not one batch per metric",
+      "Characterize original eight outputs and include_subjects/include_topics, cache hit/miss/write failure, per-metric errors and cancellation behavior",
+      "Extract cohesive pure score/projection modules <=300lines/functions<=50; no new framework/dependency",
+      "Maintain original async entry signatures, SQL/params/time scopes, gather scheduling/shared session and lookup timing",
+      "Persist meaningful direct semantic tests and boundary gate; synchronize fixed CI file list for new tests",
+      "One pre-commit independent review closes P0-P3; explicit-path local commit with existing workspace protection"
+    ],
+    "no_business_fix": [
+      "Do not repair existing shared-AsyncSession concurrent gather behavior in an equivalence refactor",
+      "Do not change SQL window bounds, score clamps, exception/cancellation classification or default action copy"
+    ]
+  },
+  "verification": {
+    "pytest": {
+      "files": [
+        "tests/test_api/test_review_api.py",
+        "tests/test_api/test_review_master_api.py",
+        "tests/test_services/test_review_scheduler_compatibility.py",
+        "tests/test_services/test_review_scheduler_projection_contract.py",
+        "tests/test_services/test_review_overview_dirty_schedule.py",
+        "tests/test_services/test_review_session_stats.py",
+        "tests/test_services/test_stats_service_contract.py",
+        "tests/test_services/test_stats_recommendation_compatibility.py",
+        "tests/test_services/test_dashboard_stats_compatibility.py",
+        "tests/test_services/test_trends_previous_period.py",
+        "tests/test_services/test_learning_stats_query_bounds.py",
+        "tests/test_services/test_study_hub_overview_contract.py",
+        "tests/test_services/test_study_hub_recommendation_contract.py",
+        "tests/test_services/test_study_hub_plan_token_compatibility.py",
+        "tests/architecture/test_review_scheduler_projection_boundaries.py",
+        "tests/architecture/test_stats_service_boundaries.py",
+        "tests/architecture/test_study_hub_overview_boundaries.py",
+        "tests/architecture/test_study_hub_recommendation_boundaries.py",
+        "tests/architecture/test_learning_time_projection_boundaries.py"
+      ],
+      "command_file": "/tmp/miniprogram-review-stats-hub-2026-10-30/pytest-command.json",
+      "result": "263 passed",
+      "seconds": 58.64,
+      "exit_code": 0,
+      "log": "/tmp/miniprogram-review-stats-hub-2026-10-30/pytest.log"
+    },
+    "strict_ruff": {
+      "files": [
+        "backend/app/api/v1/review.py",
+        "backend/app/api/v1/stats.py",
+        "backend/app/api/v1/study_hub.py",
+        "backend/app/services/review_scheduler.py",
+        "backend/app/services/stats_service.py",
+        "backend/app/services/study_hub_service.py",
+        "backend/app/services/dashboard_insights_service.py"
+      ],
+      "exit_code": 1,
+      "baseline_findings": 14,
+      "code": "F401",
+      "file": "backend/app/services/review_scheduler.py",
+      "head_byte_equality_verified": true,
+      "log": "/tmp/miniprogram-review-stats-hub-2026-10-30/ruff.log",
+      "handling": "retained unchanged imports; no automatic removal or broadened ignore list"
+    },
+    "existing_ci_ruff": {
+      "files": [
+        "backend/app/api/v1/review.py",
+        "backend/app/api/v1/stats.py",
+        "backend/app/api/v1/study_hub.py",
+        "backend/app/services/review_scheduler.py",
+        "backend/app/services/stats_service.py",
+        "backend/app/services/study_hub_service.py",
+        "backend/app/services/dashboard_insights_service.py"
+      ],
+      "ignore": "I001,F401,N818",
+      "exit_code": 0,
+      "log": "/tmp/miniprogram-review-stats-hub-2026-10-30/ruff-existing-ci.log"
+    },
+    "compileall": {
+      "command": "backend/.venv/bin/python -m compileall -q backend/app",
+      "exit_code": 0
+    },
+    "full_fixed_ci": "not rerun; MP-08 still OPEN; no business/test/CI changes"
+  },
+  "index_generation": "2026-10-29T17:24:11Z",
+  "coverage": "26 explicit paths metadata_match; best_effort only, current AST verified",
+  "source_sha256": {
+    "backend/app/api/v1/review.py": "c653f73ebc77cfe593656d84b0b1fc77099385f3bfead3ce5bb8098b57080172",
+    "backend/app/api/v1/stats.py": "a28df1bf8ff38eeab496ed4581f1482964593f2f0beeb6504aff4630848a0f39",
+    "backend/app/api/v1/study_hub.py": "9e7b5b1e1ab1657fab41665754de2cbd17c4fb822b7a8b9bd7ee77b4ef590d6f",
+    "backend/app/services/review_scheduler.py": "3903a45593edee0e66e16298728db49a5e9d5e8f6dc57fe52229e913bbe89181",
+    "backend/app/services/stats_service.py": "e9ee7d8a8b437240a63e965fed0d30dd5f7920b16684e0f42327cb6dbec3f790",
+    "backend/app/services/study_hub_service.py": "18f3b2c2c1e153dd72e0a7c0f82791fc360e032f95d1a3b272d693b00ad839b9",
+    "backend/app/services/dashboard_insights_service.py": "dd6a389203161ec5c1cee62fc8b6f061db6c5fc8819338f2aced7d041acf0a45",
+    "backend/tests/test_api/test_review_api.py": "9fcbf0d8e5143249ce88fd76565545d3e437f59d3ae6403c1f568b0f04257e90",
+    "backend/tests/test_api/test_review_master_api.py": "a35230e4c2f7bb8f4bdc0f34991b37712260c5b953afd237670b8d709bac0901",
+    "backend/tests/test_services/test_review_scheduler_compatibility.py": "98de5b540ce0ee78d371e88b199292ab282bdaaa4459a5377651c4a52385b871",
+    "backend/tests/test_services/test_review_scheduler_projection_contract.py": "af203277207838e40a8e72d03a41c618adedc974e3a739c307bc1fae6e38a029",
+    "backend/tests/test_services/test_review_overview_dirty_schedule.py": "45c07ccca2e7aef599d419a6cb25ef2a5527c172e6159e9e11566ed9df296ca3",
+    "backend/tests/test_services/test_review_session_stats.py": "4dc36f3e12b481363467b3f122432adc6971740577e77df93f31b345805afbca",
+    "backend/tests/test_services/test_stats_service_contract.py": "d784535466cedc593313ec3df6944d570601c75b5547f0025b606a281e94e477",
+    "backend/tests/test_services/test_stats_recommendation_compatibility.py": "c52d6e3d9769a04db4c21ecd42c6e37f5b56753702062b4602d8759ed098f262",
+    "backend/tests/test_services/test_dashboard_stats_compatibility.py": "d589e85933038e0ca3f67c69983db25b28d8efdd2e2c62123881bc89fe1fddca",
+    "backend/tests/test_services/test_trends_previous_period.py": "6c6e046577e2937c0376d4f06004d49b4a40ae6dbf847da1c48e852d7ce6e64b",
+    "backend/tests/test_services/test_learning_stats_query_bounds.py": "c5d73ce0689a356861b84e4bac3b858ca3bb1bc8645f014e2dc5f2819e2c5644",
+    "backend/tests/test_services/test_study_hub_overview_contract.py": "334605624a3ec1734befff18aa1c8318c66e0b096c636df64e8e965c9b88a100",
+    "backend/tests/test_services/test_study_hub_recommendation_contract.py": "b043864a3c1101616762a21752ee1844f907e2d0b6ae5aaff5d16e3deb3ad664",
+    "backend/tests/test_services/test_study_hub_plan_token_compatibility.py": "bea03f8688ae82acb17339f2ca35baaa5bdb1d50a96a9a3700f87182bfea0f28",
+    "backend/tests/architecture/test_review_scheduler_projection_boundaries.py": "744eee33f9730bbab8ed281128b87350fa7be44c58b7aeda638576f883a8c723",
+    "backend/tests/architecture/test_stats_service_boundaries.py": "959d1675bb00c6ffe07a3d28aa898e197411659edbb0d839ea65163bb6926d4c",
+    "backend/tests/architecture/test_study_hub_overview_boundaries.py": "6131f2db8a6dfabf4c5f190ba3c8c3df26b94a0db594c028551475b93d981eb2",
+    "backend/tests/architecture/test_study_hub_recommendation_boundaries.py": "924c84867682e6b92d705375064ff1b42dd6a9f2888f26539bcb869750659d73",
+    "backend/tests/architecture/test_learning_time_projection_boundaries.py": "dca065aa4fe876cbf2c66f925b44c3e150a68d07d25f438129de7c917c2e3fd5"
+  },
+  "business_source_tests_ci_changed": false,
+  "environment_acceptance": "ENV-01..06 remain WAITING-FINAL, production last; no operations performed",
+  "independent_review": "completed by knowledge_map_review: no remaining P0-P3; verified triage, 26 source hashes, 7 HEAD equal files, tests and Ruff evidence; no repeated suites",
+  "evidence_dir": "/tmp/miniprogram-review-stats-hub-2026-10-30"
+}

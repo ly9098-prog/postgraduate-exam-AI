@@ -115,6 +115,12 @@
 - 查询、过滤和模式常量继续从服务原命名空间动态读取，保留 resolver 等待期间及桶之间替换回调的行为。聚合器仍绑定原 logger/merge；桶加载器使用聚合器传入的 DB 和桶数量，不误用外层会话或外层数量。候选列表、过滤输入与合并结果保留原引用；异常和取消不触发后续桶、合并或额外回退。
 - `test_basic_selection_contract.py`、`test_random_bucket_selection_contract.py`、`test_basic_selection_sql_contract.py` 合计 234 项在拆分前后均通过；另有 5 项架构检查约束两个入口、共同选项绑定、聚合器所有权、预算与独立导入。真实 revision/知识点 helper 的 SQL 编译和本地 asyncio 取消不代表真实 PostgreSQL、Redis、小程序或生产验收，学习域及阶段 0 其余职责仍未全部收敛。
 
+## 10. MP-08 学习中心概览结构保留核查（2026-10-30）
+
+小程序首页实际消费`GET /api/v1/study-hub/overview`。当前service已经按科目范围、候选读取、章节诊断复用、各任务构建、任务排序/完成项和plan token划分职责，直接overview/recommendation/token契约与边界反例门禁可验证原行为；本轮决定保留，不继续为service长度制造拆分。
+
+相关测试参与本轮19文件263项回放，详见[职责核查](REVIEW_STATS_HUB_ASSESSMENT.md)。未改业务、测试、接口、缓存或事务；本条只关闭概览子链的结构评估，不代表推荐算法、知识地图、整个学习业务域或真实环境已全部验收。`MP-08`统计诊断子链仍需`MP-17`收敛。
+
 ---
 
 ## 相关链接

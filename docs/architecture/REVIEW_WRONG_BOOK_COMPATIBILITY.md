@@ -165,6 +165,12 @@ node miniprogram/tests/test-wrong-book-date-filter.js
 - 已入库题目 `re_pending`、重审工作台与版本回滚已由 Admin 题库域实现；错题复习域仍只消费 `approved + is_active` 题目，不参与审核状态迁移。
 - `practice_service.use_leitner` 的到期过滤与 fallback 已由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行；错题复习域不参与选题调度。
 
+## 13. MP-08 复习消费链结构保留核查（2026-10-30）
+
+按当前小程序消费者映射复核5个review契约：overview、next-batch、grade-batch、master和unmaster。路由的身份/校验/缓存/HTTP映射与service的版本重绑定、锁/幂等、SM-2、会话和任务状态职责已有直接契约及边界门禁，本轮保留现有结构，不按service文件长度继续拆分。相关API/service/架构测试纳入本轮19文件263项回放；精确范围和限制见[职责核查](REVIEW_STATS_HUB_ASSESSMENT.md)及其结果清单。
+
+没有业务、测试或CI变更。严格Ruff在既有`review_scheduler.py`发现14项F401，源码与HEAD一致；原CI参数下检查通过，未删除历史导入。该保留结论不证明真实PG并发、微信或整个学习域验收；`MP-08`仍因诊断看板子链`MP-17`未治理而保持OPEN。
+
 ---
 
 ## 相关链接

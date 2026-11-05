@@ -119,9 +119,22 @@
 | 文档 / 入口 | 当前事实 |
 |------|------|
 | `docs/architecture/SYSTEM_ARCHITECTURE.md` | 2026-09-02 总体架构与运行时状态 |
+| `docs/architecture/MINIPROGRAM_CONSUMER_MAP.md` | 当前25个小程序注册页面、84个静态消费契约与有限重构账本的归属；不代表真实环境验收 |
+| `docs/architecture/ADMIN_CONSUMER_MAP.md` | 32管理端页面、157静态消费契约与216注册operation的有限归属；映射不代表结构或真实环境验收 |
+| `docs/architecture/ADMIN_IMPORT_COMPATIBILITY.md` | 七个导入页面/31契约的结构保留、既有计数缺陷和最终环境限制 |
+| `docs/architecture/ADMIN_KNOWLEDGE_GOVERNANCE_COMPATIBILITY.md` | 四个知识治理页面/16契约的保留结果、验证边界与真实环境剩余 |
+| `docs/architecture/ADMIN_IDENTITY_COMPATIBILITY.md` | Admin六入口身份/用户/权限/审计18契约及提交屏障，结构保留与真实验收限制 |
+| `docs/architecture/ADMIN_OPERATIONS_COMPATIBILITY.md` | Admin模型配置/推荐/系统任务六页38契约保留、页面端口门禁及取消异常清理既有缺陷 |
+| `docs/architecture/ADMIN_CONTENT_COMPATIBILITY.md` | Admin公式/图资源/考试六页32契约，共享审核规则迁移及事务/版本兼容边界 |
+| `docs/architecture/ADMIN_DASHBOARD_COMPATIBILITY.md` | Admin仪表盘5归属/1共享契约，运营统计/缓存/健康边界与保留结论 |
+| `docs/architecture/OCR_CONSUMER_MAP.md` | OCR导入/恢复/worker有界消费者映射与OCR-04契约缺口 |
+| `docs/architecture/OCR_BACKGROUND_RETENTION.md` | OCR-02诊断/工件/后台编排保留评估、定向验证与真实环境剩余 |
+| `docs/architecture/OCR_INTERFACE_RETENTION.md` | OCR-03上传/恢复/批量图片/worker接口保留评估、定向验证与真实环境剩余 |
+| `docs/architecture/REVIEW_STATS_HUB_ASSESSMENT.md` | MP-08复习/统计/学习中心职责核查，保留范围和MP-17诊断看板具体缺口 |
 | `docs/architecture/AI_ANALYSIS_COMPATIBILITY.md` §18–19 | 错题AI共享健康门禁、真实模型探测、额度/鉴权禁用、管理员解锁与小程序提示 |
 | `docs/project/PRODUCTION_AI_ANALYSIS_AVAILABILITY_DEPLOY_2026-11-01.md` | 错题AI可用性门禁后端生产部署、备份、健康检查与真实模型验收边界 |
 | `docs/project/PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md` | 错题AI内聚/耦合复核、提交与三个后端角色再部署，含备份与限定验证 |
+| [诊断看板请求链兼容边界](architecture/DASHBOARD_INSIGHTS_COMPATIBILITY.md) | 诊断看板请求链的兼容边界说明 |
 | `docs/admin/ADMIN_API_SPEC.md` | Admin API v2.9，包含 system/tasks/backup 端点与批量答案补录端点 |
 | `docs/admin/RBAC_RULES.md` | JWT 隔离签名域与 `system:*` 权限 |
 | `docs/project/ROLE_DEPLOYMENT.md` | `local_import` / `cloud_api` 角色拆分与生产约束 |

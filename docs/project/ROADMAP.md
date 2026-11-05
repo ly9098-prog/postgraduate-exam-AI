@@ -9,7 +9,7 @@
 
 项目已上线运行，当前处于稳定性治理和全栈兼容重构阶段，不是 MVP 功能开发阶段。
 
-功能主线已经落地。`prompts/tasks/current_task.md` 和 `prompts/tasks/next_task.md` 都没有未完成步骤，也没有排期中的新模块。
+功能主线已经落地。当前 `prompts/tasks/project_global_refactor/current_task.md` 是活动全栈兼容重构入口，剩余工作由 `prompts/tasks/project_global_refactor/closure-ledger.md` 有限账本调度；`next_task.md` 是历史任务书，不自动开工。结构治理完成后，最后进行真实环境与生产验收；生产操作仍须单独授权。
 
 不要从本文件或 `prompts/tasks/backlog/` 里再开一套功能。下一步如果要做，是用现有 408 闭环自测，并用管理端导入补题，而不是加子系统。
 
@@ -43,12 +43,13 @@
 
 ---
 
-## 不要当成待办
+## 活动任务与历史资料
 
 | 位置 | 实际含义 |
 |------|----------|
 | `prompts/tasks/backlog/` | 历史任务书。文件开头已标明不要施工 |
-| `prompts/tasks/current_task.md`、`next_task.md` | 只有完成记录 |
+| `prompts/tasks/project_global_refactor/` | 活动全栈重构入口、原计划与每卷最多100批次的历史；当前顺序见任务入口与交接摘要，未完成全栈验收 |
+| `prompts/tasks/next_task.md` | 历史任务书，按文件自身状态和当前授权判断 |
 | `docs/planning/TASK_PLAN.md` | 公式图片化的旧阶段设计稿，不是当前排期 |
 | `docs/achieve/` | 阶段归档。仓库里没有 `/prompt.md` |
 | `docs/project/BUGS.md` 里已标修复的 OCR 案例 | 回归记录，不是新 bug 列表 |
