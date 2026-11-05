@@ -42,7 +42,7 @@
           <text class="article-copy">我们仅在必要范围内收集以下数据：</text>
           <view class="bullet-list">
             <view class="bullet-row"><text class="bullet-dot">•</text><text>微信登录标识（openid，仅用于账号识别与身份验证）；</text></view>
-            <view class="bullet-row"><text class="bullet-dot">•</text><text>您主动填写或选择的昵称、头像（用于学习档案展示和账号识别，头像为可选信息）；</text></view>
+            <view class="bullet-row"><text class="bullet-dot">•</text><text>您主动填写或选择的昵称、头像（均为可选信息，用于学习档案展示）；</text></view>
             <view class="bullet-row"><text class="bullet-dot">•</text><text>学习记录与练习结果（用于学习进度保存、正确率统计、错题复习）；</text></view>
             <view class="bullet-row"><text class="bullet-dot">•</text><text>错题记录与标记（用于记忆曲线复习安排）；</text></view>
             <view class="bullet-row"><text class="bullet-dot">•</text><text>导入的题目图片与文件内容（用于 OCR 识别与题库导入）；</text></view>
@@ -50,6 +50,8 @@
             <view class="bullet-row"><text class="bullet-dot">•</text><text>番茄钟计时数据（用于专注时长统计）。</text></view>
           </view>
           <text class="article-copy article-copy-follow">我们不会收集您的微信好友列表、聊天记录、通讯录等与学习无关的数据。</text>
+          <text class="article-copy article-copy-follow">您可以不登录直接浏览公式、搜索内容并试做题目；体验不要求提供手机号、头像或昵称。仅在您主动选择保存个人学习记录等功能时提示登录，登录可以取消。</text>
+          <text class="article-copy article-copy-follow">游客试做题目、答案和进度仅作为独立草稿保存在当前设备，出题后最多保留 24 小时，换组时替换；游客判分不创建账号、不写入个人学习记录，登录后不会自动合并游客结果。</text>
         </view>
 
         <view class="article-section">

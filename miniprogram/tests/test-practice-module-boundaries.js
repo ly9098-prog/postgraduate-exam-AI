@@ -6,7 +6,7 @@ const { PAGE, tokens, pageViolations, moduleViolations, scanPractice } = require
 const source = fs.readFileSync(path.join(__dirname, '../..', PAGE), 'utf8')
 
 test('practice page and six responsibility modules satisfy the registered boundary', () => {
-  assert.deepEqual(scanPractice(), { errors: [], modules: 6, pageProperties: 113 })
+  assert.deepEqual(scanPractice(), { errors: [], modules: 6, pageProperties: 114 })
 })
 
 test('page rejects unknown methods, duplicate overrides, aliases and spreads', () => {

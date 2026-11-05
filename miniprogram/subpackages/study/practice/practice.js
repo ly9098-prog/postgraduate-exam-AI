@@ -5,6 +5,8 @@ const submitPage = require('./utils/practice-submit-page-adapter')
 const lifecycleFlow = require('./utils/practice-lifecycle-flow')
 const launchFlow = require('./utils/practice-launch-flow')
 const api = require('../../../utils/api')
+const loginGate = require('../../../utils/login-gate')
+const guestResultStore = require('../../../utils/launch-session-store')
 const config = require('../../../config')
 const { debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../../utils/debug')
 const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../utils/stem-render')
@@ -150,6 +152,11 @@ _pageAlive: false,
 _practiceSession: {},
 _lastSubjectOptionTap: null,
 data: {
+guestMode: false,
+guestNotice: '',
+subjectsLoadFailed: false,
+textAnswer: '',
+needsTextAnswer: false,
 subjectTree: [],
 selectedSubjectId: null,
 selectedSubjectName: '',
@@ -370,6 +377,7 @@ setCount(e) {
 this._subjectSelectionController().setCount(e)
 },
 async startPractice() {
+if (this.data.guestMode && this.data.subjectsLoadFailed) return this.loadPracticeSubjects()
 return this._startPracticeController().start()
 },
 _startPracticeController() {
@@ -457,8 +465,8 @@ async requestExitPractice(source) {
 _exitRequestController() {
 return exitPage._exitRequestController(this, { createExitRequestController, getClearTimeout: () => clearTimeout, getPlatform: () => wx })
 },
-_resetPracticeStateAfterExit() {
-return lifecycleFlow._resetPracticeStateAfterExit(this)
+_resetPracticeStateAfterExit(preserveGuest) {
+return lifecycleFlow._resetPracticeStateAfterExit(this, preserveGuest)
 },
 _questionDisplayController() {
 return questionPage._questionDisplayController(this, { config, createPracticeQuestionDisplayController, getPlatform: () => wx, monotonicNow })
@@ -496,6 +504,9 @@ this._answerInteractionController().selectOption(e)
 selectBlankOption(e) {
 this._answerInteractionController().selectBlankOption(e)
 },
+onTextAnswer(e) {
+this._answerInteractionController().inputText(e)
+},
 _modeLabel: function(m) {
 return this._computedFieldsController().modeLabel(m)
 },
@@ -525,6 +536,7 @@ _pausedConfirmController() {
 return exitPage._pausedConfirmController(this, { createPausedConfirmController, monotonicNow })
 },
 async doSubmit(skipConfirm) {
+if (this.data.guestMode) return submitPage.evaluateGuest(this, api, wx, guestResultStore.saveGuestResult)
 return this._submitFlowController().submit(skipConfirm)
 },
 _submitFlowController() {
@@ -534,7 +546,7 @@ _submitSuccessController() {
 return submitPage._submitSuccessController(this, { buildLightQuestions, buildPracticeResultUrl, buildStoredResults, buildSubmitResultPayload, computeDisplaySkippedCount, createSubmitSuccessController, getConsole: () => console, getDate: () => Date, getMath: () => Math, getPlatform: () => wx })
 },
 _submitErrorController() {
-return submitPage._submitErrorController(this, { createSubmitErrorController, getConsole: () => console, isDeterministicReject, resolveRejectMessage })
+return submitPage._submitErrorController(this, { createSubmitErrorController, getConsole: () => console, isDeterministicReject, resolveRejectMessage, promptLogin: options => loginGate.promptLogin(options) })
 },
 _submitEntryController() {
 return submitPage._submitEntryController(this, { adapter, api, buildRecoveryQuestions, buildSubmissionSnapshot, buildSubmitAnswers, buildSubmitSession, classifyAnswers, createSubmitEntryController, getDate: () => Date, getMath: () => Math, getPlatform: () => wx, monotonicNow })

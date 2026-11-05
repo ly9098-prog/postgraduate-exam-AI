@@ -4,6 +4,26 @@
 
 var animationLoader = require('./utils/animation-loader')
 
+const PERSONAL_ROUTES = new Set([
+  'pages/dashboard/dashboard',
+  'pages/pomodoro/pomodoro',
+  'subpackages/productivity/pomodoro-stats/index',
+  'subpackages/study/practice/practice',
+  'subpackages/study/review-today/review-today',
+  'subpackages/study/wrong-book/wrong-book',
+  'subpackages/study/wrong-detail/wrong-detail',
+  'subpackages/study/study-plan/index',
+  'subpackages/study/practice-result/index',
+  'subpackages/exam/paper-list/index',
+  'subpackages/exam/exam-runner/index',
+  'subpackages/exam/result/index',
+  'subpackages/exam/history/index',
+  'subpackages/knowledge/knowledge-subject/index',
+  'subpackages/knowledge/knowledge-detail/index',
+  'subpackages/export/export-config/export-config',
+  'subpackages/export/export-records/export-records',
+])
+
 /**
  * Get safe (non-sensitive) page route info for error diagnostics.
  * Skips: token, user answers, full questions, AI analysis, PII.
@@ -52,6 +72,9 @@ function _sanitizeStack(stack) {
 
 App({
   onLaunch() {
+    if (typeof wx.onAppRouteDone === 'function') {
+      wx.onAppRouteDone(() => this._guardPersonalRoute())
+    }
     // 动画分包由 utils/animation-loader 通过跨包异步 require 按需加载。
     this._startPreviewTempFileCleanup()
   },
@@ -60,6 +83,7 @@ App({
 
   onShow() {
     this._tryRestoreLogin()
+    this._guardPersonalRoute()
     this._startPreviewTempFileCleanup()
   },
 
@@ -111,6 +135,41 @@ App({
 
   _globalData: null,
   _previewTempCleanupTimer: null,
+  _guardedPage: null,
+
+  _guardPersonalRoute() {
+    const auth = require('./utils/auth')
+    if (auth.isLoggedIn()) {
+      this._guardedPage = null
+      return
+    }
+    let page
+    try {
+      const pages = getCurrentPages()
+      page = pages && pages.length ? pages[pages.length - 1] : null
+    } catch (_) {
+      return
+    }
+    if (!page || !PERSONAL_ROUTES.has(page.route) || this._guardedPage === page) return
+    if ((page.route === 'subpackages/study/practice/practice' ||
+      page.route === 'subpackages/study/practice-result/index') &&
+      String(page.options && page.options.guest) === '1') return
+    const loginGate = require('./utils/login-gate')
+    if (loginGate.hasPromptedPage(page)) return
+    this._guardedPage = page
+    loginGate.promptLogin({
+      content: '该功能会保存个人学习记录，需要登录后使用。你可以返回浏览首页、公式库或直接试做题目。',
+    }).then(confirmed => {
+      if (confirmed) return
+      try {
+        const pages = getCurrentPages()
+        if (pages && pages.length > 1) wx.navigateBack({ fail: () => loginGate.goHome() })
+        else loginGate.goHome()
+      } catch (_) {
+        loginGate.goHome()
+      }
+    })
+  },
 
   _startPreviewTempFileCleanup() {
     const manager = require('./utils/preview-temp-files')

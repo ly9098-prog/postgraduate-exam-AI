@@ -7,16 +7,28 @@
 > 2026-10-23 更新原因：复习与错题本接口按当前路由修正——`/review/schedule-submit`、`/review/batch-submit`、`/review/grade-submit`、`PUT /wrong-questions/{id}/quality` 均不存在（已移除），评分提交统一为 `POST /review/grade-batch`；补登记 `/review/today/next-batch`、`/review/{schedule_id}/master|unmaster`、`/review/history` 与错题诊断（`/wrong-questions/diagnosis/*`）端点。
 >
 > 2026-11-04 更新原因：通用响应与错误码章节按当前 `PaginatedResponse`、`http_error_contract.py` 与无 success 外壳的实际实现修订。
+>
+> 2026-11-05 更新原因：按微信审核整改开放公式公共读取与游客试做，补充匿名/可选身份边界和游客接口。
 
 ---
 
 ## 认证方式
 
-所有接口（除 `/auth/login` 外）需要 Header：
+默认所有接口需要 Header：
 
 ```
 Authorization: Bearer <jwt_token>
 ```
+
+以下三类为明确例外，不得据此放宽其他接口：
+
+| 类型 | 接口 | 规则 |
+| --- | --- | --- |
+| 匿名 | `GET /formulas/{id}`、`GET /formulas/tags`、`/guest/practice/*` | 不读取身份，只返回公共内容 |
+| 可选身份 | `GET /formulas/catalog`、`GET /formulas`、`GET /formulas/random/next` | 无 Header 按匿名返回；携带 Header 时完整校验，无效凭据返回 401，不降级为匿名 |
+| 登录入口 | `POST /auth/login`、`POST /auth/refresh` | 使用微信 code / refresh token，不使用用户 JWT |
+
+收藏列表、收藏增删、个人学习数据和正式练习提交继续要求有效用户身份。匿名请求带 `favorite_only=true` 时返回空列表，不能读取他人收藏。
 
 ---
 
@@ -1286,6 +1298,25 @@ AI 错因分析。
 `GET /formulas/catalog` 新增可选查询参数 `subject_code`。不传该参数时保持原有完整目录响应；传 `math` 时只返回聚合后的“数学”根节点。该逻辑根节点使用保留的合成 `id=0`，子章节继续返回真实数据库 category id。按公式 ID 获取详情不依赖 `subject_code`，无需改变。
 
 > 2026-09-29 更新原因：新增公式逻辑学科 `math`，统一聚合初等数学与高等数学查询范围。
+
+---
+
+## 游客体验
+
+用户端前缀 `/api/v1/guest/practice`，用于审核整改要求的“先浏览体验，再自主登录”。完整字段、判分规则和验证状态见 [[docs/api/GUEST_EXPERIENCE_API.md|GUEST_EXPERIENCE_API]]。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/guest/practice/subjects` | 只返回存在可体验题目的科目树，节点带 `trial_question_count` |
+| GET | `/guest/practice/questions?subject_id=` | 随机取最多 5 道已审核、启用且版本有效的真实题目，返回题干/选项和 24 小时签名批次 |
+| POST | `/guest/practice/evaluate` | 只判批次内题目；客观题复用现有规则，主观题返回参考答案自查 |
+
+约束：
+
+- 批次凭据独立签名（用途 `memograd:guest-practice-batch:v1`），绑定题目与不可变版本，24 小时固定有效，不能用于正式提交。
+- 不创建游客账号，不写入练习记录、错题、复习、掌握度、成长或正式预留，不调用 AI。
+- 不返回答案与解析（判分前）、导入原文、来源文件或管理字段。
+- 三个端点按客户端 IP 限流 120 次/分钟；超限 429，缓存不可用 503。
 
 ---
 

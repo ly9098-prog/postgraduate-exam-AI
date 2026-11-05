@@ -10,13 +10,14 @@ const REVIEW = '/subpackages/study/review-today/review-today?autostart=1'
 const POMODORO = '/pages/pomodoro/pomodoro'
 const TIMEOUT_MS = 1500
 const DEFAULT_ENTRY_SCENES = new Set([1001, 1005, 1006, 1017, 1023, 1027, 1089, 1090, 1103, 1104])
+const DEFAULT_ENTRY_PATHS = new Set(['pages/home/home', 'pages/login/login'])
 let coldEntryHandled = false
 let consumedAuthInvalidationSeq = 0
 
 function isDefaultEntry(entry) {
   if (!entry) return false
   const path = String(entry.path || '').replace(/^\//, '')
-  if (path && path !== 'pages/login/login') return false
+  if (path && !DEFAULT_ENTRY_PATHS.has(path)) return false
   if (Object.keys(entry.query || {}).length) return false
   return entry.scene == null || DEFAULT_ENTRY_SCENES.has(Number(entry.scene))
 }

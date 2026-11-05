@@ -134,6 +134,47 @@ test('api client exports keep their names and order', () => {
   ])
 })
 
+test('anonymous 401 never refreshes or clears an existing account session', async () => {
+  reset(authed(), {
+    routes: { 'GET /guest/practice/subjects': { statusCode: 401, data: {}, header: {} } },
+  })
+  await assert.rejects(api.get('/guest/practice/subjects', {}, { auth: 'none' }))
+  assert.deepEqual(calls.requests.map(call => call.url), ['/guest/practice/subjects'])
+  assert.equal(memory.get('token'), 'token-1')
+})
+
+test('optional authentication is restricted to public reads', async () => {
+  reset()
+  await assert.rejects(api.post('/formulas/1/favorite', {}, { auth: 'optional' }),
+    error => error.code === 'AUTH_REQUIRED')
+  assert.equal(calls.requests.length, 0)
+})
+
+test('optional read network failure after refresh never clears the session', async () => {
+  reset(authed(), {
+    routes: { 'POST /auth/refresh': { statusCode: 200, data: {
+      access_token: 'renewed', expires_at: Math.floor(Date.now() / 1000) + 86400,
+    }, header: {} } },
+    queues: { 'GET /formulas': [
+      { statusCode: 401, data: {}, header: {} },
+    ] },
+  })
+  const originalRequest = global.wx.request
+  let reads = 0
+  global.wx.request = options => {
+    if (normalizeUrl(options.url) === '/formulas' && ++reads > 1) {
+      options.fail({ errMsg: 'network' })
+    } else originalRequest(options)
+  }
+  try {
+    await assert.rejects(api.get('/formulas', {}, { auth: 'optional' }))
+    assert.equal(memory.get('token'), 'renewed')
+    assert.equal(reads, 2)
+  } finally {
+    global.wx.request = originalRequest
+  }
+})
+
 test('ApiError keeps message, code, status and correlation fallbacks', () => {
   const error = new api.ApiError('安全文案', { code: 'VALIDATION_ERROR', statusCode: 422, raw: { x: 1 } })
   assert.ok(error instanceof Error)
@@ -204,7 +245,7 @@ test('request keeps auth headers, trace propagation and 401 retry order', async 
   assert.deepEqual(memory.get('user'), { id: 9 })
 })
 
-test('request maps errors, toasts and auth redirect only once', async () => {
+test('request maps errors and never forces a login redirect', async () => {
   reset({ token: 'token-1', token_expires_at: Math.floor(Date.now() / 1000) + 86400 }, {
     routes: {
       'GET /wrong-book': { statusCode: 403, data: {
@@ -238,18 +279,38 @@ test('request maps errors, toasts and auth redirect only once', async () => {
     routes: { 'GET /secret': { statusCode: 401, data: { error: { code: 'TOKEN_EXPIRED' } }, header: {} } },
   })
   await assert.rejects(api.get('/secret'), error => error.code === 'AUTH_REQUIRED')
-  assert.equal(calls.relaunches.length, 1)
-  assert.deepEqual(calls.relaunches[0], { url: '/pages/login/login' })
+  assert.equal(calls.relaunches.length, 0)
   assert.equal(memory.has('token'), false)
   assert.equal(memory.get('privacy_acceptance'), 'accepted')
   await assert.rejects(api.get('/secret'), error => error.code === 'AUTH_REQUIRED')
-  // Without a stored token the client fails fast and does not redirect again.
-  assert.equal(calls.relaunches.length, 1)
+  // Without a stored token the client fails fast and stays on the current page.
+  assert.equal(calls.relaunches.length, 0)
   api.resetRedirecting()
   memory.set('token', 'token-1')
   memory.set('token_expires_at', Math.floor(Date.now() / 1000) + 86400)
   await assert.rejects(api.get('/secret'), error => error.code === 'AUTH_REQUIRED')
-  assert.equal(calls.relaunches.length, 2)
+  // Login is an explicit, cancellable user action now; requests never navigate.
+  assert.equal(calls.relaunches.length, 0)
+})
+
+test('anonymous and optional reads work without a session', async () => {
+  reset({})
+  const anonymous = await api.get('/public', {}, { auth: 'none' })
+  assert.deepEqual(anonymous, { ok: true })
+  assert.equal(calls.requests[0].header.Authorization, undefined)
+
+  reset(
+    { token: 'expired', token_expires_at: Math.floor(Date.now() / 1000) + 86400 },
+    { queues: { 'GET /public': [
+      { statusCode: 401, data: {}, header: {} },
+      { statusCode: 200, data: { ok: true }, header: {} },
+    ] } },
+  )
+  const optional = await api.get('/public', {}, { auth: 'optional' })
+  assert.deepEqual(optional, { ok: true })
+  assert.equal(calls.requests.length, 2)
+  assert.equal(calls.requests[1].header.Authorization, undefined)
+  assert.equal(memory.has('token'), false)
 })
 
 test('request preserves only the structured availability detail for disabled AI', async () => {
@@ -399,10 +460,11 @@ test('HTTP second 401 is returned as an error without another refresh', async ()
     ] },
   })
   await assert.rejects(api.get('/protected'), error =>
-    error.statusCode === 401 && error.code === 'STILL_UNAUTHORIZED')
+    error.statusCode === 401 && error.code === 'AUTH_REQUIRED')
   assert.deepEqual(calls.requests.map(call => call.url), [
     '/protected', '/auth/refresh', '/protected',
   ])
+  assert.equal(memory.has('token'), false)
 })
 
 test('proactive refresh retries one network failure then blocks the HTTP request', async () => {
@@ -624,6 +686,26 @@ test('late login completion commits consent before the destroyed page returns', 
     assert.equal(memory.get('privacy_acceptance').privacy_version, '1.1')
     assert.equal(memory.get('privacy_acceptance').accepted_items.length, 3)
     assert.equal(calls.relaunches.length, 0)
+    assert.equal(page._homeRedirectTimer, null)
+  } finally {
+    wx.login = originalLogin
+  }
+})
+
+test('cancelling login before wx.login finishes does not create or persist a session', async () => {
+  reset()
+  const originalLogin = wx.login
+  let completeLogin
+  wx.login = () => new Promise(resolve => { completeLogin = resolve })
+  try {
+    const page = loginPage()
+    const completion = page.onWechatLogin()
+    page.onGuestBrowse()
+    completeLogin({ code: 'test-wechat-code' })
+    await completion
+    assert.equal(memory.has('token'), false)
+    assert.equal(memory.has('privacy_acceptance'), false)
+    assert.equal(calls.requests.length, 0)
     assert.equal(page._homeRedirectTimer, null)
   } finally {
     wx.login = originalLogin

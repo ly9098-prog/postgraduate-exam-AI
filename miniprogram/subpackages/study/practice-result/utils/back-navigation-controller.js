@@ -4,7 +4,17 @@
 function createBackNavigationController(options) {
   return {
     back: backImpl.bind(null, options),
+    repeatGuest: repeatGuestImpl.bind(null, options),
   }
+}
+
+function repeatGuestImpl(options) {
+  if (options.getNavigationLocked()) return
+  options.setNavigationLocked(true)
+  options.redirectTo({
+    url: '/subpackages/study/practice/practice?guest=1',
+    fail: () => options.setNavigationLocked(false),
+  })
 }
 
 function backImpl(options) {

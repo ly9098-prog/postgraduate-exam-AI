@@ -1,5 +1,6 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
+const loginGate = require('../../../utils/login-gate')
 const formulaContent = require('../utils/formula-content')
 const Parser = require('../utils/mp-html-parser')
 const LatexPlugin = require('../utils/katex/index')
@@ -282,7 +283,7 @@ Page({
       if (Object.keys(params).length) {
         url += '?' + Object.keys(params).map(function(k) { return k + '=' + encodeURIComponent(params[k]) }).join('&')
       }
-      const data = await api.request('GET', url)
+      const data = await api.request('GET', url, {}, { auth: 'optional' })
       if (!this._pageAlive || requestVersion !== this._catalogRequestVersion) return
       const catalog = this.normalizeCatalog(data?.items || [])
       const currentCode = this.data.activeSubject || DEFAULT_FORMULA_SUBJECT
@@ -334,7 +335,7 @@ Page({
     if (!this._pageAlive) return
     const requestVersion = ++this._tagsRequestVersion
     try {
-      const data = await api.request('GET', '/formulas/tags')
+      const data = await api.request('GET', '/formulas/tags', {}, { auth: 'optional' })
       if (!this._pageAlive || requestVersion !== this._tagsRequestVersion) return
       this.setData({ tags: data?.items || [] }, () => {
         this._syncTagFlags()
@@ -697,7 +698,10 @@ Page({
   async _fetchFormulaPages(baseParams, pageSize, activeLibraryType) {
     var requestPage = this.data.page, responseData = null, rawItems = [], items = [], attempts = 0
     do {
-      responseData = await api.request("GET", "/formulas", Object.assign({}, baseParams, { page: requestPage }))
+      responseData = await api.request(
+        'GET', '/formulas', Object.assign({}, baseParams, { page: requestPage }),
+        { auth: 'optional' },
+      )
       rawItems = (responseData && responseData.items) || []
       var decorated = this.decorateFormulaItems(rawItems)
       items = filterFormulaItemsByLibraryType(decorated, activeLibraryType)
@@ -828,7 +832,7 @@ Page({
 
   async toggleFormulaFavorite(e) {
     if (!auth.isLoggedIn()) {
-      wx.showToast({ title: '请先登录', icon: 'none' })
+      loginGate.promptLogin({ content: '收藏公式需要登录。你仍然可以继续浏览其他公式。' })
       return
     }
 

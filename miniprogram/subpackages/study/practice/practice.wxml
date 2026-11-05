@@ -1,5 +1,6 @@
 <view class="page">
 <submit-confirm id="submitConfirm" theme="mint" />
+<app-dialog id="appDialog" theme="mint"></app-dialog>
 <page-container
     show="{{practiceExitGuardVisible}}"
     position="bottom"
@@ -24,9 +25,14 @@
 <view class="setup-error-card" wx:if="{{errorText}}">
 <text class="setup-error-icon">⚠</text>
 <text class="setup-error-text">{{errorText}}</text>
-<button class="setup-error-retry" bindtap="startPractice">重试</button>
+<button class="setup-error-retry" bindtap="startPractice">{{guestMode ? '重新加载科目' : '重试'}}</button>
 </view>
 <view class="setup-content" wx:if="{{!errorText}}">
+<view class="guest-notice" wx:if="{{guestNotice}}">{{guestNotice}}</view>
+<view class="guest-intro" wx:if="{{guestMode}}">
+<text class="guest-intro-title">先体验，再决定</text>
+<text class="guest-intro-desc">每组最多 5 道真题，可查看答案与解析。体验记录仅保存在本机 24 小时，不写入学习统计。</text>
+</view>
 <view class="practice-hero">
 <view class="hero-grid hero-grid-a"></view>
 <view class="hero-grid hero-grid-b"></view>
@@ -68,7 +74,7 @@
 <text>{{selectedSubjectId ? '开始本组练习' : '请先选择科目'}}</text>
 <view class="hero-start-arrow"><text class="line-icon icon-chevron-right" aria-hidden="true"></text></view>
 </button>
-<view class="hero-config" hover-class="soft-pressed" bindtap="toggleSettings">
+<view class="hero-config" hover-class="soft-pressed" bindtap="toggleSettings" wx:if="{{!guestMode}}">
 <view class="hero-config-icon"><image src="/assets/icons/practice/{{selectedMode === 'sequential' ? 'list-ordered' : (selectedMode === 'smart' ? 'target' : 'shuffle')}}.svg" mode="aspectFit" aria-hidden="true"></image></view><text class="hero-config-text">{{selectedModeLabel}} · {{count}}题 · 约{{estimatedMinutes}}分钟</text>
 <view class="hero-config-edit">
 <text>{{settingsExpanded ? '收起' : '调整'}}</text>
@@ -76,7 +82,7 @@
 </view>
 </view>
 </view>
-<view class="settings-panel" wx:if="{{settingsExpanded}}">
+<view class="settings-panel" wx:if="{{settingsExpanded && !guestMode}}">
 <view class="panel-heading">
 <view>
 <text class="panel-title">练习设置</text>
@@ -133,7 +139,7 @@
 </view>
 </view>
 </view>
-<view class="recent-section" wx:if="{{recentSubjects && recentSubjects.length > 0}}">
+<view class="recent-section" wx:if="{{!guestMode && recentSubjects && recentSubjects.length > 0}}">
 <view class="section-heading-row">
 <view>
 <text class="surface-kicker">RECENT SUBJECTS</text>
@@ -170,7 +176,7 @@
 </view>
 </scroll-view>
 </view>
-<view class="reward-strip" wx:if="{{selectedSubjectId}}">
+<view class="reward-strip" wx:if="{{!guestMode && selectedSubjectId}}">
 <view class="reward-strip-copy">
 <text class="reward-strip-title">完成本组可获得</text>
 <text class="reward-strip-desc">成长反馈会在练习结果中生成</text>
@@ -279,11 +285,12 @@
 </view>
 </view>
 </view>
-<view class="practice route-enter" wx:if="{{started && !loading}}" style="padding-top: {{statusBarHeight}}px;">
+<view class="practice route-enter {{guestMode ? 'guest-practice' : ''}}" wx:if="{{started && !loading}}" style="padding-top: {{statusBarHeight}}px;">
+<view class="guest-notice" wx:if="{{guestMode && guestNotice}}">{{guestNotice}}</view>
 <quiz-runner
       class="practice-runner"
       mode="practice"
-      title="练习"
+      title="{{guestMode ? '体验' : '练习'}}"
       subjectName="{{selectedSubjectName}}"
       questions="{{questions}}"
       currentQuestion="{{currentQuestion}}"
@@ -297,7 +304,7 @@
       submitted="{{submitted}}"
       submitting="{{submitting}}"
       showFeedback="{{false}}"
-      submitText="交卷复盘"
+      submitText="{{guestMode ? '查看结果' : '交卷复盘'}}"
       submitDisabled="{{submitted}}"
       showBackButton="{{true}}"
       customNavigation="{{true}}"
@@ -311,6 +318,10 @@
       bind:submit="doSubmit"
       bind:exit="requestExitPractice"
     />
+  <view class="guest-text-answer" wx:if="{{guestMode && needsTextAnswer}}">
+    <text class="guest-intro-desc">{{currentQuestion.question_type === 'subjective' ? '写下思路，查看结果后对照参考答案自查，不计入客观正确率。' : '输入填空答案后查看判分与解析。'}}</text>
+    <textarea value="{{textAnswer}}" bindinput="onTextAnswer" maxlength="4096" placeholder="请输入答案或解题思路" aria-label="答案或解题思路" />
+  </view>
 </view>
 <view class="loading-wrap {{!entryResolved || launchingPreset ? 'launch-loading' : ''}}" wx:if="{{!entryResolved || launchingPreset || (started && loading)}}">
 <loading-lottie

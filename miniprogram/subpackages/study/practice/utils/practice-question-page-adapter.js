@@ -6,7 +6,7 @@ return page._startPracticeControllerInstance || (
 page._startPracticeControllerInstance = createStartPracticeController({
 isLoading: () => page.data.loading,
 isSubmitting: () => page.data.submitting,
-readPendingSubmission: () => page._readPendingSubmission(),
+readPendingSubmission: () => page.data.guestMode ? null : page._readPendingSubmission(),
 offerPendingSubmissionRecovery: () => page._offerPendingSubmissionRecovery(),
 getSelectedSubjectId: () => page.data.selectedSubjectId,
 openSubjectSheet: () => page.openSubjectSheet(),
@@ -15,11 +15,15 @@ isSelectedSubjectHasChildren: () => page.data.selectedSubjectHasChildren,
 showToast: options => getPlatform().showToast(options),
 createTraceId: () => api.createTraceId(),
 setSubmittedResultPayload: value => { page._submittedResultPayload = value },
-resetSession: () => page._resetSession(),
+resetSession: () => {
+if (page.data.guestMode) coldResume.clear(page)
+page._resetSession()
+},
 setTraceId: traceId => { page._practiceSession.traceId = traceId },
-setData: patch => page.setData(patch),
+setData: patch => page.setData(page.data.guestMode
+  ? { ...patch, guestNotice: '', submitted: false } : patch),
 setUnloadGuard: enabled => page._setPracticeUnloadGuard(enabled),
-flushPendingRecentSubject: () => page._flushPendingRecentSubject(),
+flushPendingRecentSubject: () => { if (!page.data.guestMode) page._flushPendingRecentSubject() },
 loadQuestions: () => page._loadQuestions(),
 })
 )
@@ -52,7 +56,14 @@ getAnswerMap: () => page._practiceSession.answerMap,
 getQuestions: () => page.data.questions,
 isMathImageEnabled: () => config.enableMathImage,
 isDev: () => config.DEV,
-setData: (patch, cb) => { page.setData(patch, cb); coldResume.persist(page) },
+setData: (patch, cb) => {
+if (page.data.guestMode && patch.currentQuestion) {
+patch.textAnswer = page._practiceSession.answerMap[String(patch.currentQuestion.id)] || ''
+patch.needsTextAnswer = ['fill_blank', 'subjective'].includes(patch.currentQuestion.question_type)
+}
+page.setData(patch, cb)
+coldResume.persist(page)
+},
 updateComputedFields: () => page._updateComputedFields(),
 checkRenderInvariant: model => page._checkRenderInvariant(model),
 showToast: options => getPlatform().showToast(options),
@@ -157,7 +168,7 @@ function _answerInteractionController(page, dependencies) {
 const { createPracticeAnswerInteractionController, debugLog, saveDebugSnapshot, shouldDebugQuestion } = dependencies
 return page._answerInteraction || (
 page._answerInteraction = createPracticeAnswerInteractionController({
-isSubmitted: () => page.data.submitted,
+isSubmitted: () => page.data.submitted || (page.data.guestMode && page.data.submitting),
 isSubmissionLocked: () => page._isSubmissionLocked(),
 getCurrentQuestion: () => page.data.currentQuestion,
 getAnswerMap: () => page._practiceSession.answerMap,

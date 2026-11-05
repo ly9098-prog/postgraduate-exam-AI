@@ -5,11 +5,16 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import HTTPException
+import pytest_asyncio
+from fastapi import FastAPI, HTTPException
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.dialects import sqlite
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.api.v1 import formulas as api
+from app.core.database import get_db
+from app.models import formula as models
 from tests.test_api.test_formulas import _card, _category, _Db
 
 
@@ -47,6 +52,104 @@ def random_params(db, **changes):
         value.pop(key)
     value.setdefault("exclude_ids", None)
     return value
+
+
+@pytest_asyncio.fixture
+async def populated_formula_db():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as connection:
+            for model in (
+                models.FormulaCategory, models.FormulaCard, models.FormulaTag,
+                models.FormulaCardTag, models.UserFormulaFavorite,
+                models.FormulaGraphSpec, models.FormulaGraphAsset,
+            ):
+                await connection.run_sync(model.__table__.create)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            db.add(_category())
+            db.add_all([_card(), _card(id=2, content_hash="second")])
+            db.add_all([
+                models.UserFormulaFavorite(user_id=1, formula_card_id=1),
+                models.UserFormulaFavorite(user_id=2, formula_card_id=2),
+            ])
+            await db.commit()
+            yield db
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_anonymous_favorite_filter_returns_empty_list_with_public_content(
+    populated_formula_db,
+):
+    ordinary = await api.list_formulas(**params(populated_formula_db))
+    assert [item["id"] for item in ordinary["items"]] == [1, 2]
+    first_page = await api.list_formulas(
+        **params(populated_formula_db, favorite_only=True)
+    )
+    assert first_page["items"] == []
+    assert first_page["total"] == 0
+    favorites = await api.list_formulas(
+        **params(populated_formula_db, favorite_only=True, page=3, page_size=7)
+    )
+    assert favorites == {
+        "items": [], "total": 0, "page": 3, "page_size": 7, "total_pages": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_anonymous_favorite_filter_returns_empty_catalog_with_public_content(
+    populated_formula_db,
+):
+    options = dict(
+        subject_code=None, library_type=None, study_card_type=None, exam_scope=None,
+        current_user=None, db=populated_formula_db,
+    )
+    ordinary = await api.get_formula_catalog(favorite_only=False, **options)
+    assert ordinary["items"][0]["available_count"] == 2
+    assert await api.get_formula_catalog(favorite_only=True, **options) == {"items": []}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("user_id", [1, 2])
+async def test_authenticated_favorites_remain_scoped_to_the_current_user(
+    populated_formula_db, user_id,
+):
+    user = NS(id=user_id)
+    favorites = await api.list_formulas(
+        **params(populated_formula_db, favorite_only=True, current_user=user)
+    )
+    assert [item["id"] for item in favorites["items"]] == [user_id]
+    catalog = await api.get_formula_catalog(
+        subject_code=None, library_type=None, study_card_type=None, exam_scope=None,
+        current_user=user, db=populated_formula_db, favorite_only=True,
+    )
+    assert catalog["items"][0]["available_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_anonymous_favorite_http_reads_with_populated_public_content(
+    populated_formula_db,
+):
+    application = FastAPI()
+    application.include_router(api.router)
+    application.dependency_overrides[get_db] = lambda: populated_formula_db
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test",
+    ) as client:
+        ordinary = await client.get("/api/v1/formulas")
+        assert ordinary.status_code == 200
+        assert [item["id"] for item in ordinary.json()["items"]] == [1, 2]
+        filtered = await client.get("/api/v1/formulas?favorite_only=true")
+        assert filtered.status_code == 200
+        assert filtered.json() == {
+            "items": [], "total": 0, "page": 1, "page_size": 20, "total_pages": 0,
+        }
+        catalog = await client.get("/api/v1/formulas/catalog?favorite_only=true")
+        assert catalog.status_code == 200
+        assert catalog.json() == {"items": []}
+        protected = await client.get("/api/v1/formulas/favorites/list")
+        assert protected.status_code == 403
 
 
 @pytest.mark.parametrize(

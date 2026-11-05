@@ -26,9 +26,13 @@ Page({
   _pendingHomeRedirect: false,
   _homeRedirectResolving: false,
   _loginAttemptSeq: 0,
+  _loginCancelled: false,
 
-  onLoad() {
+  onLoad(options) {
     this._launchResume = createLoginResume()
+    const redirect = String((options && options.redirect) || '')
+    this._sourceUrl = /^\/(?:pages|subpackages)\/[a-zA-Z0-9/_-]+(?:\?[^#]*)?$/.test(redirect) &&
+      !redirect.startsWith('/pages/login/login') ? redirect : ''
     this._pageDestroyed = false
     // onLoad is immediately followed by onShow on first entry. Mark the page
     // visible now so a direct-login redirect can be scheduled without relying
@@ -40,11 +44,14 @@ Page({
     // acceptance. Restore that state into the checkbox so returning users are
     // not asked to consent again after a token refresh/login boundary.
     const agreed = privacy.hasAcceptedCurrentPrivacy()
+    this._returnOnSuccess = this._hasReturnTarget()
     this.setData({ agreed, entryPending: auth.isLoggedIn() && agreed })
 
     // 同步检查：token 有效且协议已同意时延迟跳转
     if (this._tryDirectRedirect()) return
-    this._autoLogin()
+    // No stored session: show the login form. wx.login is only called from an
+    // explicit tap so first-time visitors can browse the home page instead.
+    this._safeSetData({ entryPending: false })
   },
 
   onShow() {
@@ -70,6 +77,15 @@ Page({
   _safeSetData(data, callback) {
     if (this._pageDestroyed) return
     this.setData(data, callback)
+  },
+
+  _hasReturnTarget() {
+    try {
+      const pages = getCurrentPages()
+      return Boolean(pages && pages.length > 1)
+    } catch (_) {
+      return false
+    }
   },
 
   _clearHomeRedirectTimer() {
@@ -107,6 +123,43 @@ Page({
     this._homeRedirectResolving = true
     const owner = resumeOwnerId()
     const attemptSeq = this._loginAttemptSeq
+    if (!await auth.checkAndRefreshToken()) {
+      this._homeRedirectResolving = false
+      this._pendingHomeRedirect = false
+      this._safeSetData({ entryPending: false })
+      return
+    }
+    if (this._pageDestroyed || !this._pageVisible) {
+      this._homeRedirectResolving = false
+      return
+    }
+    if (owner !== resumeOwnerId() || attemptSeq !== this._loginAttemptSeq ||
+      !auth.isLoggedIn() || !privacy.hasAcceptedCurrentPrivacy()) {
+      this._homeRedirectResolving = false
+      this._pendingHomeRedirect = false
+      this._safeSetData({ entryPending: false })
+      return
+    }
+    if (this._returnOnSuccess && this._hasReturnTarget()) {
+      // Arrived from a page's cancellable login prompt: return there instead of
+      // replaying the write action the user originally attempted.
+      this._pendingHomeRedirect = false
+      this._homeRedirectResolving = false
+      this._safeSetData({ entryPending: false })
+      wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
+      return
+    }
+    if (this._sourceUrl) {
+      this._pendingHomeRedirect = false
+      this._homeRedirectResolving = false
+      wx.reLaunch({
+        url: this._sourceUrl,
+        fail: () => this._safeSetData({
+          entryPending: false, loading: false, error: '返回页面失败，可暂不登录返回首页',
+        }),
+      })
+      return
+    }
     let target
     try {
       target = await this._launchResume.resolve()
@@ -196,79 +249,21 @@ Page({
     return fallback || '登录失败，请稍后重试'
   },
 
-  /**
-   * 自动登录（async 链路）
-   * Phase 1 — 有持久化 token → checkAndRefreshToken 成功后跳转
-   * Phase 2 — 无 token / 失效 → 静默 wx.login（最多 2 次）
-   */
-  async _autoLogin() {
+  onGuestBrowse() {
     if (this._pageDestroyed) return
-    var attemptSeq = ++this._loginAttemptSeq
-    this._safeSetData({ loading: true, error: "" })
+    this._loginCancelled = true
+    this._pendingHomeRedirect = false
+    this._clearHomeRedirectTimer()
+    this._loginAttemptSeq += 1
     try {
-      if (await this._tryExistingSession(attemptSeq)) return
-    } catch (error) {
-      if (this._isCurrentAttempt(attemptSeq)) {
-        this._safeSetData({ entryPending: false, loading: false,
-          error: this._loginErrorMessage(error, '登录状态校验失败，请重试') })
+      if (this._hasReturnTarget()) {
+        wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
+      } else {
+        wx.reLaunch({ url: '/pages/home/home' })
       }
-      return
+    } catch (_) {
+      wx.reLaunch({ url: '/pages/home/home' })
     }
-    if (!this.data.agreed) { this._safeSetData({ entryPending: false, loading: false }); return }
-    await this._tryWxLoginLoop(attemptSeq)
-  },
-
-  async _tryExistingSession(attemptSeq) {
-    if (!auth.isLoggedIn()) return false
-    var ok = await auth.checkAndRefreshToken()
-    if (!this._isCurrentAttempt(attemptSeq)) return true
-    if (ok && privacy.hasAcceptedCurrentPrivacy()) {
-      this._safeSetData({ loading: false })
-      this._scheduleHomeRedirect(0)
-      return true
-    }
-    if (!auth.isLoggedIn()) { this._safeSetData({ entryPending: false, loading: false }); return true }
-    return false
-  },
-
-  async _tryWxLoginLoop(attemptSeq) {
-    var lastErr
-    for (var i = 0; i < 2; i++) {
-      if (i > 0) await new Promise(function(resolve) { setTimeout(resolve, 600) })
-      if (!this._isCurrentAttempt(attemptSeq)) return
-      try {
-        await this._performWxLoginAttempt(attemptSeq)
-        return
-      } catch (e) {
-        lastErr = e
-        if (config.DEV) console.warn("[AUTH] Phase 2 attempt " + (i + 1) + " FAILED:", (e && (e.errMsg || e.message)) || "")
-      }
-    }
-    if (!this._isCurrentAttempt(attemptSeq)) return
-    this._safeSetData({ entryPending: false, error: this._loginErrorMessage(lastErr, "自动登录失败，请点击微信登录重试"), showDevLogin: !!config.DEV, loading: false })
-  },
-
-  async _performWxLoginAttempt(attemptSeq) {
-    if (config.DEV) console.log("[AUTH] Phase 2 attempt: wx.login")
-    var loginResult = await wx.login()
-    if (!this._isCurrentAttempt(attemptSeq)) return
-    var code = loginResult && loginResult.code
-    if (!code) throw new Error("微信登录失败，请重试")
-    if (config.DEV) console.log("[AUTH] Phase 2: code received, calling POST /auth/login")
-    var data = await api.post("/auth/login", { code: code })
-    if (!this._isCurrentAttempt(attemptSeq)) return
-    if (config.DEV) console.log("[AUTH] Phase 2: login succeeded, storing token")
-    auth.loginDirect(data.access_token, data.user, data.expires_at, data.refresh_token)
-    this._savePrivacyAfterLogin()
-    api.resetRedirecting()
-    var valid = await auth.checkAndRefreshToken()
-    if (!this._isCurrentAttempt(attemptSeq)) return
-    if (!valid) {
-      storage.clearSession({ preservePrivacyAcceptance: true, includeDebugSnapshots: false })
-      throw new Error("登录状态校验失败，请重试")
-    }
-    this._safeSetData({ loading: false })
-    this._scheduleHomeRedirect(0)
   },
 
   onAgreementChange(e) {
@@ -303,9 +298,11 @@ Page({
     if (this._pageDestroyed || this.data.loading) return
     if (!this.ensureAgreementAccepted()) return
     const attemptSeq = ++this._loginAttemptSeq
+    this._loginCancelled = false
     this._safeSetData({ loading: true, error: '' })
     try {
-      await auth.wechatLogin()
+      await auth.wechatLogin({ shouldCommit: () => !this._loginCancelled })
+      if (this._loginCancelled) return
       // auth.wechatLogin commits auth first, so always finish the consent commit
       // (or roll auth back) before any lifecycle-based early return.
       this._savePrivacyAfterLogin()

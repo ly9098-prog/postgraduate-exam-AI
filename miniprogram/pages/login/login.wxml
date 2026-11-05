@@ -4,6 +4,7 @@
     <text class="entry-pending-title">正在打开学习空间</text>
     <text class="entry-pending-desc">同步你的学习进度</text>
     <view class="entry-pending-indicator" aria-hidden="true"></view>
+    <view class="guest-browse" bindtap="onGuestBrowse" aria-role="button">暂不登录，先浏览体验</view>
   </view>
 </view>
 <view wx:else class="login-root">
@@ -116,6 +117,10 @@
             <text class="agreement-link" data-type="privacy" hover-class="agreement-link-pressed" hover-start-time="20" hover-stay-time="80" bindtap="openAgreement">《隐私政策》</text>
             <text class="agreement-link" data-type="ai" hover-class="agreement-link-pressed" hover-start-time="20" hover-stay-time="80" bindtap="openAgreement">《AI免责声明》</text>
           </view>
+        </view>
+
+        <view class="guest-browse" bindtap="onGuestBrowse" hover-class="guest-browse-pressed" aria-role="button" aria-label="暂不登录，先浏览体验">
+          <text>暂不登录，先浏览体验</text>
         </view>
 
         <view wx:if="{{showDevLogin}}" class="dev-entry" hover-class="dev-entry-pressed" hover-start-time="20" hover-stay-time="80" bindtap="onDevLogin">

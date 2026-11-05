@@ -41,6 +41,8 @@ async def list_formulas(
     base_query = ports("_apply_list_filters")(
         base_query, subject_code, chapter_id, category_id, tags, q
     )
+    if favorite_only and current_user is None:
+        return ports("paginated_response")([], 0, page, page_size)
     if favorite_only and current_user:
         fav_card_ids = ports("select")(
             ports("UserFormulaFavorite").formula_card_id

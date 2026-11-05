@@ -46,7 +46,9 @@ getExpandedSubjectId: () => page.data.expandedSubjectId,
 findParentSubjectId: id => page._findParentSubjectId(id),
 subjectHasChildren: id => page._subjectHasChildren(id),
 clearLaunchOverrides: () => page._clearLaunchOverridesForManualConfig(),
-queueRememberSubject: (id, name) => page._queueRememberSubject(id, name),
+queueRememberSubject: (id, name) => {
+if (!page.data.guestMode) page._queueRememberSubject(id, name)
+},
 handleSubjectOptionTap: (id, source) => page._handleSubjectOptionTap(id, source),
 setData: (patch, callback) => page.setData(patch, callback),
 updateComputedFields: () => page._updateComputedFields(),

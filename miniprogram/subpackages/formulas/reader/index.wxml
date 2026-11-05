@@ -1,3 +1,4 @@
+<app-dialog id="appDialog" theme="mint"></app-dialog>
 <view class="fr-page">
   <premium-nav title="速记" variant="mint" bind:back="goBack" />
 

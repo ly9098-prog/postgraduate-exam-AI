@@ -10,7 +10,7 @@ from sqlalchemy import and_, func, or_, select  # noqa: F401 - live formula-libr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_optional_current_user
 from app.core.subject_scope import (
     EXAM408_FORMULA_SCOPE,  # noqa: F401 - live formula-library port
 )
@@ -187,7 +187,7 @@ async def get_formula_catalog(
     study_card_type: str | None = Query(None, alias="study_card_type"),
     favorite_only: bool = Query(False, alias="favorite_only"),
     exam_scope: str | None = Query(None, alias="exam_scope"),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the active category tree with available card counts.
@@ -292,7 +292,7 @@ async def list_formulas(
     exam_scope: str | None = Query(None, alias="exam_scope"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List published formula cards with filtering."""
@@ -378,7 +378,7 @@ async def get_random_formula(
     library_type: str | None = Query(None),
     study_card_type: str | None = Query(None, alias="study_card_type"),
     exam_scope: str | None = Query(None, alias="exam_scope"),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a random published formula card with optional filters.

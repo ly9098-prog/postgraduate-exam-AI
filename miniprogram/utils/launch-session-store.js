@@ -5,6 +5,12 @@ const { recordResumeEvent } = require('./launch-resume-diagnostics')
 const PRACTICE_PREFIX = 'practice_resume_v1:'
 const ACTIVE_PREFIX = 'study_active_v1:'
 const TTL_MS = 24 * 60 * 60 * 1000
+const GUEST_KEY = 'guest_trial_draft_v1'
+const GUEST_RESULT_KEY = 'guestPracticeResult'
+const GUEST_TYPES = new Set([
+  'single_choice', 'multiple_choice', 'true_false', 'fill_blank',
+  'multi_blank_choice', 'multi_blank_multiple_choice', 'subjective',
+])
 
 function userId() {
   const user = storage.get(storage.KEYS.USER) || {}
@@ -119,6 +125,78 @@ function readPending(now = Date.now()) {
     ['pending', 'blocked'].includes(pending.status) ? pending : null
 }
 
+function validGuest(snapshot, now) {
+  if (!snapshot || !Array.isArray(snapshot.questions) ||
+    !snapshot.questions.length || snapshot.questions.length > 5) return false
+  const ids = new Set(snapshot.questions.map(question => String(question && question.id)))
+  const answers = snapshot.answerMap
+  return Boolean(snapshot.version === 2 &&
+    typeof snapshot.batchToken === 'string' && snapshot.batchToken.trim() &&
+    Number.isFinite(snapshot.createdAt) && snapshot.createdAt > 0 && snapshot.createdAt <= now &&
+    Number.isFinite(snapshot.expiresAt) && snapshot.expiresAt > now &&
+    snapshot.expiresAt <= snapshot.createdAt + TTL_MS &&
+    snapshot.questions.every(question => question &&
+      Number.isSafeInteger(Number(question.id)) && Number(question.id) > 0 &&
+      GUEST_TYPES.has(question.question_type)) && ids.size === snapshot.questions.length &&
+    answers && typeof answers === 'object' && !Array.isArray(answers) &&
+    Object.keys(answers).every(id => ids.has(id) &&
+      typeof answers[id] === 'string' && answers[id].length <= 4096) &&
+    Number.isInteger(snapshot.currentIndex) && snapshot.currentIndex >= 0 &&
+    snapshot.currentIndex < snapshot.questions.length &&
+    Number.isFinite(snapshot.elapsedMs) && snapshot.elapsedMs >= 0 && snapshot.elapsedMs < TTL_MS)
+}
+
+function readGuest(now = Date.now()) {
+  const snapshot = storage.get(GUEST_KEY)
+  if (!snapshot) return { snapshot: null, notice: '' }
+  if (!validGuest(snapshot, now)) {
+    clearGuest()
+    return { snapshot: null, notice: '上次体验已过期或损坏，请重新取题' }
+  }
+  return { snapshot, notice: '' }
+}
+
+function saveGuest(snapshot, now = Date.now()) {
+  const value = { ...snapshot, version: 2 }
+  if (!validGuest(value, now)) return false
+  try {
+    storage.setStrict(GUEST_KEY, value)
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
+function clearGuest() {
+  storage.remove(GUEST_KEY)
+}
+
+function saveGuestResult(payload, now = Date.now()) {
+  const value = { ...payload, _guestResultVersion: 1, _createdAt: now }
+  try {
+    storage.setStrict(GUEST_RESULT_KEY, value)
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
+function readGuestResult(now = Date.now()) {
+  const value = storage.get(GUEST_RESULT_KEY)
+  if (!value || typeof value !== 'object' || value._guestResultVersion !== 1 ||
+    !Number.isFinite(value._createdAt) || value._createdAt <= 0 ||
+    now - value._createdAt >= TTL_MS) return null
+  const questions = Array.isArray(value.questions) ? value.questions : []
+  const results = Array.isArray(value.results) ? value.results : []
+  if ((!questions.length && !results.length) || questions.length > 5 || results.length > 5) return null
+  return value
+}
+
+function clearGuestResult() {
+  storage.remove(GUEST_RESULT_KEY)
+}
+
 module.exports = {
   userId, readPractice, savePractice, clearPractice, markReview, clearActive, readActive, readPending,
+  readGuest, saveGuest, clearGuest, saveGuestResult, readGuestResult, clearGuestResult,
 }

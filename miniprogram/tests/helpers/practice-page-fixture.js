@@ -40,6 +40,8 @@ function fixture(sourcePath = process.env.PRACTICE_PAGE_SOURCE) {
       userId: () => '', persist() {}, restore: () => false, clear() {}, hasPending: () => false,
     },
     '../../../utils/api': api, '../../../config': config,
+    '../../../utils/launch-session-store': { saveGuestResult: () => true },
+    '../../../utils/login-gate': { promptLogin: async options => { calls.push(['login', options]); return false } },
     '../../../utils/debug': { debugLog() {}, saveDebugSnapshot() {}, shouldDebugQuestion: () => false },
     '../utils/stem-render': { setRenderGuardPage: name => calls.push(['guard', name]), resetRenderGuard: () => calls.push(['resetGuard']) },
     '../utils/question-runner-adapter': {}, '../utils/question-image-cache': {},

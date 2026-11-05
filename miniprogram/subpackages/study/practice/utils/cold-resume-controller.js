@@ -8,7 +8,7 @@ const { recordResumeEvent } = require('../../../../utils/launch-resume-diagnosti
 const SESSION_FIELDS = [
   'traceId', 'requestId', 'recommendationRequestId', 'batchToken', 'batchMode',
   'knowledgeScope', 'startedAtMs', 'answerMap', 'answeredFlags', 'questionTimeMap',
-  'comboCount', 'correctCount',
+  'comboCount', 'correctCount', 'expiresAt',
 ]
 const VIEW_FIELDS = [
   'selectedSubjectId', 'selectedSubjectName', 'selectedSubjectHasChildren', 'expandedSubjectId',
@@ -38,7 +38,7 @@ function persist(page, clock = monotonicNow) {
   const session = page._practiceSession
   if (!session || !page.data.started || page.data.loading || page.data.submitting ||
     page.data.submitted || session.submissionSnapshot || !session.batchToken || !session.requestId) return
-  if (!ownsPage(page)) return
+  if (!page.data.guestMode && !ownsPage(page)) return
   const timing = elapsedSnapshot(session, clock)
   const current = page.data.questions[page.data.currentIndex]
   if (current && session.currentQuestionStartedMonoMs && !session._timingPauseActive &&
@@ -46,7 +46,7 @@ function persist(page, clock = monotonicNow) {
     const seconds = Math.floor(Math.max(0, timing.end - session.currentQuestionStartedMonoMs) / 1000)
     timing.questionTimeMap[current.id] = (Number(timing.questionTimeMap[current.id]) || 0) + seconds
   }
-  store.savePractice({
+  const snapshot = {
     ...pick(session, SESSION_FIELDS),
     ...pick(page.data, VIEW_FIELDS),
     launch: pick(page, LAUNCH_FIELDS),
@@ -55,10 +55,20 @@ function persist(page, clock = monotonicNow) {
     currentIndex: page.data.currentIndex,
     elapsedMs: timing.elapsedMs,
     questionTimeMap: timing.questionTimeMap,
-  })
+  }
+  if (page.data.guestMode) {
+    const saved = store.saveGuest({
+      ...snapshot, createdAt: session.startedAtMs, expiresAt: session.expiresAt,
+    })
+    if (!saved && !page._guestSaveWarning) {
+      page._guestSaveWarning = true
+      page.setData({ guestNotice: '无法保存体验进度，离开后可能需要重新取题' })
+    }
+  } else store.savePractice(snapshot)
 }
 
 function restore(page, clock = monotonicNow) {
+  if (page.data.guestMode) return restoreGuest(page, clock)
   if (!page._coldResumeRequested) return false
   page._coldResumeRequested = false
   const snapshot = store.readPractice()
@@ -81,6 +91,23 @@ function restore(page, clock = monotonicNow) {
   return true
 }
 
+function restoreGuest(page, clock) {
+  const { snapshot, notice } = store.readGuest()
+  if (notice) page.setData({ guestNotice: notice })
+  if (!snapshot) return false
+  try {
+    applySnapshot(page, snapshot, clock)
+    page._practiceSession.expiresAt = snapshot.expiresAt
+    return true
+  } catch (_) {
+    store.clearGuest()
+    page._clearTimer()
+    page._setPracticeUnloadGuard(false)
+    page.setData({ started: false, loading: false, guestNotice: '体验进度已损坏，请重新取题' })
+    return false
+  }
+}
+
 function applySnapshot(page, snapshot, clock) {
   page._resetSession()
   const session = page._practiceSession
@@ -91,6 +118,9 @@ function applySnapshot(page, snapshot, clock) {
   session.activeStartedMonoMs = clock() - snapshot.elapsedMs || -0.001
   session.backgroundMs = 0
   session._backgroundStartedMonoMs = null
+  if (page.data.guestMode && page._visible === false) {
+    session._backgroundStartedMonoMs = clock()
+  }
   session._timingPauseActive = false
   session.elapsedSec = Math.floor(snapshot.elapsedMs / 1000)
   session.currentQuestionStartedMonoMs = 0
@@ -125,6 +155,7 @@ function ownsPage(page) {
 }
 
 function clear(page) {
+  if (page && page.data.guestMode) return store.clearGuest()
   if (!page || ownsPage(page)) store.clearPractice()
 }
 

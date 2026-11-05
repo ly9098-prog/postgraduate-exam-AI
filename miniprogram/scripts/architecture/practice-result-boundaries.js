@@ -6,7 +6,7 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 
 const PAGE_PATH = 'miniprogram/subpackages/study/practice-result/index.js'
-const PAGE_MAX_LINES = 823
+const PAGE_MAX_LINES = 870
 const MODULE_DIR = 'miniprogram/subpackages/study/practice-result/utils/'
 // Frozen dependency surface for every governed module in the result page utils
 // directory. Page-adapter modules must receive the api client and any storage
@@ -36,7 +36,7 @@ const MODULES = {
   'trend-plot-builder.js': [],
 }
 const MODULE_BUDGETS = {
-  'back-navigation-controller.js': 80,
+  'back-navigation-controller.js': 90,
   'batch-diagnosis-controller.js': 102,
   'cache-validation.js': 31,
   'format-helpers.js': 74,
@@ -53,7 +53,7 @@ const MODULE_BUDGETS = {
   'result-tips.js': 59,
   'review-408-teacher-controller.js': 75,
   'review-analysis-view.js': 171,
-  'review-item-builder.js': 89,
+  'review-item-builder.js': 95,
   'review-preview-format.js': 98,
   'route-helpers.js': 34,
   'trend-load-controller.js': 83,

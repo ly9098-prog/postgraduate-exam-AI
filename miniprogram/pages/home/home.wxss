@@ -3450,6 +3450,10 @@ page {
   flex-shrink: 0;
 }
 
+.secondary-action text {
+  white-space: nowrap;
+}
+
 .focus-metrics {
   margin: 28rpx 0 0;
   padding: 24rpx 4rpx 0;
@@ -4989,4 +4993,16 @@ page {
   .focus-title-line { padding-right: 176rpx; }
   .focus-hero-visual { right: -24rpx; top: 43rpx; width: 318rpx; height: 198rpx; }
   .focus-curve-image { right: -10rpx; top: 54rpx; width: 312rpx; height: 134rpx; }
+}
+
+.focus-guest-hint {
+  display: block;
+  margin-top: 20rpx;
+  color: #5B7461;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.focus-content-guest {
+  padding-bottom: 34rpx;
 }

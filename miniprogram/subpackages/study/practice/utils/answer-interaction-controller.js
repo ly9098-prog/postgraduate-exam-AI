@@ -9,6 +9,22 @@ function createPracticeAnswerInteractionController(options) {
     selectBlankOption(e) {
       return selectBlankOptionImpl(options, e)
     },
+    inputText(e) {
+      if (options.isSubmitted() || options.isSubmissionLocked()) return
+      const question = options.getCurrentQuestion()
+      if (!question || !['fill_blank', 'subjective'].includes(question.question_type)) return
+      const value = String(e.detail.value || '').slice(0, 4096)
+      const map = { ...options.getAnswerMap(), [question.id]: value }
+      const flags = adapter.buildAnsweredFlags(options.getQuestions(), map, 'id')
+      options.setAnswerMap(map)
+      options.setAnsweredFlags(flags)
+      options.setData({
+        textAnswer: value,
+        [`questions[${options.getCurrentIndex()}]._answered`]: Boolean(flags[question.id]),
+        answeredCount: adapter.countAnswered(flags),
+      })
+      options.updateComputedFields()
+    },
   }
 }
 

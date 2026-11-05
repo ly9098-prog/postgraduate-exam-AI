@@ -11,6 +11,7 @@ from app.api.v1.cache import router as cache_router
 from app.api.v1.exams import router as exams_router
 from app.api.v1.exports import router as exports_router
 from app.api.v1.formulas import router as formulas_router
+from app.api.v1.guest import router as guest_router
 from app.api.v1.health import router as health_router
 from app.api.v1.imports import router as imports_router
 from app.api.v1.knowledge_map import router as knowledge_map_router
@@ -60,5 +61,6 @@ public_api_router.include_router(adaptive_learning_router)
 public_api_router.include_router(exports_router)
 public_api_router.include_router(exams_router)
 public_api_router.include_router(formulas_router)
+public_api_router.include_router(guest_router)
 
 __all__ = ["public_api_router"]

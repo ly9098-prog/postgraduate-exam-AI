@@ -33,6 +33,15 @@ async function handleError(options, submission, error) {
   const persisted = options.persistPendingSubmission(submission, 'pending', '')
   submission.pendingPersisted = persisted || submission.pendingPersisted
   options.setUnloadGuard(true, '交卷仍在确认中。')
+  if (error && (error.code === 'AUTH_REQUIRED' || Number(error.statusCode) === 401)) {
+    await options.promptLogin({
+      title: '重新登录后交卷',
+      content: submission.pendingPersisted
+        ? '登录已失效，交卷进度已保存。请重新登录后手动重试交卷，也可以暂不登录。'
+        : '登录已失效，未能保存交卷进度。可暂不登录并保留当前页面，重新登录后请手动重试交卷。',
+    })
+    return false
+  }
   await options.showConfirm({
     scenario: 'info',
     title: '交卷结果未确认',

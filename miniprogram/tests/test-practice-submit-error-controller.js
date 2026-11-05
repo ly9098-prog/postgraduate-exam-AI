@@ -10,6 +10,7 @@ function harness(overrides = {}) {
     views: [],
     errors: [],
     confirms: [],
+    loginPrompts: [],
     persisted: [],
     guards: [],
   }
@@ -30,6 +31,7 @@ function harness(overrides = {}) {
     setUnloadGuard: (enabled, message) => state.guards.push({ enabled, message }),
     resolveRejectMessage: code => ({ title: 'title-' + code, content: 'content-' + code }),
     showConfirm: async options => { state.confirms.push(options) },
+    promptLogin: async options => { state.loginPrompts.push(options); return false },
     ...overrides,
   }
   return { options, state, submission, get controller() { return createSubmitErrorController(options) } }
@@ -80,4 +82,41 @@ test('stops silently when the page is no longer alive', async () => {
   assert.equal(h.state.views.length, 0)
   assert.equal(h.state.persisted.length, 0)
   assert.equal(h.state.confirms.length, 0)
+  assert.equal(h.state.loginPrompts.length, 0)
+})
+
+for (const error of [{ code: 'AUTH_REQUIRED' }, { statusCode: 401 }]) {
+  for (const confirmed of [false, true]) {
+    test(`authentication failure offers cancellable login and keeps pending submission (${JSON.stringify(error)}, ${confirmed})`, async () => {
+      const h = harness()
+      h.options.promptLogin = async options => {
+        h.state.loginPrompts.push(options)
+        return confirmed
+      }
+      h.state.persistResult = true
+      const answers = [{ question_id: 1, user_answer: 'A' }]
+      Object.assign(h.submission, { requestId: 'fixed', batchToken: 'batch', answers })
+      assert.equal(await h.controller.handle(h.submission, error), false)
+      assert.equal(h.state.loginPrompts.length, 1)
+      assert.match(h.state.loginPrompts[0].content, /重新登录/)
+      assert.match(h.state.loginPrompts[0].content, /手动/)
+      assert.equal(h.state.confirms.length, 0)
+      assert.equal(h.state.persisted[0].status, 'pending')
+      assert.equal(h.submission.pendingPersisted, true)
+      assert.equal(h.submission.retryBlocked, false)
+      assert.equal(h.submission.requestId, 'fixed')
+      assert.equal(h.submission.answers, answers)
+      assert.deepEqual(h.state.views, [{ submitting: false }])
+      assert.equal(h.state.guards[0].enabled, true)
+    })
+  }
+}
+
+test('authentication failure reports when progress could not be saved', async () => {
+  const h = harness()
+  h.state.persistResult = false
+  await h.controller.handle(h.submission, { code: 'AUTH_REQUIRED' })
+  assert.equal(h.state.loginPrompts.length, 1)
+  assert.match(h.state.loginPrompts[0].content, /未能保存/)
+  assert.match(h.state.loginPrompts[0].content, /暂不登录/)
 })

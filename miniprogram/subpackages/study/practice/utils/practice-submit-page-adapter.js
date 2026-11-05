@@ -114,7 +114,7 @@ openSubmittedResult: (resultUrl, submission) => page._openSubmittedResult(result
 }
 
 function _submitErrorController(page, dependencies) {
-const { createSubmitErrorController, getConsole, isDeterministicReject, resolveRejectMessage } = dependencies
+const { createSubmitErrorController, getConsole, isDeterministicReject, resolveRejectMessage, promptLogin } = dependencies
 return page._submitError || (
 page._submitError = createSubmitErrorController({
 isPageAlive: () => page._pageAlive,
@@ -125,6 +125,7 @@ isDeterministicReject,
 persistPendingSubmission: (submission, status, resultUrl) => page._persistPendingSubmission(submission, status, resultUrl),
 setUnloadGuard: (enabled, message) => page._setPracticeUnloadGuard(enabled, message),
 resolveRejectMessage,
+promptLogin,
 showConfirm: options => page._showSubmitConfirm(options),
 })
 )
@@ -173,4 +174,68 @@ setUnloadGuard: (enabled, message) => page._setPracticeUnloadGuard(enabled, mess
 )
 }
 
-module.exports = { _pendingSubmissionController, _submittedResultController, _submitFlowController, _submitSuccessController, _submitErrorController, _submitEntryController }
+async function evaluateGuest(page, api, platform, saveGuestResult) {
+  if (page.data.submitting || page.data.submitted || !page.data.questions.length) return
+  const session = page._practiceSession
+  if (Date.now() >= session.expiresAt) return resetGuest(page, '本次体验已过期，请重新取题')
+  const answers = Object.entries(session.answerMap).map(([id, answer]) => ({
+    question_id: Number(id), user_answer: answer,
+  }))
+  page.setData({ submitting: true })
+  try {
+    const result = await api.post('/guest/practice/evaluate', {
+      batch_token: session.batchToken, answers,
+    }, { auth: 'none' })
+    if (!page._pageAlive || page._practiceSession !== session) return
+    const items = (result.items || []).map((item, index) => ({
+      ...item, index: index + 1,
+      status: item.reference_only ? 'partial'
+        : (!item.user_answer ? 'skipped' : (item.is_correct === true ? 'correct' : 'wrong')),
+    }))
+    const payload = {
+      questions: page.data.questions,
+      results: items,
+      subject_name: page.data.selectedSubjectName,
+      subject_id: page.data.selectedSubjectId,
+      used_time: page._practiceSession.elapsedSec,
+      total: page.data.questions.length,
+      total_correct: result.objective_correct,
+      total_wrong: result.objective_incorrect,
+      total_skipped: result.skipped_total,
+      total_partial: result.subjective_total,
+      accuracy: result.objective_total
+        ? Math.round(result.objective_correct / result.objective_total * 100) : 0,
+      guest_mode: true,
+    }
+    if (!completeGuestResult(page, payload, platform, saveGuestResult)) return
+    page._clearTimer()
+    coldResume.clear(page)
+    page._setPracticeUnloadGuard(false)
+  } catch (error) {
+    if (!page._pageAlive || page._practiceSession !== session) return
+    page.setData({ submitting: false })
+    if (error && error.statusCode === 400) {
+      resetGuest(page, '本次体验批次已失效，请重新取题')
+    } else platform.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+  }
+}
+
+function completeGuestResult(page, payload, platform, saveGuestResult) {
+  if (!saveGuestResult(payload)) {
+    page.setData({ submitting: false })
+    platform.showToast({ title: '无法保存体验结果，请检查存储空间后重试', icon: 'none' })
+    return false
+  }
+  page.setData({ submitting: false })
+  platform.redirectTo({ url: '/subpackages/study/practice-result/index?guest=1' })
+  return true
+}
+
+function resetGuest(page, notice) {
+  page._clearTimer()
+  page._resetPracticeStateAfterExit()
+  page.setData({ guestNotice: notice || '' })
+  if (!page.data.subjectTree.length) page.loadPracticeSubjects()
+}
+
+module.exports = { _pendingSubmissionController, _submittedResultController, _submitFlowController, _submitSuccessController, _submitErrorController, _submitEntryController, evaluateGuest, resetGuest }

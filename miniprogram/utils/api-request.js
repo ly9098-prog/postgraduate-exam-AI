@@ -7,17 +7,39 @@ const { generateCorrelationId: _generateCorrelationId,
 const { rawRequest: _rawRequest } = require('./api-transport')
 const { updateServerClock: _updateServerClock } = require('./api-clock')
 const { ensureValidToken, forceRefreshToken, buildHeader: _buildHeader,
-  skipProactiveRefresh: _skipProactiveRefresh } = require('./api-auth')
+  skipProactiveRefresh: _skipProactiveRefresh,
+  clearAuthAndRedirect: _clearAuthAndRedirect,
+  hasStoredToken: _hasStoredToken } = require('./api-auth')
 const { debugLog, saveDebugSnapshot } = require('./debug')
 
-async function _ensureRequestAuth(url, traceId) {
+const AUTH_REQUIRED = 'required'
+const AUTH_OPTIONAL = 'optional'
+const AUTH_NONE = 'none'
+
+function _authMode(options, method) {
+  const mode = options && options.auth
+  if (mode === AUTH_NONE) return mode
+  if (mode === AUTH_OPTIONAL && String(method).toUpperCase() === 'GET') return mode
+  return AUTH_REQUIRED
+}
+
+function _anonymousHeader(header) {
+  const next = Object.assign({}, header)
+  delete next.Authorization
+  return next
+}
+
+async function _ensureRequestAuth(url, traceId, authMode) {
+  if (authMode === AUTH_NONE) return
   if (_skipProactiveRefresh(url)) return
+  if (authMode === AUTH_OPTIONAL && !_hasStoredToken()) return
   const valid = await ensureValidToken(traceId)
   // ensureValidToken 两次重试后仍然失败 → 阻止本次请求
   // 注意：不检查 storage.get(KEYS.TOKEN)，因为 _refreshToken 失败时已调用
   // _clearAuthAndRedirect 清除了本地 token。即使 token 一开始就不存在，
   // 也应抛出错误避免发送无鉴权请求。
   if (!valid) {
+    if (authMode === AUTH_OPTIONAL) return
     throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401, traceId })
   }
 }
@@ -51,6 +73,34 @@ async function _retryAfterUnauthorized(context, requestId) {
   const nextRequestId = _generateCorrelationId('req')
   header['X-Request-ID'] = nextRequestId
   return _attemptRequest(method, url, payload, header, timeout, traceId, nextRequestId, options)
+}
+
+async function _retryOptionalAuth(context) {
+  const { method, url, payload, header, timeout, traceId, options } = context
+  let newToken
+  try {
+    newToken = await forceRefreshToken(traceId)
+  } catch (_) {
+    _clearAuthAndRedirect()
+  }
+  const nextRequestId = _generateCorrelationId('req')
+  const nextHeader = newToken
+    ? Object.assign({}, header, { Authorization: `Bearer ${newToken}` })
+    : _anonymousHeader(header)
+  nextHeader['X-Request-ID'] = nextRequestId
+  let attempt = await _attemptRequest(
+    method, url, payload, nextHeader, timeout, traceId, nextRequestId, options,
+  )
+  if (newToken && attempt.res.statusCode === 401) {
+    _clearAuthAndRedirect()
+    const anonymousRequestId = _generateCorrelationId('req')
+    const anonymousHeader = _anonymousHeader(nextHeader)
+    anonymousHeader['X-Request-ID'] = anonymousRequestId
+    attempt = await _attemptRequest(
+      method, url, payload, anonymousHeader, timeout, traceId, anonymousRequestId, options,
+    )
+  }
+  return attempt
 }
 
 function _finishRequest(context) {
@@ -117,16 +167,25 @@ async function request(method, url, data = {}, options = {}) {
   const traceId = _normalizeCorrelationId(_extractTraceId(data), 'tr')
   const payload = _stripTraceId(data)
   const timeout = options.timeout || 0
+  const authMode = _authMode(options, method)
 
-  await _ensureRequestAuth(url, traceId)
+  await _ensureRequestAuth(url, traceId, authMode)
 
   let requestId = _generateCorrelationId('req')
-  const header = _buildHeader(traceId, requestId)
+  const header = authMode === AUTH_NONE
+    ? _anonymousHeader(_buildHeader(traceId, requestId))
+    : _buildHeader(traceId, requestId)
   let attempt = await _attemptRequest(method, url, payload, header, timeout, traceId, requestId, options)
-  if (attempt.res.statusCode === 401) {
-    attempt = await _retryAfterUnauthorized(
-      { method, url, payload, header, timeout, traceId, options }, requestId)
+  if (attempt.res.statusCode === 401 && authMode !== AUTH_NONE) {
+    const context = { method, url, payload, header, timeout, traceId, options }
+    attempt = authMode === AUTH_REQUIRED
+      ? await _retryAfterUnauthorized(context, requestId)
+      : await _retryOptionalAuth(context)
     requestId = attempt.requestId
+  }
+  if (attempt.res.statusCode === 401 && authMode === AUTH_REQUIRED) {
+    _clearAuthAndRedirect()
+    throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401, traceId })
   }
   return _finishRequest({ method, url, traceId, requestId, attempt })
 }

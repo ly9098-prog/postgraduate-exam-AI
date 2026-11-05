@@ -8,7 +8,10 @@ const path = require('path')
 
 const MAX_PACKAGE_BYTES = 1.4 * 1024 * 1024
 // Leave room for the expansion observed in the study package's DevTools compilation.
-const SOURCE_PACKAGE_LIMITS = { 'subpackages/study': 1.45 * 1024 * 1024 }
+// 2026-11-05: guest mode reuses subpackages/study/practice and practice-result; the extra
+// text-input/notice markup leaves 1484.3 KiB, under 1 KiB below the old 1.45 MiB ceiling,
+// so the ceiling is 1.50 MiB. Recorded in prompts/tasks/current_task.md.
+const SOURCE_PACKAGE_LIMITS = { 'subpackages/study': 1.5 * 1024 * 1024 }
 const MAX_MEDIA_BYTES = 190 * 1024 // DevTools checks the aggregate against 200 KiB.
 const MEDIA_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg',

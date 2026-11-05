@@ -3,6 +3,11 @@ const storage = require('../../../utils/storage')
 const growthAnimation = require('./growth-animation')
 const growthClient = require('./growth-client')
 const growthSnapshot = require('./growth-snapshot')
+const auth = require('../../../utils/auth')
+const loginGate = require('../../../utils/login-gate')
+const { createLoginResume } = require('../../../utils/launch-resume')
+const { userId } = require('../../../utils/launch-session-store')
+const { getChinaWallParts } = require('../../../utils/china-time')
 
 const { studyStrategy } = storage
 const TODAY_GOAL_TOTAL = 30
@@ -10,6 +15,112 @@ const TODAY_GOAL_KEY = 'home_today_goal_total'
 const GOAL_OPTIONS = [10, 20, 30, 50]
 
 const growthPageMethods = {
+  async _validateHomeSession() {
+    const valid = auth.isLoggedIn() && await auth.checkAndRefreshToken()
+    this._authed = Boolean(valid && auth.isLoggedIn())
+    const owner = this._authed ? userId() : ''
+    if (this._authed && this._homeOwner === owner) return
+    this._homeOwner = owner
+    this._growthSeq += 1
+    this._clearAnimTimer()
+    this._hasGrowthSnapshot = false
+    this._lastDashboardSubjectStats = []
+    this._lastOverview = {}
+    this._lastGrowth = this._lastHub = this._lastPlan = null
+    this._growthTargets = { streakDays: 0, todayGoalDone: 0, levelProgress: 0 }
+  },
+
+  _requireLogin(content) {
+    if (this._authed) return true
+    loginGate.promptLogin({
+      content: content || '该功能会保存你的学习记录。可以先浏览体验，需要时再登录。',
+    })
+    return false
+  },
+
+  openLoginFromHome() {
+    loginGate.openLogin()
+  },
+
+  startGuestTrial() {
+    wx.navigateTo({ url: '/subpackages/study/practice/practice?guest=1' })
+  },
+
+  _guestBasePatch() {
+    return {
+      guestMode: true,
+      user: {},
+      studyLevel: '游客',
+      subjectMastery: [],
+      showGoalPicker: false,
+      displayName: '同学',
+      userInitial: '研',
+      primaryTaskKicker: 'GUEST PREVIEW',
+      primaryTaskTitle: '先试做 5 道真题',
+      primaryTaskDesc: '不登录也能作答并查看解析；登录后再保存错题、复习计划和成长记录。',
+      primaryTaskAction: '开始体验',
+      secondaryTaskAction: '登录保存记录',
+      missionText: '游客体验不会写入学习记录',
+    }
+  },
+
+  async _maybeResumeColdLaunch() {
+    if (this._resumeAttempted) return
+    this._resumeAttempted = true
+    const resume = createLoginResume()
+    const owner = userId()
+    try {
+      if (!await auth.checkAndRefreshToken()) return
+      const target = await resume.resolve()
+      if (!auth.isLoggedIn() || owner !== userId()) return
+      if (!target || target === '/pages/home/home') {
+        resume.complete()
+        return
+      }
+      if (!this._alive || !this._visible) return
+      wx.reLaunch({ url: target, success: () => resume.complete() })
+    } catch (_) {
+      if (auth.isLoggedIn() && owner === userId()) resume.complete()
+    } finally {
+      this._resumeAttempted = false
+    }
+  },
+
+  getDisplayName(user) {
+    const name = user && (user.nickName || user.nickname || user.name)
+    return name ? String(name).trim().slice(0, 8) : '研友'
+  },
+
+  getUserInitial(user) {
+    const name = this.getDisplayName(user)
+    return name ? name.slice(0, 1) : '研'
+  },
+
+  getGreeting() {
+    const h = getChinaWallParts(Date.now()).hour
+    if (h < 6) return '夜深了'
+    if (h < 9) return '早上好'
+    if (h < 12) return '上午好'
+    if (h < 14) return '中午好'
+    if (h < 18) return '下午好'
+    return '晚上好'
+  },
+
+  getMotto() {
+    const h = getChinaWallParts(Date.now()).hour
+    if (h < 6) return '休息也是学习的一部分，明天再战'
+    if (h < 9) return '清晨是记忆的黄金时间'
+    if (h < 12) return '开始今天的学习计划吧'
+    if (h < 14) return '午后小憩一下，学习更高效'
+    if (h < 18) return '保持专注，坚持就是胜利'
+    return '完成今日计划，收获满满成就感'
+  },
+
+  getDateStr() {
+    const d = getChinaWallParts(Date.now())
+    const week = ['日', '一', '二', '三', '四', '五', '六']
+    return `${d.month}月${d.day}日 · 星期${week[d.weekday]}`
+  },
   async loadGrowthSnapshot(showSeq = this._showSeq) {
     if (!this._alive || !this._visible) return
     const requestSeq = ++this._growthSeq

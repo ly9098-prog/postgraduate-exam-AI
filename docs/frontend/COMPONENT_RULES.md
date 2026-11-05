@@ -94,6 +94,7 @@
 - 当前配置使用 `lazyCodeLoading: requiredComponents` 和 `ignoreDevUnusedFiles: true`；
   全局注册与组件路径由 `cd miniprogram && node tests/test-component-paths.js` 检查。
 - `app-dialog` 使用显式闭合标签（`<app-dialog ...></app-dialog>`），不使用自闭合写法。
+- 极简确认框可传 `hideIcon`、`hideAccent`、`hideEyebrow`；登录提示复用该模式，不得在页面中另写原生 `wx.showModal`。
 - 修改共享组件注册后，仍需在微信开发者工具编译并验证分包页面；
   Node 检查不代表开发者工具打包、模拟器或真机已验证。
 

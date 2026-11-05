@@ -52,6 +52,15 @@ test('session reset allocates fresh maps and a null-prototype render cache', () 
   assert.equal(f.page._practiceSession.exitGuardActive, false)
 })
 
+test('submission authentication prompt delegates to the shared cancellable login gate', async () => {
+  const f = fixture()
+  const options = f.page._submitErrorController().options
+  const prompt = { title: '重新登录', content: '手动重试交卷' }
+  assert.equal(await options.promptLogin(prompt), false)
+  assert.equal(f.calls.at(-1)[0], 'login')
+  assert.equal(f.calls.at(-1)[1], prompt)
+})
+
 test('load resets navigation/request state and configures render guard before navigation/computed hooks', () => {
   const f = fixture()
   f.page._parseLaunchPreset = () => ({ source: 'knowledge_map', autostart: true, subjectId: 1, knowledgePointId: 2 })

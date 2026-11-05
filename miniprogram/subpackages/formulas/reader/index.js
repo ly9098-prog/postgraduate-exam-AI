@@ -1,5 +1,6 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
+const loginGate = require('../../../utils/login-gate')
 const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
 const { parseServerUtc, getChinaWallParts } = require('../../../utils/china-time')
 
@@ -165,7 +166,7 @@ Page({
   },
 
   async fetchCard(formulaId) {
-    const data = await api.request('GET', `/formulas/${formulaId}`)
+    const data = await api.request('GET', `/formulas/${formulaId}`, {}, { auth: 'optional' })
     return this.enrichCard(data || {})
   },
 
@@ -267,7 +268,7 @@ Page({
     if (chapterId) params.chapter_id = chapterId
     if (!subjectCode && !chapterId) return
 
-    const data = await api.request('GET', '/formulas', params)
+    const data = await api.request('GET', '/formulas', params, { auth: 'optional' })
     if (!this._readerAlive) return
     const ids = normalizeSequence((data && data.items ? data.items : []).map((item) => item.id))
     const index = ids.findIndex((id) => sameId(id, currentId))
@@ -294,7 +295,7 @@ Page({
     var params = {}
     if (this.data.isFavorite) params.favorite_only = true
     if (this._excludeIds && this._excludeIds.length) params.exclude_ids = this._excludeIds.join(",")
-    var data = await api.request("GET", "/formulas/random/next", params)
+    var data = await api.request('GET', '/formulas/random/next', params, { auth: 'optional' })
     if (requestToken !== this._randomRequestToken) return
     var card = await this.enrichCard(data || {})
     if (requestToken !== this._randomRequestToken) return
@@ -472,7 +473,7 @@ Page({
 
   async toggleFavorite(e) {
     if (!auth.isLoggedIn()) {
-      wx.showToast({ title: '请先登录', icon: 'none' })
+      loginGate.promptLogin({ content: '收藏公式需要登录。你仍然可以继续阅读其他公式。' })
       return
     }
 

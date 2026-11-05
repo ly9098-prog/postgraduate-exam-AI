@@ -44,7 +44,8 @@ try {
   assert.equal(summary.media.length, 2, 'explicitly excluded media must not be counted')
   assert.throws(() => checkBudgets(summary), /Aggregate media budget exceeded/)
   assert.throws(() => checkBudgets({ packages: { __APP__: { bytes: 2 * 1024 * 1024 } }, media: [], mediaBytes: 0 }), /Source package budget/)
-  assert.throws(() => checkBudgets({ packages: { 'subpackages/study': { bytes: 1.5 * 1024 * 1024 } }, media: [], mediaBytes: 0 }), /Source package budget/)
+  // Synthetic value stays above the current study ceiling (1.5 MiB).
+  assert.throws(() => checkBudgets({ packages: { 'subpackages/study': { bytes: 1.6 * 1024 * 1024 } }, media: [], mediaBytes: 0 }), /Source package budget/)
   assert.throws(() => collectPackageSizes(fixture, appConfig, { packOptions: { include: [{ type: 'file', value: 'app.js' }] } }), /include rules/)
 } finally {
   // Only delete the temporary fixture created by this test.

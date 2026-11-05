@@ -8,8 +8,8 @@ const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typesc
 const PAGES = {
   'pages/home/home.js': 800,
   'pages/pomodoro/pomodoro.js': 1596,
-  'subpackages/study/practice/practice.js': 542,
-  'subpackages/study/practice-result/index.js': 823,
+  'subpackages/study/practice/practice.js': 554,
+  'subpackages/study/practice-result/index.js': 870,
   'subpackages/study/wrong-book/wrong-book.js': 478,
   'subpackages/study/wrong-detail/wrong-detail.js': 502,
   'subpackages/study/review-today/review-today.js': 645,

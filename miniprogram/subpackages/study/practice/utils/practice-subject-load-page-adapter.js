@@ -8,7 +8,12 @@ function createPracticeSubjectLoadPageController(page, dependencies) {
   return createPracticeSubjectLoadController({
     nextRequestSeq: () => ++page._subjectsRequestSeq,
     isCurrent: requestSeq => page._pageAlive && requestSeq === page._subjectsRequestSeq,
-    fetchSubjects: () => api.get('/practice/subjects'),
+    fetchSubjects: async () => {
+      if (!page.data.guestMode) return api.get('/practice/subjects')
+      page.setData({ subjectsLoadFailed: false, errorText: '' })
+      const response = await api.get('/guest/practice/subjects', {}, { auth: 'none' })
+      return response && response.items || []
+    },
     filterSubjectTree,
     normalizeSubjectTree,
     setData: patch => page.setData(patch),
@@ -32,7 +37,12 @@ function createPracticeSubjectLoadPageController(page, dependencies) {
     ),
     startPractice: () => page.startPractice(),
     logError: (message, error) => console.error(message, error),
-    showToast: options => dependencies.wx.showToast(options),
+    showToast: options => {
+      if (page.data.guestMode) {
+        page.setData({ subjectsLoadFailed: true, errorText: '加载科目失败，请重试' })
+      }
+      dependencies.wx.showToast(options)
+    },
   })
 }
 

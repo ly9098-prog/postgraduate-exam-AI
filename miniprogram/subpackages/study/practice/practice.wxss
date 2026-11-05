@@ -2,6 +2,15 @@
 .page{min-height:100vh;background-color:#F3F4F1;padding-bottom:0;overflow-x:hidden}
 .setup{min-height:100vh;padding-bottom:calc(50rpx + env(safe-area-inset-bottom))}
 .soft-pressed,.option-pressed,.recent-card-pressed{opacity:0.78;transform:scale(0.985)}
+.guest-notice{margin:18rpx 24rpx 0;padding:18rpx 24rpx;border-radius:18rpx;background:#FFF4D8;color:#6B5520;font-size:24rpx;line-height:1.5}
+.guest-intro{margin:24rpx 24rpx 0;display:flex;flex-direction:column;gap:10rpx;padding:24rpx;border-radius:24rpx;background:#EDF6E9;border:1rpx solid #D2E5CC}
+.guest-intro-title{font-size:30rpx;line-height:1.25;font-weight:900;color:#172A1C}
+.guest-intro-desc{font-size:24rpx;line-height:1.6;color:#4D6352}
+.guest-text-answer{padding:20rpx 24rpx calc(28rpx + env(safe-area-inset-bottom));background:#F3F4F1;display:flex;flex-direction:column;gap:14rpx}
+.guest-practice{display:flex;flex-direction:column}
+.guest-practice .practice-runner{height:0;flex:1}
+.guest-practice .guest-text-answer,.guest-practice .guest-notice{flex-shrink:0}
+.guest-text-answer textarea{width:100%;min-height:150rpx;padding:20rpx;box-sizing:border-box;border-radius:18rpx;background:#FFF;font-size:26rpx}
 .setup-error-card{margin:24rpx;padding:32rpx;border:2rpx solid rgba(255,80,80,0.25);border-radius:24rpx;display:flex;flex-direction:column;align-items:center;gap:16rpx}
 .setup-error-icon{font-size:48rpx;line-height:1}
 .setup-error-text{font-size:26rpx;text-align:center;line-height:1.5}

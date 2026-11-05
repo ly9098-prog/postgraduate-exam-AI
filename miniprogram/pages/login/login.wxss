@@ -715,3 +715,23 @@ page {
     transition: none !important;
   }
 }
+
+/* ── Guest browsing: login stays optional ── */
+.guest-browse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84rpx;
+  margin-top: 18rpx;
+  border-radius: 20rpx;
+  color: #46604E;
+  font-size: 26rpx;
+  font-weight: 700;
+  background: rgba(233, 240, 230, .72);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.guest-browse-pressed {
+  opacity: .72;
+  transform: scale(.99);
+}

@@ -1,18 +1,17 @@
 const auth = require('../../utils/auth')
-const { getChinaWallParts } = require('../../utils/china-time')
 const {
   GOAL_OPTIONS,
   TODAY_GOAL_TOTAL,
   growthPageMethods,
 } = require('./utils/growth-page-controller')
 const { homeCanvasMethods } = require('./utils/home-canvas')
-
 Page({
   ...growthPageMethods,
   ...homeCanvasMethods,
   _growthApi: null,
 
   data: {
+    guestMode: true,
     user: {},
     displayName: '研友',
     userInitial: '研',
@@ -90,9 +89,11 @@ Page({
   _profileDraftVersion: 0,
   _profileNicknameDraftRaw: '',
   _examRoutePending: false,
+  _resumeAttempted: false,
 
   onLoad() {
     this._alive = true
+    this.setData({ guestMode: !auth.isLoggedIn() })
     this.measureNavigation()
     this.detectRuntime()
   },
@@ -106,9 +107,11 @@ Page({
     // 重建 button/input 节点，导致头像回调丢失或 nickname 快捷填入条被卸载。
     if (this.data.showProfileSheet) return
     const showSeq = ++this._showSeq
-    this._authed = auth.isLoggedIn()
+    await this._validateHomeSession()
+    if (!this._alive || !this._visible || showSeq !== this._showSeq) return
     this._isAdmin = this._authed ? auth.isAdmin() : false
     this._applyHomeBasePatch()
+    if (this._authed) this._maybeResumeColdLaunch()
     if (!this._authed) return
     const canContinue = await this._syncHomeUser(showSeq)
     if (!canContinue) return
@@ -117,7 +120,7 @@ Page({
   },
 
   _applyHomeBasePatch() {
-    const localUser = auth.getUser() || {}
+    const localUser = this._authed ? (auth.getUser() || {}) : {}
     const basePatch = {
       user: localUser,
       displayName: this.getDisplayName(localUser),
@@ -126,7 +129,7 @@ Page({
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
     }
-    if (!this._hasGrowthSnapshot) {
+    if (!this._authed || !this._hasGrowthSnapshot) {
       Object.assign(basePatch, {
         _animStreakDays: 0,
         _animGoalDone: 0,
@@ -134,6 +137,8 @@ Page({
         ...this.getGrowthFallback(),
       })
     }
+    if (!this._authed) Object.assign(basePatch, this._guestBasePatch())
+    else basePatch.guestMode = false
     this.setData(basePatch)
   },
 
@@ -156,6 +161,7 @@ Page({
       console.error('同步用户权限失败', e)
       if (!this._alive || !this._visible || showSeq !== this._showSeq) return false
       this._authed = auth.isLoggedIn()
+      if (!this._authed) this._applyHomeBasePatch()
       return this._authed
     }
   },
@@ -176,7 +182,10 @@ Page({
   },
 
   async openProfileSheet() {
-    if (!this._authed) return
+    if (!this._authed) {
+      this._requireLogin('登录后可以设置头像和昵称，也可以先浏览体验。')
+      return
+    }
 
     // 头像和 nickname input 都属于微信隐私能力。项目自己的协议勾选只记录
     // 业务侧同意状态，并不会自动完成微信宿主侧的隐私授权。尤其是
@@ -586,43 +595,11 @@ Page({
     })
   },
 
-  getDisplayName(user) {
-    const name = user && (user.nickName || user.nickname || user.name)
-    return name ? String(name).trim().slice(0, 8) : '研友'
-  },
-
-  getUserInitial(user) {
-    const name = this.getDisplayName(user)
-    return name ? name.slice(0, 1) : '研'
-  },
-
-  getGreeting() {
-    const h = getChinaWallParts(Date.now()).hour
-    if (h < 6) return '夜深了'
-    if (h < 9) return '早上好'
-    if (h < 12) return '上午好'
-    if (h < 14) return '中午好'
-    if (h < 18) return '下午好'
-    return '晚上好'
-  },
-
-  getMotto() {
-    const h = getChinaWallParts(Date.now()).hour
-    if (h < 6) return '休息也是学习的一部分，明天再战'
-    if (h < 9) return '清晨是记忆的黄金时间'
-    if (h < 12) return '开始今天的学习计划吧'
-    if (h < 14) return '午后小憩一下，学习更高效'
-    if (h < 18) return '保持专注，坚持就是胜利'
-    return '完成今日计划，收获满满成就感'
-  },
-
-  getDateStr() {
-    const d = getChinaWallParts(Date.now())
-    const week = ['日', '一', '二', '三', '四', '五', '六']
-    return `${d.month}月${d.day}日 · 星期${week[d.weekday]}`
-  },
-
   startPrimaryTask() {
+    if (!this._authed) {
+      this.startGuestTrial()
+      return
+    }
     // Stage 8 turns the focus card into the first concrete item of today's plan.
     // The practice setup page is still shown (autostart=0), so users can inspect
     // or change the recommendation before starting. If they change its scope,
@@ -652,6 +629,11 @@ Page({
   },
 
   startSecondaryTask() {
+    if (this.data.guestMode) {
+      this.openLoginFromHome()
+      return
+    }
+    if (!this._requireLogin('学习报告需要登录后查看。你仍可以浏览公式或试做题目。')) return
     if (this.data.studyHubAvailable) {
       this.goDashboard()
       return
@@ -679,6 +661,10 @@ Page({
 
   openHubTaskByData(task) {
     if (!task) return
+    if (!this._authed) {
+      this.startGuestTrial()
+      return
+    }
     if (task.route === 'review_today') {
       this.goReview()
       return
@@ -698,13 +684,32 @@ Page({
     })
   },
 
-  startRandom() { wx.navigateTo({ url: '/subpackages/study/practice/practice' }) },
-  goWrongBook() { wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' }) },
-  goReview() { wx.navigateTo({ url: '/subpackages/study/review-today/review-today' }) },
-  goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
-  goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
+  startRandom() {
+    if (!this._authed) {
+      this.startGuestTrial()
+      return
+    }
+    wx.navigateTo({ url: '/subpackages/study/practice/practice' })
+  },
+  goWrongBook() {
+    if (!this._requireLogin('错题本会保存你的作答记录，登录后即可查看。')) return
+    wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' })
+  },
+  goReview() {
+    if (!this._requireLogin('今日复习依赖你的学习记录，登录后即可继续。')) return
+    wx.navigateTo({ url: '/subpackages/study/review-today/review-today' })
+  },
+  goDashboard() {
+    if (!this._requireLogin('学习看板会读取你的个人统计，登录后即可查看。')) return
+    wx.navigateTo({ url: '/pages/dashboard/dashboard' })
+  },
+  goPomodoro() {
+    if (!this._requireLogin('专注计时会同步你的学习记录，登录后即可使用。')) return
+    wx.navigateTo({ url: '/pages/pomodoro/pomodoro' })
+  },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
   goExams() {
+    if (!this._requireLogin('真题套卷会保存答题记录，登录后即可开始。')) return
     if (this._examRoutePending) return
     this._examRoutePending = true
     const navigate = () => this._navigateToExams()
@@ -758,10 +763,12 @@ Page({
     })
   },
   goStudyPlan() {
+    if (!this._requireLogin('学习计划需要绑定到你的账号，登录后即可设置。')) return
     if (this.data.showGoalPicker) this.setData({ showGoalPicker: false })
     wx.navigateTo({ url: '/subpackages/study/study-plan/index' })
   },
   openMasterySubject(event) {
+    if (!this._requireLogin('知识点掌握度来自你的学习记录，登录后即可查看。')) return
     const subjectId = Number(event && event.currentTarget && event.currentTarget.dataset.subjectId)
     if (!subjectId) return
     wx.navigateTo({ url: `/subpackages/knowledge/knowledge-subject/index?subject_id=${subjectId}` })

@@ -17,8 +17,12 @@ function createPracticeLifecyclePageController(page, monotonicNow) {
     settleQuestionTime: pause => page._settleQuestionTime(pause),
   })
   return {
-    show: () => controller.show(),
-    hide: () => { controller.hide(); coldResume.persist(page, monotonicNow) },
+    show: () => { page._visible = true; controller.show() },
+    hide: () => {
+      page._visible = false
+      controller.hide()
+      coldResume.persist(page, monotonicNow)
+    },
   }
 }
 

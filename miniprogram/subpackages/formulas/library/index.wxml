@@ -1,3 +1,4 @@
+<app-dialog id="appDialog" theme="mint"></app-dialog>
 <view class="fl-page">
   <premium-nav title="速记卡" variant="mint" bind:back="goBack" />
 

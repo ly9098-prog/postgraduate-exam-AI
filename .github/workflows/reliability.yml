@@ -526,6 +526,7 @@ jobs:
           node --test miniprogram/tests/test-launch-resume-diagnostics.js
           node --test miniprogram/tests/test-root-back-guard.js
           node --test miniprogram/tests/test-login-launch-resume.js
+          node --test miniprogram/tests/test-guest-experience.js
           node --test miniprogram/tests/test-practice-cold-resume.js
           node --test miniprogram/tests/test-practice-cold-resume-page.js
           node --test miniprogram/tests/test-review-active-resume.js

@@ -254,8 +254,8 @@ test('explicit paths, share/QR scenes and nonempty queries bypass cold routing',
   reset()
   const { isDefaultEntry, createLoginResume } = require(launchPath)
   assert.equal(isDefaultEntry({ path: 'pages/login/login', scene: 1001, query: {} }), true)
+  assert.equal(isDefaultEntry({ path: 'pages/home/home', scene: 1001, query: {} }), true)
   for (const entry of [
-    { path: 'pages/home/home', scene: 1001 },
     { path: 'pages/login/login', scene: 1007 },
     { path: 'pages/login/login', scene: 1011 },
     ...[1031, 1032, 1044, 1065, 1081, 1124, 1125, 1126, 1160, 1167, 1231]

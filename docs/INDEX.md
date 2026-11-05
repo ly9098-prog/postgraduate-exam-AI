@@ -69,6 +69,7 @@
 | 文档 | 作用 |
 |------|------|
 | `docs/backend/API_SPEC.md` | App API 规范 |
+| `docs/api/GUEST_EXPERIENCE_API.md` | 游客公式浏览、5题试做、24小时签名批次及自主登录/隐私边界 |
 | `docs/backend/DB_SCHEMA.md` | App 数据库 schema |
 | `docs/backend/STORAGE_DESIGN.md` | 文件 / 图片 / 存储设计 |
 | `docs/backend/SYNC_LOCAL_TO_CLOUD.md` | 本地到云端同步方案 |

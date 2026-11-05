@@ -3,6 +3,8 @@ const coldResume = require('./cold-resume-controller')
 function onLoad(page, options, dependencies) {
 const { resetRenderGuard, setRenderGuardPage } = dependencies
 page._pageAlive = true
+page._visible = true
+page.setData({ guestMode: Boolean(options && String(options.guest) === '1') })
 page._coldResumeRequested = Boolean(options && String(options.resume) === '1')
 page._coldResumeOwner = coldResume.userId()
 page._coldResumeCreatedAt = undefined
@@ -14,7 +16,7 @@ page._systemBackPromptQueued = false
 page._systemBackRearming = false
 page._systemBackRearmTimer = null
 page._returnNavigationLocked = false
-page._launchPreset = page._parseLaunchPreset(options || {})
+page._launchPreset = page.data.guestMode ? null : page._parseLaunchPreset(options || {})
 const fastKnowledgeSources = new Set(['knowledge_map', 'knowledge_diagnosis'])
 page._fastLaunchEligible = Boolean(
 page._launchPreset &&
@@ -48,6 +50,7 @@ page._exitGuardController().syncVisibility()
 function onUnload(page, dependencies) {
 const { getClearTimeout, resetRenderGuard } = dependencies
 page._pageAlive = false
+coldResume.persist(page)
 if (page._practiceSession) page._practiceSession.exitGuardActive = false
 page._exitConfirmInFlight = false
 page._systemBackPromptQueued = false
@@ -105,6 +108,11 @@ async function onReady(page, dependencies) {
 const { config, getConsole, getDate } = dependencies
 if (config.DEV) getConsole().log('[LAYER6_ONREADY]', getDate().now())
 page.setData({ enableMathImage: config.enableMathImage || false })
+if (page.data.guestMode) {
+  coldResume.restore(page)
+  await page.loadPracticeSubjects({ skipAutostart: true, preserveSelection: page.data.started })
+  return
+}
 if (page._coldResumeRequested && coldResume.hasPending()) page._coldResumeRequested = false
 const recoveryHandled = await page._offerPendingSubmissionRecovery()
 if (recoveryHandled || !page._pageAlive) {
@@ -152,13 +160,12 @@ page.setData({ statusBarHeight: 20, navBarHeight: 44 })
 }
 }
 
-function _resetPracticeStateAfterExit(page) {
-  coldResume.clear(page)
+function _resetPracticeStateAfterExit(page, preserveGuest) {
+  if (preserveGuest && page.data.guestMode) coldResume.persist(page)
+  else coldResume.clear(page)
   page._resetSession()
   page._pendingResultUrl = ''
   page._submittedResultPayload = null
-  // The runner lives inside this page. Restore its setup surface rather than
-  // popping the page back to home (or a knowledge-map launch origin).
   page._launchPreset = null
   page._fastLaunchEligible = false
   page._launchKnowledgePoint = ''
@@ -185,6 +192,7 @@ function _resetPracticeStateAfterExit(page) {
     elapsedText: '00:00',
     errorText: '',
     feedbackVisible: false,
+    guestNotice: '',
   })
 }
 

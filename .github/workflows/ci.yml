@@ -313,6 +313,9 @@ jobs:
             tests/architecture/test_document_ir_production_write_zero.py \
             tests/core/test_artifact_path_traversal.py \
             tests/test_api/test_api_router_integrity.py \
+            tests/test_api/test_guest_practice.py \
+            tests/test_services/test_guest_practice.py \
+            tests/test_services/test_guest_practice_content.py \
             tests/test_api/test_identity_boundary_matrix.py \
             tests/test_api/test_admin_acceptance_audit.py \
             tests/test_api/test_p5_ssrf_http_lifecycle.py \

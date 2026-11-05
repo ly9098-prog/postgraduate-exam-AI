@@ -94,6 +94,8 @@ async def get_formula_catalog(
         count_query = ports("_apply_library_type_filter")(count_query, library_type)
     count_query = ports("_apply_study_card_type_filter")(count_query, study_card_type)
     count_query = ports("apply_formula_subject_filter")(count_query, subject_code)
+    if favorite_only and current_user is None:
+        return {"items": []}
     if favorite_only and current_user:
         fav_subq = ports("select")(ports("UserFormulaFavorite").formula_card_id).where(
             ports("UserFormulaFavorite").user_id == current_user.id

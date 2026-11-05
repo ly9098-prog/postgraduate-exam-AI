@@ -7,10 +7,15 @@ const source = fs.readFileSync(path.join(__dirname, '../pages/login/login.js'), 
 
 function fixture(resumeOverride, options = {}) {
   let definition, completeCount = 0, resolveCount = 0, finish
+  let pendingTarget, targetReady = false
   const timers = new Map(), navigations = []
   const values = { token: 't', user: { id: 1 }, ...options.values }
   const resume = resumeOverride || {
-    resolve: () => { resolveCount++; return new Promise(resolve => { finish = resolve }) },
+    resolve: () => {
+      resolveCount++
+      if (targetReady) return Promise.resolve(pendingTarget)
+      return new Promise(resolve => { finish = resolve })
+    },
     complete: () => { completeCount++ },
   }
   const mocks = {
@@ -41,11 +46,15 @@ function fixture(resumeOverride, options = {}) {
   })
   const page = { ...definition, data: structuredClone(definition.data),
     setData(patch) { Object.assign(this.data, patch) } }
-  page.onLoad()
+  page.onLoad(options.query)
   return {
     page, values, navigations,
     runTimer: () => { const [id, callback] = [...timers][0]; timers.delete(id); return callback() },
-    finish: target => finish(target),
+    finish: target => {
+      pendingTarget = target
+      targetReady = true
+      if (finish) finish(target)
+    },
     get resolveCount() { return resolveCount },
     get completeCount() { return completeCount },
   }
@@ -66,6 +75,25 @@ test('first-time entry reveals consent and login instead of a stuck startup scre
   const harness = fixture(undefined, { values: { token: '' }, agreed: false })
   await Promise.resolve()
   assert.equal(harness.page.data.entryPending, false)
+  assert.deepEqual(harness.navigations, [])
+})
+
+test('login without a source stack returns to the explicit deep link including its query', async () => {
+  const harness = fixture(undefined, { query: {
+    redirect: '/subpackages/study/wrong-detail/wrong-detail?id=23&from=share',
+  } })
+  await harness.runTimer()
+  assert.deepEqual(harness.navigations, [
+    '/subpackages/study/wrong-detail/wrong-detail?id=23&from=share',
+  ])
+  assert.equal(harness.resolveCount, 0)
+})
+
+test('failed session validation reveals login without resolving personal recovery', async () => {
+  const harness = fixture(undefined, { refresh: async () => false })
+  await harness.runTimer()
+  assert.equal(harness.page.data.entryPending, false)
+  assert.equal(harness.resolveCount, 0)
   assert.deepEqual(harness.navigations, [])
 })
 
@@ -118,7 +146,7 @@ test('losing consent before the scheduled redirect restores the login controls',
   assert.deepEqual(harness.navigations, [])
 })
 
-test('token refresh rejection cannot leave the startup screen blocking login', async () => {
+test('an expired local token shows the login form without silently signing in', async () => {
   const harness = fixture(undefined, {
     values: { expires: 1 },
     refresh: async () => { throw new Error('offline') },
@@ -126,7 +154,8 @@ test('token refresh rejection cannot leave the startup screen blocking login', a
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(harness.page.data.entryPending, false)
   assert.equal(harness.page.data.loading, false)
-  assert.ok(harness.page.data.error)
+  assert.equal(harness.page.data.error, '')
+  assert.equal(harness.resolveCount, 0)
   assert.deepEqual(harness.navigations, [])
 })
 

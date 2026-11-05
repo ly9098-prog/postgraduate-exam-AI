@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from app.models.admin import AdminUser, Permission, RolePermission
 from app.models.app_user_admin_binding import AppUserAdminBinding
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 _USER_TOKEN_TYPE = "user_access"
 
@@ -139,6 +140,24 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ):
+    user, _ = await authenticate_user_token(credentials.credentials, db)
+    return user
+
+
+async def get_optional_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolve the caller when credentials are present, otherwise return None.
+
+    An invalid or expired credential is never downgraded to anonymity: public
+    reads must not silently serve a different identity than the one supplied.
+    """
+    if credentials is None:
+        if request.headers.get("Authorization") is not None:
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+        return None
     user, _ = await authenticate_user_token(credentials.credentials, db)
     return user
 

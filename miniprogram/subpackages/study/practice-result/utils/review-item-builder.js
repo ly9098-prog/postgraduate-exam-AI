@@ -31,6 +31,8 @@ function buildReviewItem(question, result, answer, index, helpers) {
     Object.assign({}, answer || {}, result || {}),
     !!isCorrectRaw
   )
+  var referenceOnly = result.reference_only === true || result.referenceOnly === true
+  if (referenceOnly) status = 'partial'
   var kpList = h.normalizeKpList(
     result.knowledge_points != null ? result.knowledge_points :
     result.knowledgePoints != null ? result.knowledgePoints :
@@ -44,6 +46,7 @@ function buildReviewItem(question, result, answer, index, helpers) {
     displayIndex: h.pad2(index + 1),
     title: h.getQuestionTitle(question) || ('第 ' + (index + 1) + ' 题'),
     status: status,
+    statusLabel: referenceOnly ? '参考自查' : status,
     isCorrect: status === 'correct',
     isSkipped: status === 'skipped',
     isPartial: status === 'partial',
@@ -65,6 +68,8 @@ function normalizeReviewItem(item, index, helpers) {
   var normalizedDiagnosis = errorDiagnosis.normalizeDiagnosis(item.errorDiagnosis != null ? item.errorDiagnosis : item.error_diagnosis)
   var isCorrectRaw = item.is_correct != null ? item.is_correct : (item.isCorrect != null ? item.isCorrect : (item.correct != null ? item.correct : false))
   var status = h.normalizeReviewStatus(item, !!isCorrectRaw)
+  var referenceOnly = item.reference_only === true || item.referenceOnly === true
+  if (referenceOnly) status = 'partial'
   var kpList = h.normalizeKpList(item.knowledge_points != null ? item.knowledge_points : (item.knowledgePoints != null ? item.knowledgePoints : item.knowledgePoint))
   return {
     questionId: item.questionId != null ? item.questionId : (item.question_id != null ? item.question_id : (item.id != null ? item.id : index + 1)),
@@ -73,6 +78,7 @@ function normalizeReviewItem(item, index, helpers) {
     displayIndex: item.displayIndex || h.pad2(index + 1),
     title: h.formatMathPreviewText(item.title || h.getQuestionTitle(item)) || ('第 ' + (index + 1) + ' 题'),
     status: status,
+    statusLabel: referenceOnly ? '参考自查' : status,
     isCorrect: status === 'correct',
     isSkipped: status === 'skipped',
     isPartial: status === 'partial',

@@ -61,8 +61,10 @@ return
 }
 let stored = []
 try {
+if (!page.data.guestMode) {
 const value = getPlatform().getStorageSync(RECENT_SUBJECTS_STORAGE_KEY)
 stored = Array.isArray(value) ? value : []
+}
 } catch (e) {
 stored = []
 }
@@ -90,6 +92,10 @@ page._launchPlanToken = ''
 
 function _buildQuestionRequestParams(page, dependencies) {
 const { buildQuestionRequestParams } = dependencies
+if (page.data.guestMode) return {
+  subject_id: page.data.selectedSubjectId,
+  include_children: page.data.selectedSubjectHasChildren,
+}
 return buildQuestionRequestParams({
 subjectId: page.data.selectedSubjectId,
 selectedMode: page.data.selectedMode,
@@ -106,6 +112,7 @@ launchKnowledgePoint: page._launchKnowledgePoint,
 }
 
 function toggleSettings(page) {
+if (page.data.guestMode) return
 page.setData({ settingsExpanded: !page.data.settingsExpanded })
 }
 

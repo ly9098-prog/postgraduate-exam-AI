@@ -8,7 +8,6 @@ const { ApiError } = require('./api-error')
 const { KEYS } = storage
 
 let _refreshing = null
-let _redirecting = false
 let _authInvalidationSeq = 0
 
 // 主动续签阈值：token 过期前 1 小时即触发续签
@@ -16,7 +15,8 @@ let _authInvalidationSeq = 0
 const PROACTIVE_REFRESH_SEC = 3600
 
 function resetRedirecting() {
-  _redirecting = false
+  // Kept as a no-op for callers that used to gate the forced login redirect.
+  // Login is now always an explicit, cancellable user action.
 }
 
 function _normalizeExpiresAt(value) {
@@ -80,14 +80,14 @@ function _clearAuthAndRedirect() {
   storage.clearSession({
     preservePrivacyAcceptance: true, includeDebugSnapshots: true, preserveLaunchResume: true,
   })
-  if (!_redirecting) {
-    _redirecting = true
-    wx.reLaunch({ url: '/pages/login/login' })
-  }
 }
 
 function getAuthInvalidationSeq() {
   return _authInvalidationSeq
+}
+
+function hasStoredToken() {
+  return !!storage.get(KEYS.TOKEN)
 }
 
 async function forceRefreshToken(traceId = '') {
@@ -148,6 +148,7 @@ module.exports = {
   PROACTIVE_REFRESH_SEC,
   resetRedirecting,
   getAuthInvalidationSeq,
+  hasStoredToken,
   normalizeExpiresAt: _normalizeExpiresAt,
   forceRefreshToken,
   ensureValidToken,

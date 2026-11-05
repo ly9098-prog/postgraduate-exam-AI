@@ -1,4 +1,6 @@
 const api = require('../../../utils/api');
+const auth = require('../../../utils/auth');
+const loginGate = require('../../../utils/login-gate');
 const { knowledgePracticeSync } = require('../../../utils/storage');
 const { getChinaDate } = require('../../../utils/china-time');
 const errorDiagnosis = require('../utils/error-diagnosis');
@@ -29,6 +31,7 @@ const { buildBatchDiagnosisPageCapabilities } = require('./utils/practice-result
 const { buildTrendLoadPageCapabilities } = require('./utils/practice-result-trend-page-adapter');
 const { buildReview408TeacherPageCapabilities } = require('./utils/practice-result-teacher-page-adapter');
 const { buildBackNavigationPageCapabilities } = require('./utils/practice-result-navigation-page-adapter');
+const { readGuestResult } = require('../../../utils/launch-session-store');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
 const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1';
@@ -102,6 +105,7 @@ function normalizeGrowthProfile(raw) { return _normalizeGrowthProfile(raw) }
 function growthFromOverview(overview) { return _growthFromOverview(overview) }
 Page({
 data: {
+guestMode: false,
 tabs: [
 { key: 'overview', label: '结果概览' },
 { key: 'wrong', label: '错题分析' },
@@ -122,6 +126,7 @@ correctCount: 0,
 wrongCount: 0,
 skippedCount: 0,
 partialCount: 0,
+partialLabel: '未完成',
 totalCount: 0,
 accuracyPct: 0,
 accuracyDotDeg: -90,
@@ -190,6 +195,10 @@ this._teacherInflight = Object.create(null);
 this._teacherFeedbackCache = Object.create(null);
 this._activeTeacherCacheKey = '';
 this.measureSafeNavigation();
+if (String((options || {}).guest) === '1') {
+  this._bootGuestResult();
+  return;
+}
 this.bindEventChannel();
 const rawOptionPayload = this.readPayloadFromOptions(options || {});
 const optionPayload = rawOptionPayload && this._isPayloadRequestValid(rawOptionPayload, this._practiceRequestId)
@@ -215,15 +224,44 @@ this._teacherRequestSeq++;
 this._teacherInflight = null;
 },
 onShow() {
+if (this._guestMode && auth.isLoggedIn()) {
+wx.reLaunch({ url: '/pages/home/home' });
+return;
+}
 this._navigationLocked = false;
 this._resultVisible = true;
 this.refreshWrongDiagnoses();
+},
+_bootGuestResult() {
+this._guestMode = true;
+this._returnTo = '/pages/home/home';
+const payload = readGuestResult();
+this.setData({
+guestMode: true,
+tabs: [{ key: 'overview', label: '体验结果' }],
+questionFilters: [
+{ key: 'all', label: '全部' },
+{ key: 'correct', label: '答对' },
+{ key: 'wrong', label: '答错' },
+{ key: 'skipped', label: '未作答' },
+{ key: 'partial', label: '参考自查' },
+],
+partialLabel: '参考自查',
+activeTab: 'overview',
+});
+if (!payload) {
+wx.showToast({ title: '体验结果已过期，请重新试做', icon: 'none' });
+wx.reLaunch({ url: '/pages/home/home' });
+return;
+}
+this.applyPracticePayload(payload);
 },
 onHide() {
 this._resultVisible = false;
 this._diagnosisRefreshSeq++;
 },
 async refreshWrongDiagnoses() {
+if (this._guestMode) return;
 if (!this._pageAlive || this.data.batchDiagnosisSaving) return;
 const seq = this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1;
 const ids = [...new Set((this.data.wrongReviewItems || [])
@@ -531,6 +569,7 @@ return _getResultTip(accuracy, wrongCount, skippedCount, partialCount, totalCoun
 },
 async loadDashboardData() {
 if (!this._pageAlive) return;
+if (this._guestMode) return;
 const loadId = ++this._dashboardLoadId;
 await Promise.allSettled([
 this.loadTrends(loadId),
@@ -663,7 +702,7 @@ openQuestionDetail(e) {
 const id = e.currentTarget.dataset.id;
 const target = this.data.reviewItems.find(item => String(item.questionId) === String(id));
 if (!target) return;
-if (target.status === 'wrong') {
+if (!this._guestMode && target.status === 'wrong') {
 if (target.wrongQuestionId) {
 this.navigateToWrongDetail(target.wrongQuestionId);
 } else {
@@ -671,12 +710,13 @@ this.setData({ activeTab: 'wrong' });
 wx.showToast({ title: '该题暂无错题详情', icon: 'none' });
 }
 } else {
-const statusLabel = target.status === 'partial'
-? '未完成'
-: (target.status === 'skipped' ? '已跳过' : '已答对');
-const title = target.status === 'partial'
+const statusLabel = target.statusLabel === '参考自查' ? '参考自查'
+: (target.status === 'partial' ? '未完成'
+  : (target.status === 'skipped' ? '已跳过' : '已答对'));
+const title = target.statusLabel === '参考自查' ? '参考题复盘'
+: (target.status === 'partial'
 ? '未完成题复盘'
-: (target.status === 'skipped' ? '跳过题复盘' : '题目复盘');
+: (target.status === 'skipped' ? '跳过题复盘' : '题目复盘'));
 const analysisView = buildReviewAnalysisView(target.analysis);
 this._teacherRequestSeq++;
 this._activeTeacherCacheKey = '';
@@ -724,6 +764,7 @@ const action = String(e.currentTarget.dataset.action || '');
 if (action) this.run408TeacherFromReview(action);
 },
   async run408TeacherFromReview(action) {
+    if (this._guestMode) return
     return this._review408TeacherController().run(action)
   },
 
@@ -763,6 +804,7 @@ this.setData({ reviewDialogVisible: false });
 stopPropagation() {},
 noop() {},
 navigateToWrongDetail(wrongQuestionId) {
+    if (this._guestMode) return
 if (!wrongQuestionId || this._navigationLocked) return;
 const normalizedCurrentId = Number(wrongQuestionId);
 const ids = [];
@@ -811,7 +853,12 @@ this.navigateToWrongDetail(wrongQuestionId);
   handleBack() {
     return this._backNavigationController().back()
   },
-
+  repeatGuestPractice() {
+    return this._backNavigationController().repeatGuest()
+  },
+  openGuestLogin() {
+    return loginGate.openLogin()
+  },
   _backNavigationController() {
     if (!this._backNavigation) {
       this._backNavigation = createBackNavigationController(

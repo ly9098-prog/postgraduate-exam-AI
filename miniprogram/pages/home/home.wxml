@@ -1,3 +1,4 @@
+<app-dialog id="appDialog" theme="mint"></app-dialog>
 <view class="home-page">
   <!-- Custom brand navigation -->
   <view class="home-nav" style="height: {{navHeight}}px; padding-top: {{statusBarHeight}}px;">
@@ -16,7 +17,7 @@
       <view class="profile-chip" bindtap="openProfileSheet" hover-class="profile-chip-pressed" aria-label="编辑个人资料">
         <image wx:if="{{user.avatar_url || user.avatarUrl || user.avatar}}" class="profile-avatar profile-avatar-image" src="{{user.avatar_url || user.avatarUrl || user.avatar}}" mode="aspectFill" />
         <view wx:else class="profile-avatar">{{userInitial}}</view>
-        <text class="profile-level">{{studyLevel}}</text>
+        <text class="profile-level">{{guestMode ? '游客' : studyLevel}}</text>
       </view>
     </view>
   </view>
@@ -39,7 +40,7 @@
       <image class="focus-curve-image" src="/assets/icons/home-hero/smart-study-curve.png" mode="aspectFit" />
     </view>
 
-    <view class="focus-content">
+    <view class="focus-content {{guestMode ? 'focus-content-guest' : ''}}">
       <view class="focus-topline">
         <view class="focus-status focus-status-light">
           <image class="focus-kicker-icon" src="/assets/icons/home-hero/smart-study-leaf.png" mode="aspectFit" />
@@ -55,7 +56,7 @@
       </view>
       <text class="focus-desc">{{primaryTaskDesc}}</text>
 
-      <view class="progress-head">
+      <view wx:if="{{!guestMode}}" class="progress-head">
         <view class="progress-head-copy">
           <text class="progress-label">今日刷题进度</text>
           <text class="progress-head-sub">目标题量 {{todayGoalTotal}} 题</text>
@@ -64,13 +65,14 @@
           <text class="progress-value">{{_animGoalDone}} / {{todayGoalTotal}}</text>
         </view>
       </view>
-      <view class="focus-progress-track">
+      <view wx:if="{{!guestMode}}" class="focus-progress-track">
         <view class="focus-progress-fill" style="width: {{_animLevelProgress}}%;"></view>
       </view>
-      <view class="progress-foot">
+      <view wx:if="{{!guestMode}}" class="progress-foot">
         <text>{{missionText}}</text>
         <text>{{_animLevelProgress}}%</text>
       </view>
+      <text wx:else class="focus-guest-hint">{{missionText}}</text>
 
       <view class="focus-actions">
         <view class="primary-action" bindtap="startPrimaryTask" hover-class="primary-action-pressed">
@@ -78,12 +80,12 @@
           <view class="primary-action-arrow">↗</view>
         </view>
         <view class="secondary-action" bindtap="startSecondaryTask" hover-class="secondary-action-pressed">
-          <text>查看学习报告</text>
+          <text>{{guestMode ? secondaryTaskAction : '查看学习报告'}}</text>
           <image class="secondary-action-icon" src="/assets/icons/home-hero/study-report.png" mode="aspectFit" />
         </view>
       </view>
 
-      <view class="focus-metrics">
+      <view wx:if="{{!guestMode}}" class="focus-metrics">
         <view class="metric-item">
           <text class="metric-value">{{dueReviewCount}}</text>
           <text class="metric-label">到期复习</text>

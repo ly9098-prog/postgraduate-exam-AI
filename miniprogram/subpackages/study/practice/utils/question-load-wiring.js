@@ -20,7 +20,9 @@ function createRequestPorts(page, deps) {
     getSubjectId: () => page.data.selectedSubjectId,
     getSelectedMode: () => page.data.selectedMode,
     buildRequestParams: () => page._buildQuestionRequestParams(),
-    requestQuestions: params => deps.api.get('/practice/questions', params),
+    requestQuestions: params => page.data.guestMode
+      ? deps.api.get('/guest/practice/questions', { subject_id: params.subject_id }, { auth: 'none' })
+      : deps.api.get('/practice/questions', params),
     logError: (...args) => console.error(...args),
     showToast: options => deps.wx.showToast(options),
   }
@@ -57,7 +59,9 @@ function createBatchPorts(page, deps) {
     findBatchError: response => deps.findQuestionBatchError(
       Array.isArray(response.questions) ? response.questions : [],
       {
-        answerableTypes: deps.practiceAnswerableTypes,
+        answerableTypes: page.data.guestMode
+          ? new Set([...deps.practiceAnswerableTypes, 'fill_blank', 'subjective'])
+          : deps.practiceAnswerableTypes,
         allowedScopeIds: new Set(
           page._getPracticeSubjectScopeIds(
             page.data.selectedSubjectId,
@@ -79,12 +83,20 @@ function createBatchPorts(page, deps) {
       {},
       'id'
     ),
-    applyBatchCredentials: (response, mode) => (
+    applyBatchCredentials: (response, mode) => {
+      if (page.data.guestMode) {
+        page._practiceSession.requestId = 'guest'
+        page._practiceSession.expiresAt = Math.min(
+          Number(response.expires_at) * 1000, Date.now() + 24 * 60 * 60 * 1000)
+      }
+      return (
       deps.applyBatchCredentials(page._practiceSession, response, mode)
-    ),
-    hasMissingBatchCredentials: count => (
-      deps.hasMissingBatchCredentials(page._practiceSession, count)
-    ),
+      )
+    },
+    hasMissingBatchCredentials: count => deps.hasMissingBatchCredentials(page._practiceSession, count)
+      || (page.data.guestMode && count > 0 &&
+        (!Number.isFinite(page._practiceSession.expiresAt) ||
+          page._practiceSession.expiresAt <= Date.now() || count > 5)),
   }
 }
 
@@ -114,13 +126,21 @@ function createSessionPorts(page, deps) {
     startLoadedSession: viewModel => {
       if (!page._practiceSession.activeStartedMonoMs) {
         page._practiceSession.activeStartedMonoMs = deps.monotonicNow()
-        page._practiceSession.startedAtMs = deps.api.now()
+        page._practiceSession.startedAtMs = page.data.guestMode ? Date.now() : deps.api.now()
         page._practiceSession.backgroundMs = 0
         page._practiceSession._backgroundStartedMonoMs = null
         page._practiceSession.elapsedSec = 0
       }
       page._practiceSession.optionKeys = viewModel.optionKeys
       page._practiceSession.currentQuestionStartedMonoMs = deps.monotonicNow()
+      if (page.data.guestMode && page._visible === false) {
+        page._practiceSession._backgroundStartedMonoMs = deps.monotonicNow()
+        page._practiceSession.currentQuestionStartedMonoMs = 0
+      }
+      if (page.data.guestMode) page.setData({
+        textAnswer: '', needsTextAnswer: ['fill_blank', 'subjective']
+          .includes(page.data.currentQuestion.question_type),
+      })
       page._setPracticeUnloadGuard(true)
       page._startTimer()
       page._updateComputedFields()

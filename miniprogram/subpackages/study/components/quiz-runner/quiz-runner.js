@@ -106,6 +106,8 @@ if (q._hasBlankOptionGroups || q.question_type === 'multi_blank_choice') return 
 if (q.question_type === 'multi_blank_multiple_choice') return '多空（多选）选择题'
 if (q.question_type === 'multiple_choice') return '多选题'
 if (q.question_type === 'true_false' || q.question_type === 'judgement') return '判断题'
+if (q.question_type === 'fill_blank') return '填空题'
+if (q.question_type === 'subjective') return '主观题 · 参考自查'
 return '单选题'
 },
 _splitCodeLines: function (value) {

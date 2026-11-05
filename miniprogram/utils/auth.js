@@ -73,10 +73,12 @@ function saveAuthSession(data, user) {
   }
 }
 
-async function wechatLogin() {
+async function wechatLogin(options = {}) {
   const { code } = await wx.login()
+  if (options.shouldCommit && !options.shouldCommit()) return null
   if (!code) throw new Error('微信登录失败，请重试')
   const data = await api.post('/auth/login', { code })
+  if (options.shouldCommit && !options.shouldCommit()) return null
   const user = normalizeUser(data.user)
   saveAuthSession(data, user)
   return user
@@ -117,8 +119,7 @@ function isAdmin() {
 
 function requireAdminAccess(message = '仅管理员可访问') {
   if (!isLoggedIn()) {
-    wx.showToast({ title: '请先登录', icon: 'none' })
-    setTimeout(() => wx.reLaunch({ url: '/pages/login/login' }), 500)
+    require('./login-gate').promptLogin()
     return false
   }
   if (isAdmin()) return true
@@ -127,7 +128,7 @@ function requireAdminAccess(message = '仅管理员可访问') {
 }
 
 function redirectToLogin() {
-  wx.reLaunch({ url: '/pages/login/login' })
+  require('./login-gate').openLogin()
 }
 
 // 开发模式：直接设置 token（不经过 wx.login）
