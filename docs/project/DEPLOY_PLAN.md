@@ -22,6 +22,16 @@
 
 ---
 
+### 0.1 科目目录匿名读取修复发布（2026-11-06）
+
+北京时间 2026-11-06 01:07，用户单独授权后完成：仅将 `backend/app/api/v1/practice.py` 的 `/practice/subjects` 依赖改为可选身份；此前游客匿名请求生产仍返回 403。以旧运行 app 镜像为基底离线叠加该文件，无依赖、迁移或配置变更；仅重建 app 并校验/重载 Nginx，Admin、scheduler、worker、PostgreSQL、Redis 均未重建。
+
+- 备份：`/data/backups/subject-auth-20261106/`，含主机/容器原文件、前后容器清单、构建与验收日志；旧镜像 `deploy-app:before-subject-auth-20261106`（`sha256:4363193b71d4e3e65672caf59d76f96c2ed72c97970d712732f231dd39b8e347`）。
+- 新镜像：`deploy-app:subject-auth-20261106`，亦标记为 `deploy-app:latest`，ID `sha256:86fc21843df44840f2f1bad1c735dda81c282df9d47182b1c4b30cbc46d7d4b5`。发布文件 SHA256 `e527f2473516075299328af90816f6b822e3f46134f7ad491b1f287ee2ba5613`。
+- 验证：发布前 pytest 54 项、严格 Ruff、compileall 通过；app healthy、0 次重启、内部 live/ready 200；两个生产域名匿名科目目录 200，包含高数、线性代数、英语和政治，错误凭据 401，正式出题/提交/收藏仍拒绝匿名访问，游客科目接口 200。具体结果 `acceptance.json`。
+- 回退：服务器执行 `bash /data/backups/subject-auth-20261106/rollback.sh`，恢复备份源文件与旧镜像、重建 app、重载 Nginx，随后复验内部健康；本次检查通过，未实际触发回滚。没有数据库 schema/data 变更，不需要数据库回滚。
+- 边界：未部署小程序或 Admin，未提交/推送，未开展模拟器/真机及审核验收。后续常规构建使用已同步的服务器源码，勿误回退此可选身份修复。
+
 ## 1. 生产部署架构
 
 ### 服务组成

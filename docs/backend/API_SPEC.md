@@ -25,7 +25,7 @@ Authorization: Bearer <jwt_token>
 | 类型 | 接口 | 规则 |
 | --- | --- | --- |
 | 匿名 | `GET /formulas/{id}`、`GET /formulas/tags`、`/guest/practice/*` | 不读取身份，只返回公共内容 |
-| 可选身份 | `GET /formulas/catalog`、`GET /formulas`、`GET /formulas/random/next` | 无 Header 按匿名返回；携带 Header 时完整校验，无效凭据返回 401，不降级为匿名 |
+| 可选身份 | `GET /formulas/catalog`、`GET /formulas`、`GET /formulas/random/next`、`GET /practice/subjects` | 无 Header 按匿名返回；携带 Header 时完整校验，无效凭据返回 401，不降级为匿名 |
 | 登录入口 | `POST /auth/login`、`POST /auth/refresh` | 使用微信 code / refresh token，不使用用户 JWT |
 
 收藏列表、收藏增删、个人学习数据和正式练习提交继续要求有效用户身份。匿名请求带 `favorite_only=true` 时返回空列表，不能读取他人收藏。
@@ -226,7 +226,7 @@ Authorization: Bearer <jwt_token>
 
 ### GET `/practice/subjects`
 
-刷题页可用科目树（动态，不硬编码）。
+公共学习科目目录（动态，不硬编码），采用可选身份，不含个人数据。不按游客题池裁剪，供番茄钟等科目选择器浏览；高数、线性代数等沿用现有学习科目范围规则。返回数组，不包裹 `items`。游客刷题仍使用 `/guest/practice/subjects`，仅展示实际具有合格题目的科目；正式出题、提交与番茄钟计时接口仍要求身份。
 
 ### GET `/practice/knowledge-states`
 
