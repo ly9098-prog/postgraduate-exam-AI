@@ -4,10 +4,29 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.services.ai.prewarm_transition import (
+    dead_retry_budget,
     recovery_regenerated,
     revision_changed,
 )
+
+
+@pytest.mark.parametrize(
+    ("task_data", "expected"),
+    [
+        ({"max_retries": 1, "error": "ai_service_unavailable: fallback"}, 3),
+        ({"max_retries": 8, "error": "ai_service_unavailable: checking"}, 8),
+        ({"error": "ai_service_unavailable: transient"}, 3),
+        ({"max_retries": 1, "error": "ai_provider_auth_failed: fallback"}, None),
+        ({"max_retries": 1, "error": ""}, None),
+    ],
+)
+def test_dead_retry_budget_preserves_historical_compatibility_and_other_failures(
+    task_data, expected,
+):
+    assert dead_retry_budget(task_data) == expected
 
 
 def build_revision(*, review_count, wrong_answer):

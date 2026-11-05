@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
 from collections.abc import Callable
 from logging import Logger
+from typing import Any
+
+
+def dead_retry_budget(task_data: dict[str, Any]) -> int | None:
+    if str(task_data.get("error") or "").startswith("ai_service_unavailable:"):
+        return max(3, int(task_data.get("max_retries", 0) or 0))
+    return None
 
 
 def skipped_not_found() -> dict:

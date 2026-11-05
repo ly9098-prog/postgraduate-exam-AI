@@ -15,6 +15,7 @@ from app.services.task_queue_contract import (
     _minimum_worker_version_for_task,
     _normalize_task_schema_version,
 )
+from app.services.worker_task_types import dead_retry_budget_for_task
 
 
 class V2DeadRetryPayloadError(ValueError):
@@ -55,6 +56,9 @@ def build_v2_dead_retry_payload(
     if task_type == ANSWER_PROJECTION_TASK_TYPE:
         parse_answer_projection_payload(task_data.get("payload"))
     required_worker = _minimum_worker_version_for_task(task_type, schema_version)
+    retry_budget = dead_retry_budget_for_task(task_type, task_data)
+    if retry_budget is not None:
+        task_data["max_retries"] = retry_budget
     task_data.update(
         {
             "status": TaskStatus.PENDING.value,
