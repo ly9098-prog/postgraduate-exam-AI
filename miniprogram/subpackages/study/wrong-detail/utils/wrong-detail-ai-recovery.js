@@ -35,7 +35,8 @@ return null
 }
 
 function _applyRecoveredAiResult(page, recovered, options, { _generationMarker, _normalizeAiResult }) {
-if (!recovered) return false
+if (!recovered || !page._alive || !page.data.wq ||
+  (recovered.latestWq && String(recovered.latestWq.id) !== String(page.data.wq.id))) return false
 const applyOptions = options || {}
 page._resetAiLoadingState()
 page._aiResult = recovered.normalized

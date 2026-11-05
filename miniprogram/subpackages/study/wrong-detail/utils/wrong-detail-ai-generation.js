@@ -8,7 +8,7 @@ async function loadAiAnalysis(page, wqId, { _generationMarker }) {
     })
     try {
       const result = await page._requestAiAnalysis(wqId, false)
-      if (!page._isCurrentAiRequest(requestId, wqId)) { page._resetAiLoadingState(); return }
+      if (!page._isCurrentAiRequest(requestId, wqId)) return
       await page._applyAiAnalysisResult(result, wqId, requestId, baselineGeneratedAt)
     } catch (e) {
       await page._handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt)
@@ -16,6 +16,7 @@ async function loadAiAnalysis(page, wqId, { _generationMarker }) {
   }
 
 async function _applyAiAnalysisResult(page, result, wqId, requestId, baselineGeneratedAt, { _normalizeAiPayload, _hasAiContent }) {
+    if (!page._isCurrentAiRequest(requestId, wqId)) return
     const normalized = _normalizeAiPayload(result)
     if (result && result.availability && page._applyAiAvailability) {
       page._applyAiAvailability(result.availability)
@@ -27,8 +28,8 @@ async function _applyAiAnalysisResult(page, result, wqId, requestId, baselineGen
       const recovered = await page._pollPersistedAiAnalysis(wqId, requestId, {
         requireNewGeneration: true, baselineGeneratedAt,
       })
-      if (page._applyRecoveredAiResult(recovered)) return
       if (!page._isCurrentAiRequest(requestId, wqId)) return
+      if (page._applyRecoveredAiResult(recovered)) return
       page._resetAiLoadingState()
       page.setData({ aiFallback: true, aiErrorText: 'AI 分析正在生成中，请稍后重试' })
       return
@@ -61,6 +62,7 @@ function _commitAiAnalysisSuccess(page, result, normalized, wqId, { _normalizeAi
 
 async function _handleAiAnalysisError(page, e, wqId, requestId, baselineGeneratedAt, { _isTimeoutError, _shouldRecoverAiRequest }) {
     console.error('加载 AI 分析失败', e)
+    if (!page._isCurrentAiRequest(requestId, wqId)) return
     const availability = _applyAvailabilityFromError(page, e)
     if (page._isCurrentAiRequest(requestId, wqId) && _shouldRecoverAiRequest(e)) {
       page.setData({ aiInlineNotice: 'AI 正在继续生成，完成后会自动显示' })
@@ -68,12 +70,13 @@ async function _handleAiAnalysisError(page, e, wqId, requestId, baselineGenerate
       const recovered = await page._pollPersistedAiAnalysis(wqId, requestId, {
         requireNewGeneration: true, baselineGeneratedAt,
       })
+      if (!page._isCurrentAiRequest(requestId, wqId)) return
       if (page._applyRecoveredAiResult(recovered)) return
     }
     if (page._isCurrentAiRequest(requestId, wqId)) {
-      const msg = _isTimeoutError(e) ? 'AI 分析生成超时，请稍后重试' : 'AI 分析生成失败，请稍后重试'
       page._resetAiLoadingState()
-      page.setData({ aiFallback: true, aiErrorText: msg })
+      page.setData(Object.assign({ aiFallback: true },
+        page._analysisFailureState(_isTimeoutError(e) ? 'timeout' : '', e)))
       _refreshAvailabilityAfterFailure(page, availability)
     }
   }

@@ -88,7 +88,7 @@ test('poll delays timeout errors and mastery aliases keep their boundaries', () 
   assert.equal(rules._isTimeoutError({ message: 'network' }), false)
   assert.equal(rules._generationMarker({ ai_analysis_generated_at: 123 }), '123')
   assert.equal(rules._fallbackMessage('', 'ai_provider_auth_failed', true),
-    'AI 分析服务鉴权失败，请联系管理员检查模型 API Key')
+    'AI 服务连接异常，待服务恢复后可重试')
   assert.equal(rules._fallbackMessage('timeout', '', false), 'AI 分析生成超时，请稍后重试')
   assert.equal(rules._isWqMastered({ review_status: 'mastered' }), true)
   assert.equal(rules._isWqMastered({ is_mastered: false }), false)

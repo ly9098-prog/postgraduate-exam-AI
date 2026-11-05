@@ -2,15 +2,101 @@ const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const { fixture, deferred, plain } = require('./helpers/wrong-detail-navigation-fixture')
 
-test('invalid navigation keeps the original mask and lock without fetching', async () => {
+test('successive next and previous gestures commit the runner index with each question', async () => {
+  const f = fixture(), { page } = f
+  page.data.questionIds = [1, 2, 3]
+  page.data.totalQuestions = 3
+  page._aiRequestId = 8
+  page._teacherRequestSeq = 2
+  page._diagnosisRequestSeq = 4
+  page._waitForContentSwitchOut = async () => {}
+  page._armSwitchWatchdog = () => {}
+  page._finishContentSwitchTransition = () => { page._switching = false }
+  page._refreshDiagnosisFromServer = () => {}
+  page._prefetchWrongQuestion = () => {}
+  f.api.get = async url => ({ id: Number(url.split('/').pop()) })
+  for (const index of [1, 2, 1, 0]) {
+    await page._navigateTo(index, 150)
+    assert.equal(page.data.currentIdx, index)
+    assert.equal(page.data.currentQuestion.id, page.data.questionIds[index])
+    assert.equal(page.data.showSwitchMask, false)
+    f.callbacks.shift()()
+  }
+  assert.equal(page._aiRequestId, 12)
+  assert.equal(page._teacherRequestSeq, 6)
+  assert.equal(page._diagnosisRequestSeq, 8)
+})
+
+test('fast navigation never flashes a loading overlay or fabricates animation start time', async () => {
+  const f = fixture(), { page } = f
+  page._wqCache[2] = { data: { id: 2 }, ts: 1000 }
+  page._waitForContentSwitchOut = () => {
+    assert.equal(page._contentTransitionStartedAt || 0, 0)
+    assert.equal(page.data.showSwitchMask, false)
+    return Promise.resolve()
+  }
+  page._armSwitchWatchdog = () => {}
+  await page._navigateTo(1, 150, 'left')
+  assert.equal(f.calls.some(call => call[0] === 'patch' && call[1].showSwitchMask === true), false)
+})
+
+test('slow navigation keeps current content and only shows a delayed switching hint', async () => {
+  const f = fixture(), { page } = f, pending = deferred(), timers = new Map()
+  page.data.wq = { id: 1 }
+  page.data.loading = false
+  let timerId = 0
+  f.context.setTimeout = (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId }
+  f.context.clearTimeout = id => timers.delete(id)
+  page._armSwitchWatchdog = () => {}
+  page._waitForContentSwitchOut = async () => {}
+  f.api.get = () => pending.promise
+  const task = page._navigateTo(1, 150)
+  assert.equal(page.data.wq.id, 1)
+  assert.equal(page.data.loading, false)
+  assert.equal(page.data.showSwitchMask, false)
+  assert.equal(timers.get(1).delay, 350)
+  timers.get(1).fn()
+  assert.equal(page.data.showSwitchMask, true)
+  pending.resolve({ id: 2 })
+  await task
+  assert.equal(page.data.wq.id, 2)
+  assert.equal(page.data.showSwitchMask, false)
+  assert.equal(timers.size, 0)
+})
+
+test('expired question cache is refreshed before the next question is committed', async () => {
+  const f = fixture(), { page } = f
+  page._wqCache[2] = { data: { id: 2, content: 'old' }, ts: -400000 }
+  f.api.get = async () => ({ id: 2, content: 'current' })
+  const result = await page._prepareNavigationData(1, 3)
+  assert.equal(result.nextData.wq.content, 'current')
+  assert.equal(page._wqCache[2].ts, 1000)
+})
+
+test('a delayed render callback cannot restart animation or diagnosis after unload', async () => {
+  const f = fixture(), { page } = f
+  page._waitForContentSwitchOut = async () => {}
+  page._armSwitchWatchdog = () => {}
+  page._checkRenderInvariant = () => {}
+  await page._commitNavigation({
+    wqId: 2, wq: { id: 2 }, raw: {}, nextData: {}, nextAiResult: null,
+  }, 'left', 150, 3)
+  page._alive = false
+  page._finishContentSwitchTransition = () => assert.fail('unloaded animation')
+  page._refreshDiagnosisFromServer = () => assert.fail('unloaded diagnosis')
+  f.callbacks[0]()
+})
+
+test('invalid and unchanged navigation leave the page unlocked without fetching', async () => {
   const f = fixture(), { page } = f
   assert.equal(await page._prepareNavigationData(-1, 3), null)
   assert.equal(await page._prepareNavigationData(2, 3), null)
   await page._navigateTo(10, 150)
-  assert.equal(page._navigationSeq, 4)
-  assert.equal(page._switching, true)
-  assert.equal(page.data.showSwitchMask, true)
-  assert.equal(page._contentTransitionDirection, 'right')
+  await page._navigateTo(0, 150)
+  assert.equal(page._navigationSeq, 3)
+  assert.equal(page._switching, false)
+  assert.equal(page.data.showSwitchMask, false)
+  assert.equal(page._contentTransitionStartedAt || 0, 0)
   assert.equal(f.calls.some(call => call[0] === 'get'), false)
 })
 
@@ -105,14 +191,15 @@ test('commit awaits outgoing animation then retains patch callback and render or
   page._waitForContentSwitchOut = (...args) => { f.calls.push(['wait', ...args]); return wait.promise }
   page._armSwitchWatchdog = ms => f.calls.push(['watchdog', ms])
   page._checkRenderInvariant = model => f.calls.push(['invariant', model])
+  page._prefetchWrongQuestion = () => {}
   const request = page._commitNavigation(ctx, 'left', 80, 3)
-  assert.deepEqual(f.calls, [['wait', 'left', 80]])
+  assert.deepEqual(f.calls, [['clearTimeout', undefined], ['wait', 'left', 80]])
   assert.equal(page._currentWqId, null)
   wait.resolve()
   await request
   assert.equal(page._currentWqId, 2)
   assert.equal(page._aiResult, ctx.nextAiResult)
-  assert.deepEqual(f.calls.map(call => call[0]), ['wait', 'clearTimeout', 'watchdog', 'patch', 'invariant'])
+  assert.deepEqual(f.calls.map(call => call[0]), ['clearTimeout', 'wait', 'watchdog', 'patch', 'invariant'])
   assert.equal(f.calls[2][1], 5000)
   assert.deepEqual(f.calls[3][1], { showSwitchMask: false, currentIdx: 1 })
   page._finishContentSwitchTransition = dir => f.calls.push(['finish-current', dir])
@@ -131,37 +218,39 @@ test('commit guard after animation rejects stale and unloaded navigation', async
     wait.resolve()
     await request
     assert.equal(f.page._currentWqId, null)
-    assert.deepEqual(f.calls, [])
+    assert.deepEqual(f.calls, [['clearTimeout', undefined]])
   }
 })
 
-test('overlapping navigation commits only the latest request', async () => {
-  const f = fixture(), a = deferred(), b = deferred()
-  f.api.get = url => url.endsWith('/1') ? a.promise : b.promise
+test('repeated navigation during a pending switch does not duplicate requests', async () => {
+  const f = fixture(), pending = deferred()
+  let requests = 0
+  f.api.get = () => { requests++; return pending.promise }
   f.page._waitForContentSwitchOut = async () => {}
   f.page._armSwitchWatchdog = () => {}
-  const first = f.page._navigateTo(0, 150)
+  const first = f.page._navigateTo(1, 150)
   const second = f.page._navigateTo(1, 150)
-  b.resolve({ id: 2 })
+  pending.resolve({ id: 2 })
   await second
-  a.resolve({ id: 1 })
   await first
   assert.equal(f.page._currentWqId, 2)
-  assert.equal(f.page._navigationSeq, 5)
+  assert.equal(f.page._navigationSeq, 4)
+  assert.equal(requests, 1)
   assert.equal(f.callbacks.length, 1)
   assert.equal(f.page._wqCache[1], undefined)
 })
 
-test('navigation failures keep removed-item sentinel and ignore obsolete requests', () => {
+test('navigation failures drop the requested item and ignore obsolete requests', () => {
   for (const status of [404, 410, 500]) {
     const f = fixture(), { page } = f
     page._switching = true
+    page._pendingNavigationWqId = 2
     page._dropQuestionFromNavigation = id => f.calls.push(['drop', id])
     page._handleNavigateError({ statusCode: status }, 3)
     assert.equal(page._switching, false)
     assert.equal(page.data.showSwitchMask, false)
     const drop = f.calls.filter(call => call[0] === 'drop')
-    assert.deepEqual(drop, status === 500 ? [] : [['drop', 0]])
+    assert.deepEqual(drop, status === 500 ? [] : [['drop', 2]])
     assert.equal(f.calls.find(call => call[0] === 'toast')[1].title,
       status === 500 ? '加载失败' : '该错题已被移除，已更新题目列表')
     const count = f.calls.length

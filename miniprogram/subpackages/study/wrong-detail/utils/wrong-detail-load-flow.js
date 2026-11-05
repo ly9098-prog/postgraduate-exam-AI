@@ -13,6 +13,8 @@ async function loadData(page, wqId, { requestClient }) {
       const data = page._buildLoadedDataPatch(wq, wqId, loadSeq)
       if (!data) return
       page.setData(data)
+      page._prefetchWrongQuestion(page.data.currentIdx - 1)
+      page._prefetchWrongQuestion(page.data.currentIdx + 1)
       page._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
       if (page._refreshAiAvailability) page._refreshAiAvailability({ force: true })
       page._checkLoadedRenderInvariant(data)

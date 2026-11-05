@@ -10,6 +10,17 @@ function setup() {
   return f
 }
 
+test('first regeneration failure always renders an error instead of an empty review panel', async () => {
+  const { page, api } = setup()
+  page.data.aiRequested = true
+  api.post = async () => { throw new ApiError('blocked', { statusCode: 503 }) }
+  await page.regenerateAiAnalysis()
+  assert.equal(page.data.aiFallback, true)
+  assert.equal(page.data.aiCards, null)
+  assert.equal(page.data.aiSkeletonVisible, false)
+  assert.ok(page.data.aiErrorText)
+})
+
 test('regeneration guards identity, loading and regenerating without advancing requests', async () => {
   for (const state of ['missing', 'loading', 'regenerating']) {
     const f = setup(), { page } = f
@@ -57,7 +68,7 @@ test('regeneration captures private identity and old values before request and r
   ])
 })
 
-test('regeneration uses question fallback identity and resets loading on a stale response', async () => {
+test('regeneration uses question fallback identity and ignores a stale response', async () => {
   const f = setup(), { page } = f, pending = deferred()
   page._requestAiAnalysis = (...args) => { f.calls.push(['request', ...args]); return pending.promise }
   page._applyRegenerateResult = () => { throw new Error('stale result applied') }
@@ -66,12 +77,12 @@ test('regeneration uses question fallback identity and resets loading on a stale
   pending.resolve({})
   await task
   assert.deepEqual(f.calls[1], ['request', 12, true])
-  assert.deepEqual(f.calls.map(call => call[0]), ['setData', 'request', 'reset', 'setData'])
+  assert.deepEqual(f.calls.map(call => call[0]), ['setData', 'request'])
 })
 
-test('regeneration request and result errors call but do not await the current error handler', async () => {
+test('regeneration awaits the current error handler for request and result errors', async () => {
   for (const phase of ['request', 'application']) {
-    const f = setup(), { page } = f, pending = deferred()
+    const f = setup(), { page } = f, pending = deferred(), entered = deferred()
     const error = new Error(phase)
     page.data.wq.ai_analysis_generated_at = 17
     page._requestAiAnalysis = async () => {
@@ -82,11 +93,17 @@ test('regeneration request and result errors call but do not await the current e
     page._handleRegenerateError = function (...args) {
       assert.equal(this, page)
       f.calls.push(['handle', ...args])
+      entered.resolve()
       return pending.promise
     }
-    await page.regenerateAiAnalysis()
+    let settled = false
+    const task = page.regenerateAiAnalysis().then(() => { settled = true })
+    await entered.promise
+    assert.equal(settled, false)
     assert.deepEqual(f.calls.at(-1), ['handle', error, 12, 8, '17', null, null])
     pending.resolve()
+    await task
+    assert.equal(settled, true)
   }
 })
 
@@ -227,7 +244,7 @@ test('successful regeneration preserves old marker on falsey generation and toas
   assert.equal(page.data.aiErrorText, '')
 })
 
-test('error dispatcher logs and starts live recovery without returning its promise', () => {
+test('error dispatcher returns current recovery promise and ignores obsolete requests', () => {
   for (const stale of [false, true]) {
     const f = setup(), { page } = f, error = new Error('offline'), pending = deferred()
     page._alive = !stale
@@ -236,7 +253,8 @@ test('error dispatcher logs and starts live recovery without returning its promi
       f.calls.push(['recover', ...args])
       return pending.promise
     }
-    assert.equal(page._handleRegenerateError(error, 12, 7, 'baseline', 'cards', 'result'), undefined)
+    assert.equal(page._handleRegenerateError(error, 12, 7, 'baseline', 'cards', 'result'),
+      stale ? undefined : pending.promise)
     assert.equal(f.calls[0][2], error)
     assert.deepEqual(f.calls.map(call => call[0]), stale ? ['error'] : ['error', 'recover'])
     if (!stale) assert.deepEqual(f.calls[1], ['recover', error, 12, 7, 'baseline', 'cards', 'result'])
@@ -273,7 +291,7 @@ test('recovery enqueues without waiting then applies current helper before late 
 
 test('recovery exhaustion calls current timeout handler only while request identity remains current', async () => {
   for (const stale of [false, true]) {
-    const f = setup(), { page } = f, error = new Error('offline')
+    const f = setup(), { page } = f, error = new ApiError('offline', { statusCode: 0 })
     page._enqueueAiRecovery = () => {}
     page._pollPersistedAiAnalysis = async () => { if (stale) page._aiRequestId++; return null }
     page._handleRegenerateTimeout = function (...args) {
@@ -293,12 +311,14 @@ test('timeout restores old result only with old cards and preserves timeout/fail
     page._handleRegenerateTimeout(new Error(isTimeout ? 'timed out' : 'offline'), oldCards, oldResult)
     const title = isTimeout ? '重新生成超时' : '重新生成失败'
     assert.equal(page._aiResult, oldCards ? oldResult : current)
-    assert.deepEqual(f.calls.map(call => call[0]), ['reset', 'setData', 'setData', 'toast'])
+    assert.deepEqual(f.calls.map(call => call[0]),
+      oldCards ? ['reset', 'setData', 'setData', 'toast'] : ['reset', 'setData', 'setData'])
     assert.deepEqual(plain(f.calls[2][1]), oldCards
       ? { aiCards: oldCards, aiFallback: false, aiInlineNotice: title + '，已保留历史解析' }
-      : { aiErrorText: title + '，请稍后重试' })
-    assert.deepEqual(plain(f.calls.at(-1)[1]),
-      { title: oldCards ? title + '，已保留历史解析' : title, icon: 'none' })
+      : { aiFallback: true, aiRetryable: true, aiErrorText: isTimeout
+        ? 'AI 分析生成超时，请稍后重试' : 'AI 服务暂时不可用，请稍后重试' })
+    if (oldCards) assert.deepEqual(plain(f.calls.at(-1)[1]),
+      { title: title + '，已保留历史解析', icon: 'none' })
   }
 })
 
@@ -321,7 +341,8 @@ test('HTTP regeneration failures immediately stop the skeleton and preserve exis
       assert.equal(page.data.aiCards, oldCards)
       assert.equal(page._aiResult, oldResult)
       assert.equal(page._aiGenerationMarker, 'previous')
-      assert.match(oldCards ? page.data.aiInlineNotice : page.data.aiErrorText, /失败/)
+      assert.ok(oldCards ? page.data.aiInlineNotice : page.data.aiErrorText)
+      if (!oldCards) assert.equal(page.data.aiFallback, true)
       assert.equal(f.calls.filter(call => ['enqueue', 'poll'].includes(call[0])).length, 0,
         `HTTP ${statusCode} must not retry regeneration`)
     }

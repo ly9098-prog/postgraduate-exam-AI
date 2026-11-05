@@ -114,7 +114,7 @@ test('cache sync replaces only entry data and preserves marker omission and norm
     assert.notEqual(entry.data, original)
     assert.equal(entry.data.ai_analysis, normalized)
     assert.equal(entry.timestamp, 99)
-    assert.equal(entry.data.ai_analysis_status, 'pending')
+    assert.equal(entry.data.ai_analysis_status, 'ready')
     assert.equal(entry.data.ai_analysis_generated_at, generatedAt === undefined ? 'old' : String(generatedAt || ''))
     assert.deepEqual(original, { before: true, ai_analysis_generated_at: 'old', ai_analysis_status: 'pending' })
     assert.deepEqual(Object.keys(entry.data), [
@@ -128,7 +128,9 @@ test('cache sync accepts an entry without existing data', () => {
   const f = fixture(), { page, definition } = f, normalized = { content: 'new' }
   page._wqCache = { 12: { timestamp: 3 } }
   definition._syncWqCacheAi.call(page, 12, normalized)
-  assert.deepEqual(plain(page._wqCache), { 12: { timestamp: 3, data: { ai_analysis: normalized } } })
+  assert.deepEqual(plain(page._wqCache), {
+    12: { timestamp: 3, data: { ai_analysis: normalized, ai_analysis_status: 'ready' } },
+  })
 })
 
 test('loading reset writes exactly its four fields without touching private request state', () => {
@@ -148,9 +150,9 @@ test('loading reset writes exactly its four fields without touching private requ
 test('failure state uses provider code precedence and strict false retryability', () => {
   const f = fixture()
   for (const [model, response, text, retryable] of [
-    ['timeout', { error_code: 'ai_provider_auth_failed' }, 'AI 分析服务鉴权失败，请联系管理员检查模型 API Key', true],
+    ['timeout', { error_code: 'ai_provider_auth_failed' }, 'AI 服务连接异常，待服务恢复后可重试', true],
     ['timeout', { retryable: false }, 'AI 分析生成超时，请稍后重试', false],
-    ['', { retryable: false }, 'AI 服务配置异常，请联系管理员检查模型设置', false],
+    ['', { retryable: false }, '这道题暂时无法生成复盘，可先查看参考答案', false],
     ['', { retryable: 0 }, 'AI 服务暂时不可用，请稍后重试', true],
     ['', null, 'AI 服务暂时不可用，请稍后重试', true],
   ]) {

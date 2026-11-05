@@ -2,7 +2,8 @@ async function _prepareNavigationData(page, idx, navigationSeq, { fetchWrongQues
     var questionIds = page.data.questionIds || []
     var wqId = Number(questionIds[idx])
     if (!wqId || idx < 0 || idx >= questionIds.length) return null
-    var cached = page._wqCache && page._wqCache[wqId]
+    var entry = page._wqCache && page._wqCache[wqId]
+    var cached = entry && Date.now() - entry.ts < 300000 ? entry : null
     var wq = cached ? cached.data : await fetchWrongQuestion(wqId)
     if (!page._alive || navigationSeq !== page._navigationSeq) return null
     if (!wq) throw new Error('not found')
@@ -33,11 +34,12 @@ function _buildNavigateDataPatch(page, wq, raw, idx, { _isWqMastered, errorDiagn
     var wrongQuestions = []
     for (var wi = 0; wi < totalQ; wi++) wrongQuestions.push({ _answered: true })
     return {
-      wq, currentQuestion, wrongQuestions,
+      wq, currentQuestion, wrongQuestions, currentIdx: idx,
       runnerProgressPercent: totalQ > 0 ? Math.round((idx + 1) / totalQ * 100) : 0,
       subjectLabelText: raw.subjectLabelText, aiLoading: false, aiRegenerating: false,
       aiCards: null, aiRequested: false, aiFromCache: false, aiFromQuestionAnalysis: false,
       aiFallback: false, aiErrorText: '', aiRetryable: true,
+      aiSkeletonVisible: false, aiInlineNotice: '',
       isCurrentMastered: _isWqMastered(wq), masterSubmitting: false, removeSubmitting: false,
       errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
       nextErrorAction: errorDiagnosis.buildNextAction(wq, errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis)),

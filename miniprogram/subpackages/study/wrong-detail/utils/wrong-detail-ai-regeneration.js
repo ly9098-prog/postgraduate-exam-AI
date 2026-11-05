@@ -17,14 +17,15 @@ async function regenerateAiAnalysis(page, { _generationMarker }) {
     })
     try {
       const result = await page._requestAiAnalysis(wqId, true)
-      if (!page._isCurrentAiRequest(requestId, wqId)) { page._resetAiLoadingState(); return }
+      if (!page._isCurrentAiRequest(requestId, wqId)) return
       await page._applyRegenerateResult(result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
     } catch (e) {
-      page._handleRegenerateError(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
+      await page._handleRegenerateError(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
     }
   }
 
 async function _applyRegenerateResult(page, result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { _normalizeAiPayload, _hasAiContent }) {
+    if (!page._isCurrentAiRequest(requestId, wqId)) return
     const normalized = _normalizeAiPayload(result)
     if (result && result.availability && page._applyAiAvailability) {
       page._applyAiAvailability(result.availability)
@@ -59,13 +60,17 @@ async function _handleRegeneratingModel(page, wqId, requestId, baselineGenerated
     const recovered = await page._pollPersistedAiAnalysis(wqId, requestId, {
       requireNewGeneration: true, baselineGeneratedAt,
     })
+    if (!page._isCurrentAiRequest(requestId, wqId)) return
     if (page._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
       showToast({ title: '已重新生成', icon: 'success' })
       return
     }
-    if (!page._isCurrentAiRequest(requestId, wqId)) return
     page._resetAiLoadingState()
-    page.setData({ aiInlineNotice: 'AI 正在生成中，请稍后重试' })
+    page.setData({
+      aiFallback: !page.data.aiCards,
+      aiErrorText: 'AI 正在生成中，请稍后重试',
+      aiInlineNotice: page.data.aiCards ? 'AI 正在生成中，请稍后重试' : '',
+    })
   }
 
 function _commitRegenerateCachePreserved(page, result, normalized, wqId, baselineGeneratedAt, { _normalizeAiResult, showToast }) {
@@ -118,12 +123,12 @@ function _commitRegenerateSuccess(page, result, normalized, wqId, { _normalizeAi
 function _handleRegenerateError(page, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {
     console.error('重新生成 AI 分析失败', e)
     if (page._isCurrentAiRequest(requestId, wqId)) {
-      page._handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
-      return
+      return page._handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
     }
   }
 
 async function _handleRegenerateRecovery(page, e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult, { _shouldRecoverAiRequest, showToast }) {
+    if (!page._isCurrentAiRequest(requestId, wqId)) return
     const availability = _applyAvailabilityFromError(page, e)
     if (!_shouldRecoverAiRequest(e)) {
       page._handleRegenerateTimeout(e, oldCards, oldResult)
@@ -135,6 +140,7 @@ async function _handleRegenerateRecovery(page, e, wqId, requestId, baselineGener
     const recovered = await page._pollPersistedAiAnalysis(wqId, requestId, {
       requireNewGeneration: true, baselineGeneratedAt,
     })
+    if (!page._isCurrentAiRequest(requestId, wqId)) return
     if (page._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
       showToast({ title: '已重新生成', icon: 'success' })
       return
@@ -154,8 +160,8 @@ function _handleRegenerateTimeout(page, e, oldCards, oldResult, { _isTimeoutErro
       showToast({ title: `${timeoutText}，已保留历史解析`, icon: 'none' })
     } else {
       page._resetAiLoadingState()
-      page.setData({ aiErrorText: `${timeoutText}，请稍后重试` })
-      showToast({ title: timeoutText, icon: 'none' })
+      page.setData(Object.assign({ aiFallback: true },
+        page._analysisFailureState(_isTimeoutError(e) ? 'timeout' : '', e)))
     }
   }
 

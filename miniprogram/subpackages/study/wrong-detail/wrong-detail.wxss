@@ -62,3 +62,43 @@
 .ai-availability-note.is-blocked{background:#F7EFE9;color:#855B47;}
 .ai-action-btn[disabled],.ai-deep-action[disabled]{opacity:.52;background:#F1F2ED;color:#7E877F;box-shadow:none;}
 .ai-regenerate-link[disabled]{opacity:.48;pointer-events:none;}
+
+.ai-review-error {
+  align-items: flex-start;
+  padding: 28rpx 0 12rpx;
+  text-align: left;
+}
+.ai-error-heading {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+.ai-error-icon {
+  width: 32rpx;
+  height: 32rpx;
+  flex-shrink: 0;
+}
+.ai-review-error .fallback-title {
+  margin-top: 0;
+}
+.ai-review-error .fallback-desc {
+  margin-top: 16rpx;
+  color: #526557;
+  font-size: 24rpx;
+  line-height: 1.65;
+  word-break: break-word;
+}
+.ai-error-help {
+  margin-top: 10rpx;
+  color: #526557;
+  font-size: 22rpx;
+  line-height: 1.6;
+}
+.ai-review-error .ai-retry-btn {
+  min-height: 72rpx;
+  height: auto;
+  margin-top: 24rpx;
+  padding: 12rpx 24rpx !important;
+  font-size: 24rpx;
+  line-height: 1.4;
+}

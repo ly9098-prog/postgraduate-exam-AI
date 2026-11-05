@@ -11,7 +11,7 @@ function _syncWqCacheAi(page, wqId, normalized, generatedAt) {
 if (!page._wqCache || !wqId || !normalized) return
 const entry = page._wqCache[wqId]
 if (!entry) return
-const patch = { ai_analysis: normalized }
+const patch = { ai_analysis: normalized, ai_analysis_status: 'ready' }
 if (generatedAt !== undefined) patch.ai_analysis_generated_at = String(generatedAt || '')
 entry.data = Object.assign({}, entry.data, patch)
 }
@@ -45,13 +45,26 @@ return false
 }
 
 function _analysisFailureState(model, result, { _fallbackMessage }) {
+const value = result || {}
+const detail = value.detail || (value.raw && value.raw.data && value.raw.data.detail) || {}
+const code = value.error_code || detail.error_code || detail.code || value.code
+const availability = value.availability || detail.availability ||
+  (detail.status === 'unavailable' || detail.status === 'checking' ? detail : null)
+const status = Number(value.statusCode) || 0
+const messages = {
+401: '登录状态已失效，可返回首页重新登录',
+403: '当前暂不能生成这道题的复盘，可先查看参考答案',
+404: '这道错题已不存在，请返回错题本',
+409: '题目信息已更新，请返回错题本重新进入',
+422: '题目信息暂无法用于复盘，可先查看参考答案',
+429: 'AI 服务当前繁忙，请稍后重试',
+}
 return {
-aiErrorText: _fallbackMessage(
-model,
-result && result.error_code,
-result && result.retryable
-),
-aiRetryable: !(result && result.retryable === false),
+aiErrorText: availability
+  ? _fallbackMessage('', 'availability_' + availability.reason)
+  : messages[status] || _fallbackMessage(model, code, value.retryable),
+aiRetryable: availability ? true
+  : ![401, 403, 404, 409, 422].includes(status) && value.retryable !== false,
 }
 }
 

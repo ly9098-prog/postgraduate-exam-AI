@@ -3,6 +3,33 @@ const { test } = require('node:test')
 const { fixture, deferred } = require('./helpers/wrong-detail-ai-recovery-fixture')
 const plain = value => JSON.parse(JSON.stringify(value))
 
+if (process.argv[2]) test('compiled AI errors keep reference content, recovery and disabled states visible', () => {
+  const fs = require('node:fs'), vm = require('node:vm')
+  const context = vm.createContext({ window: { __webview_engine_version__: 0.02 }, console })
+  vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), context)
+  const render = context.$gwx('subpackages/study/wrong-detail/wrong-detail.wxml')
+  const all = node => [node, ...(node.children || [])
+    .flatMap(child => child && typeof child === 'object' ? all(child) : [])]
+  const byClass = (tree, cls) => all(tree).filter(node =>
+    String((node.attr || {}).class || '').split(/\s+/).includes(cls))
+  const base = Object.assign({}, fixture().page.data, {
+    loading: false, aiFallback: true, aiCards: null, aiRetryable: true, aiRequested: true,
+    aiErrorText: 'AI 服务暂时繁忙，请稍后重试', aiAvailabilityMessage: '服务不可用',
+  })
+  for (const enabled of [true, false]) {
+    const tree = render({ ...base, aiAvailabilityEnabled: enabled })
+    assert.equal(byClass(tree, 'ai-review-error').length, 1)
+    assert.equal(byClass(tree, 'ai-retry-btn').length, 1)
+    assert.equal(Boolean(byClass(tree, 'ai-retry-btn')[0].attr.disabled), !enabled)
+    assert.equal(byClass(tree, 'ai-availability-note').length, 0)
+    assert.equal(byClass(tree, 'ai-loading-state').length, 0)
+    assert.equal(all(tree).filter(node => node.tag === 'wx-quiz-runner').length, 1)
+  }
+  const terminal = render({ ...base, aiRetryable: false })
+  assert.equal(byClass(terminal, 'ai-review-error').length, 1)
+  assert.equal(byClass(terminal, 'ai-retry-btn').length, 0)
+})
+
 function setup() {
   const config = { debug: true }, teacher = {}
   const f = fixture({ config, teacher, exposeDetailHelpers: true })

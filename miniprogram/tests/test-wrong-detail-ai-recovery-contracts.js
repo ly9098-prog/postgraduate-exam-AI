@@ -135,6 +135,15 @@ test('recovered result applies through current page helpers and preserves cache 
   })
 })
 
+test('recovered content cannot replace a different question or an unloaded page', () => {
+  const { page } = fixture()
+  const result = { normalized: { content: 'old' }, latestWq: { id: 11 } }
+  assert.equal(page._applyRecoveredAiResult(result), false)
+  page._alive = false
+  assert.equal(page._applyRecoveredAiResult({ ...result, latestWq: { id: 12 } }), false)
+  assert.equal(page._aiResult, null)
+})
+
 test('recovery source flag, fallback question and missing results preserve distinctions', () => {
   const f = fixture(), { page } = f
   assert.equal(page._applyRecoveredAiResult(null), false)

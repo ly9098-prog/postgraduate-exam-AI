@@ -10,6 +10,46 @@ function setup() {
   return f
 }
 
+test('old generation response and error cannot stop a newer question or change its availability', async () => {
+  for (const rejected of [false, true]) {
+    const f = setup(), pending = deferred(), { page } = f
+    page._requestAiAnalysis = () => pending.promise
+    const task = page.loadAiAnalysis(12)
+    page.data.wq = { id: 13 }
+    page._aiRequestId++
+    page.data.aiLoading = true
+    page._availabilityFromAiError = () => ({ enabled: false })
+    page._applyAiAvailability = () => assert.fail('old availability applied')
+    if (rejected) pending.reject(new ApiError('old', { statusCode: 503 }))
+    else pending.resolve({ content: 'old answer' })
+    await task
+    assert.equal(page.data.aiLoading, true)
+    assert.equal(f.calls.filter(call => call[0] === 'reset').length, 0)
+  }
+})
+
+test('temporarily unavailable AI can be retried once shared availability recovers', async () => {
+  const { page } = setup()
+  await page._applyAiAnalysisResult({
+    from_fallback: true, error_code: 'ai_service_unavailable', retryable: false,
+    availability: { enabled: false, status: 'checking', reason: 'checking' },
+  }, 12, 7, '')
+  assert.equal(page.data.aiFallback, true)
+  assert.equal(page.data.aiRetryable, true)
+  assert.doesNotMatch(page.data.aiErrorText, /API Key|模型设置/)
+})
+
+test('unexpected client exceptions stop loading immediately without queuing a new AI job', async () => {
+  const f = setup(), { page } = f
+  page._requestAiAnalysis = async () => { throw new TypeError('invalid client payload') }
+  page._enqueueAiRecovery = () => assert.fail('client error must not enqueue')
+  page._pollPersistedAiAnalysis = () => assert.fail('client error must not poll')
+  await page.loadAiAnalysis(12)
+  assert.equal(page.data.aiLoading, false)
+  assert.equal(page.data.aiFallback, true)
+  assert.ok(page.data.aiErrorText)
+})
+
 test('generation guards missing identity and current loading without side effects', async () => {
   const f = setup()
   await f.page.loadAiAnalysis(0)
@@ -46,7 +86,7 @@ test('generation captures baseline before loading and resolves response helpers 
   ])
 })
 
-test('generation retains question marker fallback and stale-response loading reset', async () => {
+test('generation retains question marker fallback and leaves stale-response state untouched', async () => {
   const f = setup(), pending = deferred(), { page } = f
   page.data.wq.ai_analysis_generated_at = 17
   page._requestAiAnalysis = () => pending.promise
@@ -55,8 +95,8 @@ test('generation retains question marker fallback and stale-response loading res
   page._alive = false
   pending.resolve({ content: 'late' })
   await request
-  assert.deepEqual(f.calls.map(call => call[0]), ['setData', 'reset', 'setData'])
-  assert.equal(page.data.aiLoading, false)
+  assert.deepEqual(f.calls.map(call => call[0]), ['setData'])
+  assert.equal(page.data.aiLoading, true)
   assert.equal(page._aiRequestId, 8)
 })
 
@@ -206,15 +246,15 @@ test('generation error enqueues without waiting and applies late recovery helper
 test('generation error exhaustion chooses timeout text and suppresses stale final writes', async () => {
   for (const [error, stale, expected] of [
     [new Error('timed out'), false, 'AI 分析生成超时，请稍后重试'],
-    [new Error('offline'), false, 'AI 分析生成失败，请稍后重试'],
-    [new Error('offline'), true, null],
+    [new ApiError('offline', { statusCode: 0 }), false, 'AI 服务暂时不可用，请稍后重试'],
+    [new ApiError('offline', { statusCode: 0 }), true, null],
   ]) {
     const f = setup(), { page } = f
     page._enqueueAiRecovery = () => {}
     page._pollPersistedAiAnalysis = async () => { if (stale) page._alive = false; return null }
     await page._handleAiAnalysisError(error, 12, 7, '')
     if (expected) assert.deepEqual(plain(f.calls.at(-1)[1]), {
-      aiFallback: true, aiErrorText: expected,
+      aiFallback: true, aiErrorText: expected, aiRetryable: true,
     })
     else assert.deepEqual(f.calls.map(call => call[0]), ['error', 'setData'])
   }
@@ -245,7 +285,8 @@ test('explicit HTTP failures end loading without recovery jobs or status polling
     assert.equal(page.data.aiLoading, false, `HTTP ${statusCode}`)
     assert.equal(page.data.aiFallback, true, `HTTP ${statusCode}`)
     assert.equal(page.data.aiInlineNotice, '')
-    assert.match(page.data.aiErrorText, /失败/)
+    assert.ok(page.data.aiErrorText)
+    assert.equal(page.data.aiRetryable, ![401, 403, 404, 409, 422].includes(statusCode))
     assert.equal(f.calls.filter(call => ['enqueue', 'poll'].includes(call[0])).length, 0,
       `HTTP ${statusCode} must not recover a completed failure`)
   }
