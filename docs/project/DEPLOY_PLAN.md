@@ -32,6 +32,31 @@
 - 回退：服务器执行 `bash /data/backups/subject-auth-20261106/rollback.sh`，恢复备份源文件与旧镜像、重建 app、重载 Nginx，随后复验内部健康；本次检查通过，未实际触发回滚。没有数据库 schema/data 变更，不需要数据库回滚。
 - 边界：未部署小程序或 Admin，未提交/推送，未开展模拟器/真机及审核验收。后续常规构建使用已同步的服务器源码，勿误回退此可选身份修复。
 
+### 0.2 共享 AI 健康与预热重试发布（2026-11-06）
+
+北京时间 2026-11-06 02:57—03:03，用户授权“部署更新”后完成后端发布。仅更新 AI 健康缓存、真实调用健康反馈、预热失败分类与队列重试预算相关的 8 个文件；分别以 app、worker 原运行镜像为基底离线叠加，不升级依赖、不迁移数据库。先替换 worker，再替换 app，随后检查并重载 Nginx。Admin、scheduler、PostgreSQL、Redis 和 Nginx 容器 ID 均保持原值。
+
+- 备份与证据：`/data/backups/ai-health-20261106/`，含原主机/容器文件、镜像标签、前后容器清单、文件 SHA256 清单、构建/验证日志和 `acceptance.json`。旧镜像保留为 `deploy-app:before-ai-health-20261106`、`deploy-worker:before-ai-health-20261106`。
+- 新 app：`deploy-app:ai-health-20261106`（同时标记 `latest`），ID `sha256:fadb5f8f6b7ce40633f0b6a2303806415241f8aeb9b5f10735377d8e9acceb31`；新 worker：`deploy-worker:ai-health-20261106`（同时标记 `latest`），ID `sha256:6ca2618b7452578d749afe6b00d32baeb55640e60468270bb7e83709179d74f0`。两容器及主机上的 8 个文件均匹配发布清单。
+- 发布前定向 pytest **122 passed**；镜像预检验证成功租期 1800 秒、刷新间隔 300 秒、检查中重试至少 65 秒、历史可用性死信重试预算至少 3 次。预检曾因工件目录权限和旧 COPY 缓存失败，均发生在生产替换前；改为逐文件 COPY 并显式设置 0644 后，通过非 root 用户预检才执行切换。
+- 运行验收：app `healthy`、角色 `web`；worker 运行、角色 `worker`；均 0 次重启、启动日志无 traceback。带生产 Host 的内部 live/ready 均 200；两个生产域名 live、公开科目目录和游客科目均 200，科目树共 10 个节点、包含高数和线性代数；无效身份仍为 401。
+- 真实模型共享状态：仅按正常准入触发一次健康探测，完成后模型 69 为 `available / enabled=true`，成功租期 1800 秒。随后从 worker 独立进程只读检查，读到同一 `updated_at` / `healthy_until`，确认跨容器共用 Redis 状态；未清空缓存或修改模型配置。证据 `health-smoke-app.log`、`health-smoke-worker.log`。这是连接探测，不等同于真实题目的复盘生成或预热成功。
+- 历史任务：验收时 V2 `prewarm_analysis` 死信 3 条；本轮未手动或批量重放，也未以真实用户数据创建测试任务。历史死信需后续从 Admin 审计入口逐条重试并检查最终缓存。
+- 回退入口：服务器执行 `bash /data/backups/ai-health-20261106/release/rollback.sh`，恢复原主机文件和旧镜像、重建 app/worker、复验存活并重载 Nginx。本次未触发生产回退；无数据库变更。
+- 客户端边界：错题详情目录与 Windows 项目镜像核对一致，本轮未复制镜像文件。官方 WCC 与编译模板回归已通过；原 `cli.bat` 出现递归错误，直接使用 Windows Node 可读取 CLI 帮助，但预览初始化因预期用户配置目录的 `Default/.cli` 不存在而失败。未上传、发布或提审小程序；模拟器、真机及真实复盘生成仍待验证。未提交、推送。
+
+### 0.3 AI 审查后修复与策略收敛发布（2026-11-06）
+
+北京时间 2026-11-06 03:34 完成发布验收。本轮仅在 §0.2 镜像上叠加三个文件：`app/services/ai/prewarm_transition.py`、`app/services/worker_task_types.py`、`app/services/task_queue_v2_dead_retry_contract.py`。预热模块负责恢复历史可用性死信预算，worker 任务类型模块选择策略，通用队列不再解析 AI 错误文本；既有预算、重试次数重置、任务版本与 fencing 行为保留。没有新增模块、依赖或迁移。
+
+- 备份：`/data/backups/ai-cohesion-20261106/`，保留主机/容器原文件、前后容器清单、原镜像及验收日志；旧镜像标签为 `deploy-app:before-ai-cohesion-20261106`、`deploy-worker:before-ai-cohesion-20261106`。
+- 新 app：`deploy-app:ai-cohesion-20261106`（亦标记 `latest`），ID `sha256:f1749399f334179b8c0fe4634c5a1870192975bbbe588c33f2a7dc95cff88a14`；新 worker：`deploy-worker:ai-cohesion-20261106`（亦标记 `latest`），ID `sha256:2dff20ce51bbf074fbbb08cd6e992bfbc7cfe4cf09146cb47ef6365ece8b405b`。
+- 发布前后端相关回归 **596 passed**，本轮三个业务文件及两份测试严格 Ruff、app compileall 通过；镜像用原非 root 用户离线验证三个文件 SHA256、历史预算恢复、其他任务隔离及此前 1800 秒成功租期/300 秒刷新间隔。
+- 线上三个文件在主机、app、worker 均匹配清单；app healthy、worker running，分别为 web/worker，0 次重启、启动日志无 traceback。内部 live/ready 200；两个生产域名 live、科目/游客科目均 200，科目树仍有 10 个节点；无效身份 401。其余容器 ID 不变，未重建 Admin/scheduler/数据库/Redis，Nginx 仅检查并 reload。证据 `acceptance.json`。
+- 回退：`bash /data/backups/ai-cohesion-20261106/release/rollback.sh`，恢复三个源文件与 §0.2 运行镜像，重建 app/worker 后复验存活并 reload Nginx。本轮未触发回退，未迁移或手动重放历史任务；队列计数仅作验收时快照，不能推断历史任务已生成成功。
+- 小程序：修复隐藏时清掉重试计时器、返回命中失败缓存却不恢复检查的问题，并隔离隐藏前在途响应；暂停/恢复及剩余冷却计算归既有可用性模块。相关 Node 定向 **66 passed**，全量 **2703 passed**，渲染 **31/31**；页面 502 行、20 个模块及架构守卫保持通过。
+- 客户端交付：三个运行文件先备份到 `D:\tmp\ai-cohesion-20261106\client-backup`，再定向同步 Windows 工程；错题详情 25 个源码文件与 WSL 核对一致。CLI 调用按实际开发者工具路径识别已有用户配置，凭据仅传入当前进程环境，未修改工具安装文件或持久配置；官方 CLI 预览编译成功，总包 4,576,419 字节、主包 441,331 字节。二维码 `D:\tmp\ai-cohesion-20261106\preview.png`。未上传正式开发版本、发布或提审，真机操作与真实题目生成仍待复验。无 Git 提交/推送。
+
 ## 1. 生产部署架构
 
 ### 服务组成
@@ -774,6 +799,8 @@ OCR_EXECUTION_BACKEND: "disabled"
 **持久化：** `deploy/docker-compose.prod.yml` 中 app、scheduler、worker 都挂载命名卷 `formulas_data:/app/static/formulas`。运行期上传写在卷内 `graphs/{id}/uploaded`，容器重建不丢图。空卷首次挂载会带入镜像里已有的公式静态文件。
 
 **AI 预热题图：** `prewarm_analysis` 在 worker 中运行，必须与 app 共享 `question_assets_data` 卷；app 与 worker 共同挂载 `/app/static/question-assets`（生产启动校验要求该目录可写）。否则 worker 无法从本地读取运行期上传的题图，在远程抓取不可用时会将有题图的题目误判为 `vision_input_missing`。仅修改 Compose 文件不会更新运行中的容器；应用时需单独重建 worker 容器（不删除卷），并按需手动重试已经进入死信队列的任务。
+
+**2026-11-06 共享 AI 健康与预热重试修复（后端已发布，客户端与真实任务待复验）：** 旧版成功标识仅 30 秒有效，过期后的 `checking` 与实际服务故障均返回不可重试的 `ai_service_unavailable`，预热 worker 将尝试预算缩为 1 并立即死信，手动重试继续继承此预算。新逻辑共享成功状态 30 分钟、5 分钟后按需后台刷新且保留有效入口；实际成功续期，失败按类型冷却，配置指纹继续隔离。检查中、暂时故障与状态存储不可用沿现有队列有界退避，管理员重试历史可用性死信时恢复至少 3 次尝试。app 与 worker 已配套更新，真实连接探测和跨容器共享 Redis 状态通过，详见 §0.2；未重放历史死信或验证真实题目预热。后续从后台审计入口逐条重试，观察原因和最终缓存，不能把点击重试当成成功。
 
 **回填脚本提交注意：** `.gitignore` 第 98 行忽略 `backend/scripts/`，该目录既有脚本均为 `git add -f` 跟踪；新脚本需同样 `git add -f backend/scripts/backfill_formula_graph_image_size.py`。
 
