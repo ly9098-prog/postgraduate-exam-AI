@@ -9,7 +9,7 @@ const { filter408SubjectTree } = require('./subject-scope')
 const { formatElapsedSec } = require('./timer-math')
 function buildSubjectLoadPageCapabilities(page, deps) {
   const { api } = deps
-  const fetchSubjects = () => page.data.guestMode ? api.get('/guest/practice/subjects', {}, { auth: 'none' }).then(r => r.items || []) : api.get('/practice/subjects')
+  const fetchSubjects = () => page.data.guestMode ? api.get('/practice/subjects', {}, { auth: 'none' }) : api.get('/practice/subjects')
   return {
     readSubjectCache: () => page.data.guestMode ? null : readSubjectCache(),
     fetchSubjects,

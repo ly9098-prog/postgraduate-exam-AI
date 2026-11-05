@@ -190,6 +190,24 @@ function fakeApi(calls = []) {
   }
 }
 
+test('guest pomodoro uses the complete public catalog rather than the question pool', async () => {
+  const { page } = recordingPage()
+  page.data.guestMode = true
+  const tree = [{ subject_id: 1, subject_code: 'math', children: [
+    { subject_id: 5, subject_code: 'advanced_math', subject_name: '高数', children: [] },
+    { subject_id: 6, subject_code: 'linear_algebra', subject_name: '线性代数', children: [] },
+  ] }]
+  const calls = []
+  const ports = buildSubjectLoadPageCapabilities(page, { api: {
+    get: async (...args) => { calls.push(args); return tree },
+  } })
+  const subjects = await ports.fetchSubjects()
+  assert.deepEqual(calls, [['/practice/subjects', {}, { auth: 'none' }]])
+  assert.deepEqual(ports.filterSubjectTree(subjects)[0].children.map(node => node.subject_id), [5, 6])
+  assert.equal(ports.readSubjectCache(), null)
+  assert.equal(ports.writeSubjectCache(subjects), null)
+})
+
 test('session adapters use injected API and keep delegating ports to the page', () => {
   const { page, calls } = recordingPage()
   const api = fakeApi(calls)
