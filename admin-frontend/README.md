@@ -18,7 +18,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+界面字体使用 `src/app/globals.css` 中的系统字体回退栈，没有加载 Geist 或独立字体包。公式组件使用 KaTeX，根布局引用其样式及配套数学字体；这些字体不是可删除的闲置资源。
 
 ## Learn More
 
