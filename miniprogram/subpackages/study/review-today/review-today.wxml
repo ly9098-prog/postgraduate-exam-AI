@@ -276,10 +276,10 @@
       />
 </view>
 <text class="state-kicker empty-kicker">MEMORY CLEAR</text>
-<text class="state-title empty-title">今天没有待复习的题目。</text>
-<text class="state-desc empty-desc">记忆计划暂时清空，可以放松一下，也可以继续练几道新题。</text>
+<text class="state-title empty-title">{{guestMode ? '登录后查看今日复习' : '今天没有待复习的题目。'}}</text>
+<text class="state-desc empty-desc">{{guestMode ? '游客练习不会建立复习计划。请从首页顶部进入登录。' : '记忆计划暂时清空，可以放松一下，也可以继续练几道新题。'}}</text>
 <view class="empty-status-row">
-<view class="empty-status-item"><text class="empty-status-label">今日复习</text><text class="empty-status-value">已清空</text></view>
+<view class="empty-status-item"><text class="empty-status-label">今日复习</text><text class="empty-status-value">{{guestMode ? '未登录' : '已清空'}}</text></view>
 <view class="empty-status-divider"></view>
 <view class="empty-status-item"><text class="empty-status-label">下一步</text><text class="empty-status-value">自由练习</text></view>
 </view>

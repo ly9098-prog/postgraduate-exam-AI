@@ -90,10 +90,10 @@ const {
   getSubjectColor,
   getPieSubjectColor,
 } = subjectItems
-
 var pageConfig = {
   data: {
     loading: true,
+    guestMode: false,
     contentReady: false,
     historyReady: false,
     themeMode: 'light',
@@ -161,8 +161,8 @@ var pageConfig = {
     _dispWeekDurationText: '0分钟',
   },
 
-  onLoad() {
-return lifecyclePage.onLoad(this)
+  onLoad(options) {
+return lifecyclePage.onLoad(this, options)
 },
 
   _getPageInitController() {

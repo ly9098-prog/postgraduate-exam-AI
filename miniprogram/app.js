@@ -23,6 +23,15 @@ const PERSONAL_ROUTES = new Set([
   'subpackages/export/export-config/export-config',
   'subpackages/export/export-records/export-records',
 ])
+const GUEST_BROWSE_ROUTES = new Set([
+  'pages/dashboard/dashboard',
+  'pages/pomodoro/pomodoro',
+  'subpackages/productivity/pomodoro-stats/index',
+  'subpackages/study/review-today/review-today',
+  'subpackages/study/wrong-book/wrong-book',
+  'subpackages/study/study-plan/index',
+  'subpackages/export/export-records/export-records',
+])
 
 /**
  * Get safe (non-sensitive) page route info for error diagnostics.
@@ -151,24 +160,20 @@ App({
       return
     }
     if (!page || !PERSONAL_ROUTES.has(page.route) || this._guardedPage === page) return
+    if (GUEST_BROWSE_ROUTES.has(page.route) &&
+      String(page.options && page.options.guest) === '1') return
     if ((page.route === 'subpackages/study/practice/practice' ||
       page.route === 'subpackages/study/practice-result/index') &&
       String(page.options && page.options.guest) === '1') return
-    const loginGate = require('./utils/login-gate')
-    if (loginGate.hasPromptedPage(page)) return
+    if (require('./utils/login-gate').hasPromptedPage(page)) return
     this._guardedPage = page
-    loginGate.promptLogin({
-      content: '该功能会保存个人学习记录，需要登录后使用。你可以返回浏览首页、公式库或直接试做题目。',
-    }).then(confirmed => {
-      if (confirmed) return
-      try {
-        const pages = getCurrentPages()
-        if (pages && pages.length > 1) wx.navigateBack({ fail: () => loginGate.goHome() })
-        else loginGate.goHome()
-      } catch (_) {
-        loginGate.goHome()
-      }
-    })
+    try {
+      const pages = getCurrentPages()
+      if (pages && pages.length > 1) wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
+      else wx.reLaunch({ url: '/pages/home/home' })
+    } catch (_) {
+      wx.reLaunch({ url: '/pages/home/home' })
+    }
   },
 
   _startPreviewTempFileCleanup() {

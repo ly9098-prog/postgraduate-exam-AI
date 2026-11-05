@@ -21,7 +21,9 @@ function createRequestPorts(page, deps) {
     getSelectedMode: () => page.data.selectedMode,
     buildRequestParams: () => page._buildQuestionRequestParams(),
     requestQuestions: params => page.data.guestMode
-      ? deps.api.get('/guest/practice/questions', { subject_id: params.subject_id }, { auth: 'none' })
+      ? deps.api.get('/guest/practice/questions', {
+        subject_id: params.subject_id, mode: 'random', count: params.count,
+      }, { auth: 'none' })
       : deps.api.get('/practice/questions', params),
     logError: (...args) => console.error(...args),
     showToast: options => deps.wx.showToast(options),
@@ -96,7 +98,7 @@ function createBatchPorts(page, deps) {
     hasMissingBatchCredentials: count => deps.hasMissingBatchCredentials(page._practiceSession, count)
       || (page.data.guestMode && count > 0 &&
         (!Number.isFinite(page._practiceSession.expiresAt) ||
-          page._practiceSession.expiresAt <= Date.now() || count > 5)),
+          page._practiceSession.expiresAt <= Date.now() || count > 30)),
   }
 }
 

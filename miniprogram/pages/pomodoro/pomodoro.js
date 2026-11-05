@@ -319,7 +319,7 @@ Page({
       selectedTaskType: routeTaskType,
       selectedTaskTypeLabel: pomodoroTaskTypes.label(routeTaskType),
       fromSubjectId: opts && opts.subject_id ? Number(opts.subject_id) : null,
-      fromSubjectCode: String((opts && opts.subject_code) || ''),
+      fromSubjectCode: String((opts && opts.subject_code) || ''), guestMode: Boolean(opts && String(opts.guest) === '1'),
       ...this._getThemeViewModel(themeMode),
     })
     this._loadSubjects()
@@ -333,17 +333,11 @@ Page({
     const activeSyncSeq = (this._activeSyncSeq || 0) + 1
     this._activeSyncSeq = activeSyncSeq
     this._syncThemeFromStorage()
+    // First frame must not wait for session reconciliation.
+    if (!this.data.pageEntered) this.setData({ pageEntered: true })
+    if (this.data.guestMode) return
 
-    // Capture any action that timed out previously. It will be retried after the
-    // local snapshot has restored the first frame, so network work never blocks UI.
     const pendingSync = this._getPendingPomodoroSync()
-
-    // Make the page visible immediately. Active-session reconciliation must not
-    // block the first frame behind a network request.
-    if (!this.data.pageEntered) {
-      this.setData({ pageEntered: true })
-    }
-
     await recoverOnShow(this._showRecoveryOptions(activeSyncSeq), pendingSync)
   },
 
@@ -583,7 +577,7 @@ Page({
   },
 
   _migrateRunningStateCache(subjects) {
-    return this._runningStateMigrator().migrate(subjects)
+    return this.data.guestMode ? null : this._runningStateMigrator().migrate(subjects)
   },
 
   _runningStateMigrator() {
@@ -1476,7 +1470,7 @@ Page({
 
   goStats() {
     this._navigatingToStats = true
-    wx.navigateTo({ url: '/subpackages/productivity/pomodoro-stats/index' })
+    wx.navigateTo({ url: `/subpackages/productivity/pomodoro-stats/index${this.data.guestMode ? '?guest=1' : ''}` })
   },
 
   /* ==================== Theme ==================== */

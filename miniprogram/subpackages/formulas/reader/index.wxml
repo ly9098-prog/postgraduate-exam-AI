@@ -61,7 +61,7 @@
         </view>
 
         <view class="fr-card-surface">
-          <view
+          <view wx:if="{{!guestMode}}"
             class="fr-card-favorite {{currentCard.isFavorited ? 'active' : ''}} {{favoriteBusy ? 'disabled' : ''}}"
             data-id="{{currentCard.id}}"
             hover-class="fr-control-pressed"
@@ -70,6 +70,9 @@
             aria-label="{{currentCard.isFavorited ? '取消收藏' : '收藏公式'}}"
           >
             <view class="fr-bookmark-icon"></view>
+          </view>
+          <view wx:else class="fr-card-favorite is-locked" aria-disabled="true">
+            <view class="fr-bookmark-icon"></view><image class="ui-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
           </view>
           <formula-card
             id="readerFormulaCard"

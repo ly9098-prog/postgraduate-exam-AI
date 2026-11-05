@@ -376,11 +376,8 @@
 </block>
 <view class="section-card guest-result-actions" wx:if="{{guestMode}}">
   <text class="section-title">本次体验不记入学习记录</text>
-  <text class="section-desc">登录后可保存错题、复习计划与成长记录。</text>
-  <view class="guest-result-buttons">
-    <button class="guest-result-repeat" bindtap="repeatGuestPractice">再体验一组</button>
-    <button class="guest-result-login" bindtap="openGuestLogin">去登录</button>
-  </view>
+  <text class="section-desc">本组结果仅保存在本机。登录入口位于首页顶部。</text>
+  <button class="guest-result-repeat" bindtap="repeatGuestPractice">再体验一组</button>
 </view>
 <view class="bottom-space"></view>
 </view>

@@ -41,6 +41,7 @@ return page._subjectSelectionControllerInstance || (
 page._subjectSelectionControllerInstance = createSubjectSelectionController({
 getSelectedSubjectId: () => page.data.selectedSubjectId,
 getSelectedMode: () => page.data.selectedMode,
+isGuest: () => page.data.guestMode,
 getCount: () => page.data.count,
 getExpandedSubjectId: () => page.data.expandedSubjectId,
 findParentSubjectId: id => page._findParentSubjectId(id),

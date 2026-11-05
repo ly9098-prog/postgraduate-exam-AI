@@ -11,6 +11,7 @@ function createStartSessionController(options) {
 
 async function start(options) {
   const page = options.page
+  if (options.isGuest && options.isGuest()) return
   if (
     page._startInFlight ||
     page.data.phase === options.phases.CEREMONY ||
@@ -95,6 +96,7 @@ async function launchCountdown(startSeq, options) {
 }
 
 async function startFree(existingStartSeq, options) {
+  if (options.isGuest && options.isGuest()) return
   const page = options.page
   const startSeq = existingStartSeq || ((page._startRequestSeq || 0) + 1)
   if (!existingStartSeq) page._startRequestSeq = startSeq

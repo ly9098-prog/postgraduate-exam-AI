@@ -43,6 +43,8 @@ def test_token_roundtrip_binds_subject_and_revisions():
     batch = decode_guest_batch_token(token, now=1_700_000_001)
     assert batch.subject_id == 7
     assert batch.revisions == revisions
+    assert batch.mode == "random"
+    assert batch.requested_count == 5
     assert batch.question_ids == (11, 12)
     assert batch.expires_at == 1_700_000_000 + GUEST_PRACTICE_TOKEN_TTL_SEC == expires_at
 
@@ -69,9 +71,16 @@ def test_token_rejects_tampering_and_expiry():
 
 def test_token_rejects_too_many_questions():
     revisions = {qid: qid for qid in range(1, GUEST_PRACTICE_MAX_QUESTIONS + 2)}
-    token, _ = create_guest_batch_token(subject_id=7, revisions=revisions)
     with pytest.raises(GuestPracticeError):
-        decode_guest_batch_token(token)
+        create_guest_batch_token(subject_id=7, revisions=revisions)
+
+
+def test_token_binds_supported_random_question_count():
+    revisions = {qid: qid for qid in range(1, 11)}
+    token, _ = create_guest_batch_token(subject_id=7, revisions=revisions, requested_count=10)
+    batch = decode_guest_batch_token(token)
+    assert batch.requested_count == 10
+    assert len(batch.question_ids) == 10
 
 
 @pytest.mark.asyncio

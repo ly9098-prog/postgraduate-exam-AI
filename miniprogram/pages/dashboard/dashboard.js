@@ -218,6 +218,7 @@ function buildDeepAnalysisState(source) {
 
 Page({
   data: {
+    guestMode: false,
     // 三种独立加载状态
     initialLoading: true,
     refreshing: false,
@@ -350,6 +351,10 @@ Page({
   _insightKickoffTimer: null,
 
   onLoad(options) {
+    this._guestMode = Boolean(options && String(options.guest) === '1')
+    if (this._guestMode) this.setData({
+      guestMode: true, initialLoading: false, error: null, pageReady: true, hero: null,
+    })
     this._focusSubjectId = Math.max(0, Number(options && options.focus_subject_id) || 0)
     this._focusDiagnosisOnLoad = String((options && options.section) || '') === 'knowledge_diagnosis'
     this._selectedKnowledgeSubjectId = 0
@@ -363,6 +368,7 @@ Page({
   },
 
   onShow() {
+    if (this._guestMode) return
     this._alive = true
     this._visible = true
     this._chapterPracticeNavigationPending = false
@@ -466,12 +472,17 @@ Page({
   },
 
   onPullDownRefresh() {
+    if (this._guestMode) {
+      wx.stopPullDownRefresh()
+      return
+    }
     this.loadDashboard({ mode: 'refresh' }).finally(() => {
       wx.stopPullDownRefresh()
     })
   },
 
   async loadDashboard({ mode = 'initial' } = {}) {
+    if (this._guestMode) return null
     if (!this._alive || !this._visible) return null
     // Dedup concurrent loads
     if (this._loadPromise) return this._loadPromise
@@ -1310,11 +1321,19 @@ Page({
   },
 
   goPractice() {
+    if (this._guestMode) {
+      wx.navigateTo({ url: '/subpackages/study/practice/practice?guest=1' })
+      return
+    }
     this._forceRefreshOnNextShow = true
     this.goTo('/subpackages/study/practice/practice', { refreshOnReturn: true })
   },
 
   goWrongBook() {
+    if (this._guestMode) {
+      wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book?guest=1' })
+      return
+    }
     this.goTo('/subpackages/study/wrong-book/wrong-book')
   },
 
@@ -1360,6 +1379,7 @@ Page({
   },
 
   onRetry() {
+    if (this._guestMode) return
     this.loadDashboard({ mode: 'initial' })
   },
 })

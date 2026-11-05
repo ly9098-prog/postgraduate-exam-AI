@@ -127,7 +127,7 @@ function readPending(now = Date.now()) {
 
 function validGuest(snapshot, now) {
   if (!snapshot || !Array.isArray(snapshot.questions) ||
-    !snapshot.questions.length || snapshot.questions.length > 5) return false
+    !snapshot.questions.length || snapshot.questions.length > 30) return false
   const ids = new Set(snapshot.questions.map(question => String(question && question.id)))
   const answers = snapshot.answerMap
   return Boolean(snapshot.version === 2 &&
@@ -188,7 +188,7 @@ function readGuestResult(now = Date.now()) {
     now - value._createdAt >= TTL_MS) return null
   const questions = Array.isArray(value.questions) ? value.questions : []
   const results = Array.isArray(value.results) ? value.results : []
-  if ((!questions.length && !results.length) || questions.length > 5 || results.length > 5) return null
+  if ((!questions.length && !results.length) || questions.length > 30 || results.length > 30) return null
   return value
 }
 

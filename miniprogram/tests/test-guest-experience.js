@@ -84,7 +84,77 @@ test('home hero uses the existing practice route and no duplicate guest card or 
   assert.ok(!study.pages.includes('trial/trial'))
   const template = fs.readFileSync(path.join(miniRoot, 'pages/home/home.wxml'), 'utf8')
   assert.ok(!template.includes('class="guest-entry'))
-  assert.ok(template.includes("guestMode ? secondaryTaskAction"))
+  assert.match(template, /profile-chip/)
+  assert.doesNotMatch(template, /登录保存记录|guest-result-login|openGuestLogin/)
+  const practiceTemplate = fs.readFileSync(
+    path.join(miniRoot, 'subpackages/study/practice/practice.wxml'), 'utf8')
+  assert.doesNotMatch(practiceTemplate, /先体验，再决定|guest-intro"/)
+  assert.match(practiceTemplate, /count-btn[\s\S]*data-count="30"/)
+  assert.match(practiceTemplate, /mode-card-locked/)
+  assert.match(practiceTemplate, /assets\/icons\/lock\.svg/)
+  assert.doesNotMatch(practiceTemplate, /每组最多 5 道/)
+  assert.equal((template.match(/bindtap="startRandom"/g) || []).length, 1)
+  assert.match(template, /assets\/icons\/lock\.svg/)
+})
+
+test('guest questions request selected random count and preserve the guest-only boundary', async () => {
+  reset()
+  const instance = page()
+  await instance.onReady()
+  instance.setData({ count: 20 })
+  await instance.startPractice()
+  const request = requests.find(item => item.url === '/guest/practice/questions')
+  assert.equal(request.params.mode, 'random')
+  assert.equal(request.params.count, 20)
+  assert.equal(request.options.auth, 'none')
+})
+
+test('practice mode cards bind formal mode changes and lock only guest choices', () => {
+  const template = fs.readFileSync(
+    path.join(miniRoot, 'subpackages/study/practice/practice.wxml'), 'utf8')
+  const cards = [...template.matchAll(/<view\s+class="mode-card\b[^>]*>/g)]
+    .map(match => Object.fromEntries(
+      [...match[0].matchAll(/([\w:-]+)="([^"]*)"/g)]
+        .map(attribute => [attribute[1], attribute[2]])))
+  assert.equal(cards.length, 3)
+  for (const guestMode of [false, true]) {
+    for (const selectedMode of ['random', 'sequential', 'smart']) {
+      for (const mode of ['random', 'sequential', 'smart']) {
+        const card = cards.find(item => item['data-mode'] === mode)
+        assert.ok(card, `missing mode card: ${mode}`)
+        const rendered = Object.fromEntries(Object.entries(card).map(([key, value]) => [key,
+          value.replace(/\{\{([\s\S]*?)\}\}/g, (_, expression) =>
+            String(vm.runInNewContext(expression, { guestMode, selectedMode }))),
+        ]))
+        const locked = guestMode && mode !== 'random'
+        assert.equal(rendered.bindtap, locked ? '' : 'chooseMode')
+        assert.equal(rendered.class.split(/\s+/).includes('mode-card-locked'), locked)
+        assert.equal(rendered.class.split(/\s+/).includes('active'),
+          !locked && selectedMode === mode)
+        assert.equal(rendered['aria-disabled'] === 'true', locked)
+        assert.equal(rendered['hover-class'] || '', locked ? '' : 'option-pressed')
+      }
+    }
+  }
+  const locks = [...template.matchAll(/<image\s+class="mode-lock"[^>]*>/g)]
+  assert.equal(locks.length, 2)
+  assert.ok(locks.every(match => match[0].includes('wx:if="{{guestMode}}"')))
+})
+
+test('guest personal routes render browse states without login redirects', () => {
+  const sources = [
+    'subpackages/study/wrong-book/wrong-book.wxml',
+    'subpackages/study/review-today/review-today.wxml',
+    'pages/dashboard/dashboard.wxml',
+    'subpackages/study/study-plan/index.wxml',
+    'subpackages/productivity/pomodoro-stats/index.wxml',
+    'subpackages/export/export-records/export-records.wxml',
+  ].map(file => fs.readFileSync(path.join(miniRoot, file), 'utf8'))
+  assert.ok(sources.some(source => source.includes('请从首页顶部')))
+  assert.ok(sources.some(source => source.includes('登录后查看')))
+  const appSource = fs.readFileSync(path.join(miniRoot, 'app.js'), 'utf8')
+  assert.match(appSource, /GUEST_BROWSE_ROUTES/)
+  assert.doesNotMatch(appSource, /promptLogin\(\{\s*content:/)
 })
 
 test('real shared page grades anonymously and redirects to the existing result page', async () => {
@@ -281,8 +351,8 @@ test('declining shared exit keeps answers; confirming exit keeps an isolated gue
   assert.equal(store.readGuest().snapshot.answerMap[1], 'B')
 })
 
-test('only an explicit guest practice route bypasses the personal route guard', async () => {
-  let app, current, prompts = 0
+test('guest browse routes bypass login while personal-only routes return home without prompting', async () => {
+  let app, current, prompts = 0, homes = 0
   vm.runInNewContext(fs.readFileSync(path.join(miniRoot, 'app.js'), 'utf8'), {
     App: value => { app = value },
     require: name => ({
@@ -290,21 +360,36 @@ test('only an explicit guest practice route bypasses the personal route guard', 
       './utils/login-gate': { hasPromptedPage: () => false,
         promptLogin: async () => { prompts++; return true } },
     })[name],
-    getCurrentPages: () => [current], wx: {}, console, Set,
+    getCurrentPages: () => [current],
+    wx: { reLaunch: () => { homes++ }, navigateBack: () => {} }, console, Set,
   })
   current = { route: 'subpackages/study/practice/practice', options: { guest: '1' } }
   app._guardPersonalRoute()
   assert.equal(prompts, 0)
   current = { route: current.route, options: { guest: '0' } }
   app._guardPersonalRoute()
-  await Promise.resolve()
-  assert.equal(prompts, 1)
+  assert.equal(homes, 1)
+  assert.equal(prompts, 0)
   current = { route: 'subpackages/study/practice-result/index', options: { guest: '1' } }
   app._guardPersonalRoute()
-  assert.equal(prompts, 1)
+  assert.equal(prompts, 0)
+  assert.equal(homes, 1)
   current = { route: 'subpackages/study/wrong-book/wrong-book', options: { guest: '1' } }
   app._guardPersonalRoute()
-  assert.equal(prompts, 2)
+  assert.equal(prompts, 0)
+  assert.equal(homes, 1)
+  for (const route of [
+    'pages/dashboard/dashboard', 'pages/pomodoro/pomodoro',
+    'subpackages/productivity/pomodoro-stats/index',
+    'subpackages/study/review-today/review-today',
+    'subpackages/study/wrong-book/wrong-book',
+    'subpackages/study/study-plan/index',
+    'subpackages/export/export-records/export-records',
+  ]) {
+    current = { route, options: { guest: '1' } }
+    app._guardPersonalRoute()
+  }
+  assert.equal(homes, 1)
 })
 
 function loginPage(stackSize) {
@@ -459,7 +544,7 @@ test('guest batch rejects unsupported, duplicated, out-of-scope and oversized qu
     [questions[0], questions[0]],
     [{ ...questions[0], question_type: 'internal' }],
     [{ ...questions[0], subject_id: 999 }],
-    Array.from({ length: 6 }, (_, index) => ({ ...questions[0], id: index + 1 })),
+    Array.from({ length: 31 }, (_, index) => ({ ...questions[0], id: index + 1 })),
   ]) {
     api.get = async () => ({ ...batch(), questions: invalid })
     await instance.startPractice()
@@ -484,25 +569,15 @@ test('guest grading network failure preserves answers and never replays automati
   assert.equal(posts, 1)
 })
 
-test('cancelling login after expired formal submission does not trigger another route prompt', async () => {
-  let app, listener, prompts = 0, homes = 0, modals = 0
-  const practice = {
-    route: 'subpackages/study/practice/practice',
-    options: { resume: '1' },
-    selectComponent: id => id === '#appDialog'
-      ? { show: () => { prompts++; return Promise.resolve(true) } }
-      : null,
-  }
-  const pages = [practice]
+function routeGuardHarness(pages) {
+  let app, listener
+  const calls = { back: 0, homes: [], modals: 0 }
   const gate = { exports: {} }
   const platform = {
-    showModal(options) {
-      modals++
-      queueMicrotask(() => { options.success({ confirm: true }); options.complete() })
-    },
+    showModal() { calls.modals++ },
     navigateTo() { pages.push({ route: 'pages/login/login' }); listener() },
-    navigateBack() { pages.pop(); listener() },
-    reLaunch() { homes++ },
+    navigateBack() { calls.back++; pages.pop(); listener() },
+    reLaunch(options) { calls.homes.push(options.url) },
     onAppRouteDone(callback) { listener = callback },
   }
   vm.runInNewContext(fs.readFileSync(path.join(miniRoot, 'utils/login-gate.js'), 'utf8'), {
@@ -517,12 +592,69 @@ test('cancelling login after expired formal submission does not trigger another 
     })[name], getCurrentPages: () => pages, wx: platform, console, Set,
   })
   app._startPreviewTempFileCleanup = () => {}
+  app._tryRestoreLogin = () => {}
   app.onLaunch()
-  await gate.exports.promptLogin()
-  platform.navigateBack()
-  await Promise.resolve()
-  assert.equal(prompts, 1)
-  assert.equal(modals, 0)
-  assert.equal(homes, 0)
-  assert.equal(pages.at(-1), practice)
+  return { app, gate: gate.exports, platform, calls, routeDone: () => listener() }
+}
+
+for (const stackSize of [1, 2]) {
+  for (const confirmLogin of [false, true]) {
+    test(`expired formal submission stays on its page after ${confirmLogin ? 'login page' : 'dialog'} cancellation with stack ${stackSize}`, async () => {
+      let prompts = 0
+      const practice = {
+        route: 'subpackages/study/practice/practice',
+        options: { resume: '1' },
+        _practiceSession: { answerMap: { 1: 'B' }, submissionSnapshot: { requestId: 'frozen' } },
+        selectComponent: id => id === '#appDialog'
+          ? { show: () => { prompts++; return Promise.resolve(confirmLogin) } }
+          : null,
+      }
+      const pages = stackSize === 1 ? [practice] : [{ route: 'pages/home/home' }, practice]
+      const { app, gate, platform, calls, routeDone } = routeGuardHarness(pages)
+      const session = practice._practiceSession
+      await gate.promptLogin()
+      if (confirmLogin) platform.navigateBack()
+      routeDone()
+      app.onShow()
+      assert.equal(prompts, 1)
+      assert.equal(calls.modals, 0)
+      assert.equal(calls.back, confirmLogin ? 1 : 0)
+      assert.deepEqual(calls.homes, [])
+      assert.equal(pages.at(-1), practice)
+      assert.equal(practice._practiceSession, session)
+      assert.deepEqual(session.answerMap, { 1: 'B' })
+      assert.equal(session.submissionSnapshot.requestId, 'frozen')
+
+      const fresh = { route: practice.route, options: { ...practice.options } }
+      pages.push(fresh)
+      routeDone()
+      assert.equal(calls.back, confirmLogin ? 2 : 1)
+      assert.equal(pages.at(-1), practice)
+      assert.deepEqual(calls.homes, [])
+    })
+  }
+
+  test(`unprompted personal route remains guarded with stack ${stackSize}`, () => {
+    const protectedPage = { route: 'subpackages/study/practice/practice', options: {} }
+    const pages = stackSize === 1 ? [protectedPage] : [{ route: 'pages/home/home' }, protectedPage]
+    const { app, calls, routeDone } = routeGuardHarness(pages)
+    routeDone()
+    app.onShow()
+    assert.equal(calls.back, stackSize === 1 ? 0 : 1)
+    assert.deepEqual(calls.homes, stackSize === 1 ? ['/pages/home/home'] : [])
+  })
+}
+
+test('guest practice and result routes remain browseable without a login prompt', () => {
+  for (const route of ['subpackages/study/practice/practice', 'subpackages/study/practice-result/index']) {
+    const guest = { route, options: { guest: '1' } }
+    const pages = [guest]
+    const { app, calls, routeDone } = routeGuardHarness(pages)
+    routeDone()
+    app.onShow()
+    assert.equal(calls.back, 0)
+    assert.equal(calls.modals, 0)
+    assert.deepEqual(calls.homes, [])
+    assert.equal(pages.at(-1), guest)
+  }
 })

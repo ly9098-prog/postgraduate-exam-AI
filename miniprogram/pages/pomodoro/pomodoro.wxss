@@ -402,6 +402,7 @@ page {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 14rpx;
   width: 420rpx;
   height: 96rpx;
   background: linear-gradient(135deg, #3B82F6 0%, #06B6D4 100%);
@@ -427,6 +428,12 @@ page {
   font-weight: 700;
   color: #ffffff;
   letter-spacing: 4rpx;
+}
+
+.btn-start-lock {
+  width: 34rpx;
+  height: 34rpx;
+  flex: 0 0 auto;
 }
 
 /* ============================================

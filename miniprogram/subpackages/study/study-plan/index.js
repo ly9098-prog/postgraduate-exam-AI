@@ -38,6 +38,7 @@ return `${match[1]}年${Number(match[2])}月${Number(match[3])}日`
 }
 Page({
 data: {
+guestMode: false,
 loading: true,
 saving: false,
 configured: false,
@@ -71,7 +72,12 @@ fabY: 0,
 fabReady: false,
 fabIdle: false,
 },
-onLoad() {
+onLoad(options) {
+if (options && String(options.guest) === '1') {
+  this._guestMode = true
+  this.setData({ guestMode: true, loading: false })
+  return
+}
 this._syncMinDate()
 this.setData({ questionGoalIndex: this._getQuestionGoalIndex() })
 this._loadStudyStrategy()
@@ -79,6 +85,7 @@ this._initFabPosition()
 this.loadOverview()
 },
 onShow() {
+if (this._guestMode) return
 this._syncMinDate()
 this._loadStudyStrategy()
 this._syncQuestionGoalFromStorage()
@@ -194,6 +201,10 @@ if (this._fabMoved) return
 this.savePlan()
 },
 onPullDownRefresh() {
+if (this._guestMode) {
+  wx.stopPullDownRefresh()
+  return
+}
 this.loadOverview().finally(() => wx.stopPullDownRefresh())
 },
 _syncMinDate() {
@@ -202,6 +213,7 @@ if (this.data.minDate !== today) this.setData({ minDate: today })
 return today
 },
 async loadOverview() {
+if (this._guestMode) return
 this.setData({ loading: true, errorText: '' })
 try {
 const overview = await api.get('/study-plan/overview')
@@ -399,6 +411,7 @@ if (!dialog || typeof dialog.show !== 'function') return Promise.resolve(false)
 return dialog.show(opts || {})
 },
   async savePlan() {
+if (this._guestMode) return
     if (this.data.saving) return
     this._saveQuestionGoal(this.data.questionGoalIndex)
     if (!this._validateAndSaveStrategy()) return

@@ -64,14 +64,14 @@ async def add_question(database, question_id, **overrides):
 
 
 @pytest.mark.asyncio
-async def test_candidate_query_limits_to_five_distinct_published_revision_questions(database):
+async def test_candidate_query_respects_requested_count_and_published_question_scope(database):
     for question_id in range(1, 9):
         await add_question(database, question_id)
     await add_question(database, 90, review_status="pending")
     await add_question(database, 91, is_active=False)
     await add_question(database, 92, subject_id=2)
     await add_question(database, 99)
-    result = await load_guest_questions(database, 1)
+    result = await load_guest_questions(database, 1, count=5)
     assert result.total == 5
     assert len({question.id for question in result.questions}) == 5
     assert all(question.id in range(1, 9) for question in result.questions)
@@ -81,6 +81,24 @@ async def test_candidate_query_limits_to_five_distinct_published_revision_questi
         assert batch.revisions[question.id] == question.question_version_id
         assert not {"answer", "analysis", "raw_content", "source_file"} & question.model_dump().keys()
     assert not database.new and not database.dirty
+
+
+@pytest.mark.asyncio
+async def test_candidate_query_uses_requested_guest_random_count(database):
+    for question_id in range(1, 16):
+        await add_question(database, question_id)
+    result = await load_guest_questions(database, 1, count=10)
+    assert result.total == 10
+    batch = decode_guest_batch_token(result.batch_token)
+    assert batch.requested_count == 10
+    assert len(batch.question_ids) == 10
+    assert not database.new and not database.dirty
+
+
+@pytest.mark.asyncio
+async def test_guest_question_count_rejects_nonstandard_values(database):
+    with pytest.raises(guest_practice.GuestPracticeError):
+        await load_guest_questions(database, 1, count=7)
 
 
 @pytest.mark.asyncio

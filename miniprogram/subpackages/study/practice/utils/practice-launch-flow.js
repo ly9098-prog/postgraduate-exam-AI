@@ -95,6 +95,8 @@ const { buildQuestionRequestParams } = dependencies
 if (page.data.guestMode) return {
   subject_id: page.data.selectedSubjectId,
   include_children: page.data.selectedSubjectHasChildren,
+  mode: 'random',
+  count: page.data.count,
 }
 return buildQuestionRequestParams({
 subjectId: page.data.selectedSubjectId,
@@ -112,7 +114,6 @@ launchKnowledgePoint: page._launchKnowledgePoint,
 }
 
 function toggleSettings(page) {
-if (page.data.guestMode) return
 page.setData({ settingsExpanded: !page.data.settingsExpanded })
 }
 

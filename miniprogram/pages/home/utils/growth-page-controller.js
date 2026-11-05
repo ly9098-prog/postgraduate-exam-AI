@@ -56,11 +56,11 @@ const growthPageMethods = {
       displayName: '同学',
       userInitial: '研',
       primaryTaskKicker: 'GUEST PREVIEW',
-      primaryTaskTitle: '先试做 5 道真题',
-      primaryTaskDesc: '不登录也能作答并查看解析；登录后再保存错题、复习计划和成长记录。',
+      primaryTaskTitle: '先体验随机练习',
+      primaryTaskDesc: '可完成整组练习并查看答案解析，体验结果仅保存在本机。',
       primaryTaskAction: '开始体验',
-      secondaryTaskAction: '登录保存记录',
-      missionText: '游客体验不会写入学习记录',
+      secondaryTaskAction: '学习报告',
+      missionText: '顺序、推荐与个人记录登录后解锁',
     }
   },
 

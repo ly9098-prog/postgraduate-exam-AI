@@ -3,6 +3,10 @@
 <submit-confirm id="actionConfirm" />
 <app-dialog id="appDialog"></app-dialog>
 <view class="page {{!loading || list.length ? 'route-enter' : ''}} {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 && !showFilter && filterCount === 0 && !listError ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
+<view wx:if="{{guestMode}}" class="guest-empty-state">
+<wrong-book-empty title="登录后显示你的错题" description="游客体验不会写入错题本。" secondary-description="请从首页顶部进入登录。" />
+</view>
+<block wx:else>
 <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
 <block wx:if="{{!batchMode}}">
 <view class="view-tabs" role="tablist">
@@ -359,4 +363,5 @@
 <view class="undo-divider"></view>
 <text class="undo-action" bindtap="undoBatchMaster">撤销</text>
 </view>
+</block>
 </view>

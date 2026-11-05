@@ -304,7 +304,7 @@ const menuTop = menu && menu.top ? Number(menu.top) : statusBar + 6
 const menuHeight = menu && menu.height ? Number(menu.height) : 32
 this.setData({ reviewNavigationHeight: statusBar + menuHeight + Math.max(4, menuTop - statusBar) * 2 })
 
-this._alive = true
+this._alive = true; this._guestMode = Boolean(options && String(options.guest) === '1')
 this._overviewRequestSeq = 0
 this._flowRequestSeq = 0
 this._masterUndoInFlight = false
@@ -361,6 +361,7 @@ _setDateStr() {
 this._reviewSessionController().setDateStr()
 },
 async loadTodayReviewOverview() {
+if (this._guestMode) { this.setData({ guestMode: true, phase: 'empty' }); return }
   await this._overviewLoadController().load()
 },
 async refreshOverviewStatsSilently() {
@@ -554,12 +555,8 @@ this._showResultDockAndRefreshTimer()
 onPageScroll() {
 this._showResultDockAndRefreshTimer()
 },
-goWrongBook() {
-wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' })
-},
-goPractice() {
-wx.navigateTo({ url: '/subpackages/study/practice/practice' })
-},
+goWrongBook() { wx.navigateTo({ url: `/subpackages/study/wrong-book/wrong-book${this._guestMode ? '?guest=1' : ''}` }) },
+goPractice() { wx.navigateTo({ url: `/subpackages/study/practice/practice${this._guestMode ? '?guest=1' : ''}` }) },
 onNavBack() {
 this._navBackController().onNavBack()
 },

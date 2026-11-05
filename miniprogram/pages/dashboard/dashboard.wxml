@@ -1,6 +1,6 @@
 <premium-nav title="学习报告" variant="light" bind:back="goBack" />
 <app-dialog id="appDialog"></app-dialog>
-<view class="dashboard-page {{pageReady ? 'ready' : ''}}">
+<view class="dashboard-page {{pageReady ? 'ready' : ''}} {{guestMode ? 'dashboard-page-guest' : ''}}">
   <!-- Initial loading -->
   <view class="dashboard-loading" wx:if="{{initialLoading && !pageReady}}">
     <view class="loading-skeleton">
@@ -20,7 +20,7 @@
   </view>
 
   <!-- Empty -->
-  <view class="dashboard-state" wx:elif="{{!initialLoading && !error && pageReady && !_hasData}}">
+  <view class="dashboard-state {{guestMode ? 'dashboard-state-guest' : ''}}" wx:elif="{{!initialLoading && !error && pageReady && !_hasData}}">
     <view class="empty-visual">
       <view class="empty-chart-line line-a"></view>
       <view class="empty-chart-line line-b"></view>
@@ -28,8 +28,8 @@
       <view class="empty-chart-dot"></view>
     </view>
     <text class="state-kicker">MEMOGRAD REPORT</text>
-    <text class="state-title">从第一组练习开始</text>
-    <text class="state-desc">完成练习后，这里会生成趋势、薄弱点与诊断报告。</text>
+    <text class="state-title">{{guestMode ? '登录后查看学习统计' : '从第一组练习开始'}}</text>
+    <text class="state-desc">{{guestMode ? '游客练习结果仅保存在本机。请从首页顶部进入登录。' : '完成练习后，这里会生成趋势、薄弱点与诊断报告。'}}</text>
     <button class="state-button" bindtap="goPractice">开始练习</button>
     <text class="state-link" bindtap="goWrongBook">查看错题本</text>
   </view>

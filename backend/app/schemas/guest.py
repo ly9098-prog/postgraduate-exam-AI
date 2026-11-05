@@ -38,7 +38,7 @@ class GuestAnswerSubmit(BaseModel):
 
 class GuestEvaluateRequest(BaseModel):
     batch_token: str = Field(min_length=1, max_length=8192)
-    answers: list[GuestAnswerSubmit] = Field(default_factory=list, max_length=5)
+    answers: list[GuestAnswerSubmit] = Field(default_factory=list, max_length=30)
 
 
 class GuestEvaluationItem(BaseModel):

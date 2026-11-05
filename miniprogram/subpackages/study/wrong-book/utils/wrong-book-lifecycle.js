@@ -1,5 +1,10 @@
 function onLoad(pageContext, options, { settings, safeDecodeURIComponent }) {
 pageContext._destroyed = false
+if (options && String(options.guest) === '1') {
+pageContext._guestMode = true
+pageContext.setData({ guestMode: true, loading: false, list: [], stats: { total: 0 } })
+return
+}
 pageContext._statsRequestSeq = 0
 pageContext._subjectsRequestSeq = 0
 pageContext._taskFlowRequestSeq = 0
@@ -21,6 +26,7 @@ pageContext._restoreAiDiagnosisFromCache()
 }
 
 function onReady(pageContext) {
+if (pageContext._guestMode) return
 pageContext._ready = true
 pageContext.loadSubjects()
 pageContext._loadPage()
@@ -28,6 +34,7 @@ pageContext._loadPage()
 
 function onShow(pageContext) {
 pageContext._alive = true
+if (pageContext._guestMode) return
 pageContext._syncDateFilter()
 if (pageContext.data.batchMode) pageContext._showBatchCapsuleAndRefreshTimer()
 if (!pageContext._ready) return

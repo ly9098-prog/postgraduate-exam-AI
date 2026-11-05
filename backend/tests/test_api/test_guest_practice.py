@@ -35,6 +35,21 @@ def test_guest_evaluation_rejects_forged_batch_before_database_access(client):
     database.execute.assert_not_called()
 
 
+@pytest.mark.parametrize(("mode", "count", "status"), [
+    ("sequential", 5, 422),
+    ("smart", 5, 422),
+    ("random", 7, 422),
+])
+def test_guest_question_endpoint_only_accepts_random_supported_counts(client, mode, count, status):
+    test_client, database = client
+    response = test_client.get(
+        "/api/v1/guest/practice/questions",
+        params={"subject_id": 1, "mode": mode, "count": count},
+    )
+    assert response.status_code == status
+    database.execute.assert_not_called()
+
+
 def test_anonymous_formula_reads_never_expose_personal_favorites(client):
     test_client, database = client
     response = test_client.get("/api/v1/formulas/catalog?favorite_only=true")

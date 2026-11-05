@@ -38,9 +38,10 @@ from app.services.question_revision_service import (
     load_revision_views,
 )
 
-GUEST_PRACTICE_MAX_QUESTIONS = 5
+GUEST_PRACTICE_MAX_QUESTIONS = 30
+GUEST_PRACTICE_COUNTS = frozenset({5, 10, 20, 30})
 GUEST_PRACTICE_TOKEN_TTL_SEC = 24 * 60 * 60
-_GUEST_TOKEN_VERSION = 1
+_GUEST_TOKEN_VERSION = 2
 
 
 class GuestPracticeError(ValueError):
@@ -58,12 +59,14 @@ class GuestPracticeBatch:
     revisions: dict[int, int]
     issued_at: int
     expires_at: int
+    mode: str = "random"
+    requested_count: int = 5
 
 
 def _signing_key() -> bytes:
     return hmac.new(
         settings.APP_SECRET.encode("utf-8"),
-        b"memograd:guest-practice-batch:v1",
+        b"memograd:guest-practice-batch:v2",
         hashlib.sha256,
     ).digest()
 
@@ -85,14 +88,25 @@ def create_guest_batch_token(
     *,
     subject_id: int,
     revisions: dict[int, int],
+    requested_count: int | None = None,
     now: int | None = None,
 ) -> tuple[str, int]:
+    resolved_count = requested_count
+    if resolved_count is None:
+        resolved_count = next(
+            (count for count in sorted(GUEST_PRACTICE_COUNTS) if count >= len(revisions)),
+            0,
+        )
+    if resolved_count not in GUEST_PRACTICE_COUNTS or len(revisions) > resolved_count:
+        raise GuestPracticeError("体验批次题量无效")
     issued_at = _now_seconds() if now is None else int(now)
     expires_at = issued_at + GUEST_PRACTICE_TOKEN_TTL_SEC
     payload = {
         "v": _GUEST_TOKEN_VERSION,
         "sid": int(subject_id),
         "qs": [[int(qid), int(vid)] for qid, vid in revisions.items()],
+        "mode": "random",
+        "count": int(resolved_count),
         "iat": issued_at,
         "exp": expires_at,
     }
@@ -147,12 +161,20 @@ def _parse_payload(payload: object) -> GuestPracticeBatch:
         raise GuestPracticeError("体验批次元数据无效") from exc
     if subject_id <= 0 or expires_at - issued_at != GUEST_PRACTICE_TOKEN_TTL_SEC:
         raise GuestPracticeError("体验批次元数据无效")
+    mode = payload.get("mode")
+    requested_count = payload.get("count")
+    if mode != "random" or requested_count not in GUEST_PRACTICE_COUNTS:
+        raise GuestPracticeError("体验批次模式或题量无效")
+    if len(revisions) > requested_count:
+        raise GuestPracticeError("体验批次题目数量无效")
     return GuestPracticeBatch(
         subject_id=subject_id,
         question_ids=tuple(revisions),
         revisions=revisions,
         issued_at=issued_at,
         expires_at=expires_at,
+        mode=mode,
+        requested_count=requested_count,
     )
 
 
@@ -207,8 +229,10 @@ async def load_guest_subject_tree(db: AsyncSession) -> list[dict]:
 
 
 async def load_guest_questions(
-    db: AsyncSession, subject_id: int
+    db: AsyncSession, subject_id: int, count: int = 5
 ) -> GuestPracticeQuestionsResponse:
+    if count not in GUEST_PRACTICE_COUNTS:
+        raise GuestPracticeError("体验题量仅支持 5、10、20 或 30 题")
     resolved = await resolve_subject_id_to_code(db, subject_id)
     if resolved is None:
         raise GuestSubjectUnavailableError("科目不存在或暂不可体验")
@@ -229,7 +253,7 @@ async def load_guest_questions(
         .where(*_eligible_conditions(scope_ids))
         .where(issued_revision.version == latest_version)
         .order_by(func.random())
-        .limit(GUEST_PRACTICE_MAX_QUESTIONS)
+        .limit(count)
     )
     revisions = dict((await db.execute(statement)).all())
     if not revisions:
@@ -238,7 +262,7 @@ async def load_guest_questions(
     if len(items) != len(revisions):
         raise GuestSubjectUnavailableError("该科目暂无可体验题目")
     token, expires_at = create_guest_batch_token(
-        subject_id=subject_id, revisions=revisions
+        subject_id=subject_id, revisions=revisions, requested_count=count
     )
     return GuestPracticeQuestionsResponse(
         questions=items,

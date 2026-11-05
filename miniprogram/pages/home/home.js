@@ -183,7 +183,7 @@ Page({
 
   async openProfileSheet() {
     if (!this._authed) {
-      this._requireLogin('登录后可以设置头像和昵称，也可以先浏览体验。')
+      this.openLoginFromHome()
       return
     }
 
@@ -629,10 +629,7 @@ Page({
   },
 
   startSecondaryTask() {
-    if (this.data.guestMode) {
-      this.openLoginFromHome()
-      return
-    }
+    if (this.data.guestMode) return
     if (!this._requireLogin('学习报告需要登录后查看。你仍可以浏览公式或试做题目。')) return
     if (this.data.studyHubAvailable) {
       this.goDashboard()
@@ -692,23 +689,20 @@ Page({
     wx.navigateTo({ url: '/subpackages/study/practice/practice' })
   },
   goWrongBook() {
-    if (!this._requireLogin('错题本会保存你的作答记录，登录后即可查看。')) return
-    wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' })
+    wx.navigateTo({ url: `/subpackages/study/wrong-book/wrong-book${this.data.guestMode ? '?guest=1' : ''}` })
   },
   goReview() {
-    if (!this._requireLogin('今日复习依赖你的学习记录，登录后即可继续。')) return
-    wx.navigateTo({ url: '/subpackages/study/review-today/review-today' })
+    wx.navigateTo({ url: `/subpackages/study/review-today/review-today${this.data.guestMode ? '?guest=1' : ''}` })
   },
   goDashboard() {
-    if (!this._requireLogin('学习看板会读取你的个人统计，登录后即可查看。')) return
-    wx.navigateTo({ url: '/pages/dashboard/dashboard' })
+    wx.navigateTo({ url: `/pages/dashboard/dashboard${this.data.guestMode ? '?guest=1' : ''}` })
   },
   goPomodoro() {
-    if (!this._requireLogin('专注计时会同步你的学习记录，登录后即可使用。')) return
-    wx.navigateTo({ url: '/pages/pomodoro/pomodoro' })
+    wx.navigateTo({ url: `/pages/pomodoro/pomodoro${this.data.guestMode ? '?guest=1' : ''}` })
   },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
   goExams() {
+    if (this.data.guestMode) return
     if (!this._requireLogin('真题套卷会保存答题记录，登录后即可开始。')) return
     if (this._examRoutePending) return
     this._examRoutePending = true
@@ -763,11 +757,11 @@ Page({
     })
   },
   goStudyPlan() {
-    if (!this._requireLogin('学习计划需要绑定到你的账号，登录后即可设置。')) return
     if (this.data.showGoalPicker) this.setData({ showGoalPicker: false })
-    wx.navigateTo({ url: '/subpackages/study/study-plan/index' })
+    wx.navigateTo({ url: `/subpackages/study/study-plan/index${this.data.guestMode ? '?guest=1' : ''}` })
   },
   openMasterySubject(event) {
+    if (this.data.guestMode) return
     if (!this._requireLogin('知识点掌握度来自你的学习记录，登录后即可查看。')) return
     const subjectId = Number(event && event.currentTarget && event.currentTarget.dataset.subjectId)
     if (!subjectId) return

@@ -32,3 +32,18 @@ button {
 button::after {
   border: none;
 }
+
+.is-locked {
+  opacity: .58;
+  filter: grayscale(.55);
+}
+
+.ui-lock {
+  display: inline-block;
+  width: 28rpx;
+  height: 28rpx;
+  margin-left: 10rpx;
+  vertical-align: middle;
+  flex: 0 0 auto;
+  opacity: .9;
+}

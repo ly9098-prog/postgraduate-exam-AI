@@ -27,17 +27,19 @@
           <view class="focus-card-head">
             <view class="focus-card-title-line">
               <text class="focus-card-title">累计专注</text>
-              <picker mode="date" value="{{cumulativeStartDate}}" start="{{cumulativePickerStartDate}}" end="{{_todayDate}}" bindchange="onCumulativeStartChange">
-                <view class="cumulative-start-picker" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择累计专注起始日期">
+              <picker mode="date" disabled="{{guestMode}}" value="{{cumulativeStartDate}}" start="{{cumulativePickerStartDate}}" end="{{_todayDate}}" bindchange="onCumulativeStartChange">
+                <view class="cumulative-start-picker {{guestMode ? 'is-locked' : ''}}" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择累计专注起始日期">
                   <text>自 {{cumulativeStartDate || _todayDate}} 起</text>
-                  <view class="micro-chevron" aria-hidden="true"></view>
+                  <image wx:if="{{guestMode}}" class="stat-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
+                  <view wx:else class="micro-chevron" aria-hidden="true"></view>
                 </view>
               </picker>
             </view>
-            <picker mode="time" value="{{dayStartTime}}" bindchange="onDayStartChange">
-              <view class="study-day-chip" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="调整统计日开始时间">
+            <picker mode="time" disabled="{{guestMode}}" value="{{dayStartTime}}" bindchange="onDayStartChange">
+              <view class="study-day-chip {{guestMode ? 'is-locked' : ''}}" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="调整统计日开始时间">
                 <text>统计日 {{dayStartTime}}</text>
-                <view class="micro-chevron" aria-hidden="true"></view>
+                <image wx:if="{{guestMode}}" class="stat-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
+                <view wx:else class="micro-chevron" aria-hidden="true"></view>
               </view>
             </picker>
           </view>
@@ -68,15 +70,15 @@
           <view class="focus-card-head daily-focus-head">
             <view class="focus-card-title-line daily-title-line">
               <text class="focus-card-title">当日专注</text>
-              <picker mode="date" value="{{selectedDate}}" start="{{datePickerMinDate}}" end="{{_todayDate}}" bindchange="onDateChange">
-                <view class="daily-date-picker" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择统计日期">
+              <picker mode="date" disabled="{{guestMode}}" value="{{selectedDate}}" start="{{datePickerMinDate}}" end="{{_todayDate}}" bindchange="onDateChange">
+                <view class="daily-date-picker {{guestMode ? 'is-locked' : ''}}" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择统计日期">
                   <text>{{selectedDate}}</text>
                 </view>
               </picker>
             </view>
             <view class="daily-date-nav" aria-label="切换统计日期">
-              <view class="daily-date-nav-btn" hover-class="daily-date-nav-pressed" hover-start-time="20" hover-stay-time="80" catchtap="goPrevDay" aria-role="button" aria-label="前一天"><view class="daily-nav-chevron daily-nav-chevron-prev" aria-hidden="true"></view></view>
-              <view class="daily-date-nav-btn {{canGoNextDate ? '' : 'daily-date-nav-disabled'}}" hover-class="{{canGoNextDate ? 'daily-date-nav-pressed' : ''}}" hover-start-time="20" hover-stay-time="80" catchtap="goNextDay" aria-role="button" aria-label="后一天" aria-disabled="{{!canGoNextDate}}"><view class="daily-nav-chevron daily-nav-chevron-next" aria-hidden="true"></view></view>
+              <view class="daily-date-nav-btn {{guestMode ? 'daily-date-nav-disabled' : ''}}" hover-class="daily-date-nav-pressed" hover-start-time="20" hover-stay-time="80" catchtap="{{guestMode ? 'noop' : 'goPrevDay'}}" aria-role="button" aria-label="前一天"><view class="daily-nav-chevron daily-nav-chevron-prev" aria-hidden="true"></view></view>
+              <view class="daily-date-nav-btn {{canGoNextDate && !guestMode ? '' : 'daily-date-nav-disabled'}}" hover-class="{{canGoNextDate && !guestMode ? 'daily-date-nav-pressed' : ''}}" hover-start-time="20" hover-stay-time="80" catchtap="{{guestMode ? 'noop' : 'goNextDay'}}" aria-role="button" aria-label="后一天" aria-disabled="{{!canGoNextDate || guestMode}}"><view class="daily-nav-chevron daily-nav-chevron-next" aria-hidden="true"></view></view>
             </view>
           </view>
           <view class="daily-focus-metrics">
@@ -123,17 +125,17 @@
           <view class="distribution-period-stage {{chartMode === 'pie' ? 'distribution-period-stage-active' : 'distribution-period-stage-hidden'}}" hidden="{{chartMode !== 'pie'}}">
             <view class="distribution-period-shell" aria-label="选择分布统计周期">
               <view class="period-slot">
-                <view class="period-segment {{distributionPeriod === 'day' ? 'period-segment-active' : ''}}" data-period="day" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">日</view>
+                <view class="period-segment {{distributionPeriod === 'day' ? 'period-segment-active' : ''}} {{guestMode ? 'period-segment-disabled' : ''}}" data-period="day" catchtap="{{guestMode ? 'noop' : 'onDistributionPeriodTap'}}" hover-class="period-segment-pressed">日</view>
               </view>
               <view class="period-slot">
-                <view class="period-segment {{distributionPeriod === 'week' ? 'period-segment-active' : ''}}" data-period="week" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">周</view>
+                <view class="period-segment {{distributionPeriod === 'week' ? 'period-segment-active' : ''}} {{guestMode ? 'period-segment-disabled' : ''}}" data-period="week" catchtap="{{guestMode ? 'noop' : 'onDistributionPeriodTap'}}" hover-class="period-segment-pressed">周</view>
               </view>
               <view class="period-slot">
-                <view class="period-segment {{distributionPeriod === 'month' ? 'period-segment-active' : ''}}" data-period="month" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">月</view>
+                <view class="period-segment {{distributionPeriod === 'month' ? 'period-segment-active' : ''}} {{guestMode ? 'period-segment-disabled' : ''}}" data-period="month" catchtap="{{guestMode ? 'noop' : 'onDistributionPeriodTap'}}" hover-class="period-segment-pressed">月</view>
               </view>
               <view class="period-slot period-slot-picker {{distributionPeriod === 'custom' ? 'period-slot-active' : ''}}">
-                <view class="period-segment period-segment-custom {{distributionPeriod === 'custom' ? 'period-segment-active' : ''}}">自定义</view>
-                <picker class="period-custom-picker-hitbox" mode="date" value="{{customRangeStartDate}}" start="{{customRangePickerStartDate}}" end="{{selectedDate}}" bindchange="onCustomRangeStartChange">
+                <view class="period-segment period-segment-custom {{distributionPeriod === 'custom' ? 'period-segment-active' : ''}} {{guestMode ? 'period-segment-disabled' : ''}}">自定义</view>
+                <picker class="period-custom-picker-hitbox" mode="date" disabled="{{guestMode}}" value="{{customRangeStartDate}}" start="{{customRangePickerStartDate}}" end="{{selectedDate}}" bindchange="onCustomRangeStartChange">
                   <view class="period-custom-picker-hitbox-inner"></view>
                 </picker>
               </view>

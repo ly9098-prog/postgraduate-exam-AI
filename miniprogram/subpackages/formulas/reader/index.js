@@ -1,6 +1,5 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
-const loginGate = require('../../../utils/login-gate')
 const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
 const { parseServerUtc, getChinaWallParts } = require('../../../utils/china-time')
 
@@ -60,12 +59,14 @@ function normalizeSequence(values) {
 
 Page({
   data: {
+    guestMode: false,
     displayCards: [],
     currentCard: null,
     currentIndex: 0,
     loading: true,
     loadingNext: false,
     favoriteBusy: false,
+    guestMode: false,
     loadError: false,
     errorText: '',
     formulaId: null,
@@ -84,6 +85,7 @@ Page({
   onLoad(options = {}) {
     this._readerAlive = true
     this._navigatingBack = false
+    this.setData({ guestMode: !auth.isLoggedIn() })
     const formulaId = normalizeId(options.id)
     const isRandom = options.random === '1'
     let sequenceIds = normalizeSequence(String(options.ids || '').split(',').filter(Boolean))
@@ -472,10 +474,7 @@ Page({
   },
 
   async toggleFavorite(e) {
-    if (!auth.isLoggedIn()) {
-      loginGate.promptLogin({ content: '收藏公式需要登录。你仍然可以继续阅读其他公式。' })
-      return
-    }
+    if (!auth.isLoggedIn()) return
 
     const cardId = normalizeId(e.currentTarget.dataset.id)
     if (cardId === null || this.data.favoriteBusy) return

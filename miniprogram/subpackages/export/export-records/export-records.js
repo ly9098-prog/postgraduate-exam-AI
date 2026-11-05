@@ -183,6 +183,7 @@ function formatFileSize(bytes) {
 
 Page({
   data: {
+    guestMode: false,
     list: [],
     page: 1,
     totalRecords: 0,
@@ -235,6 +236,11 @@ Page({
   _capabilityRequestId: 0,
 
   onLoad(options) {
+    if (options && String(options.guest) === '1') {
+      this._guestMode = true
+      this.setData({ guestMode: true, loading: false, exportAvailable: false })
+      return
+    }
     this._pageDestroyed = false
     this._pageAlive = true
     this._completedNotified = new Set()
@@ -251,6 +257,7 @@ Page({
 
   onShow() {
     this._pageAlive = true
+    if (this._guestMode) return
 
     // wx.openDocument hides the page while the document viewer is active.
     // Always clear the transient button state when the page becomes visible
@@ -317,6 +324,7 @@ Page({
   },
 
   async _checkExportCapability(force = false) {
+    if (this._guestMode) return
     if (this._pageDestroyed) return false
     if (this._capabilityPromise && !force) return this._capabilityPromise
 
@@ -607,6 +615,7 @@ Page({
   // ── List loading ──
 
   async _loadList(reset = false) {
+    if (this._guestMode) return
     if (!this._pageAlive || !this.data.exportAvailable) return null
     // A foreground reset is allowed to supersede an in-flight load-more. This
     // matters when the user leaves/returns while pagination is still pending.

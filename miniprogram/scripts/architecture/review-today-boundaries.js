@@ -6,7 +6,7 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 
 const PAGE_PATH = 'miniprogram/subpackages/study/review-today/review-today.js'
-const PAGE_MAX_LINES = 645
+const PAGE_MAX_LINES = 642
 const SUPPORT_PATH = 'miniprogram/subpackages/study/review-today/utils/review-runner-support.js'
 const MODULE_DIR = 'miniprogram/subpackages/study/review-today/utils/'
 const MODULES = {

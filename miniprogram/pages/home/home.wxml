@@ -46,7 +46,7 @@
           <image class="focus-kicker-icon" src="/assets/icons/home-hero/smart-study-leaf.png" mode="aspectFit" />
           <text>{{primaryTaskKicker}}</text>
         </view>
-        <view class="focus-plan-anchor" bindtap="goStudyPlan" hover-class="soft-pressed" aria-role="button" aria-label="查看学习目标">
+        <view wx:if="{{!guestMode}}" class="focus-plan-anchor" bindtap="goStudyPlan" hover-class="soft-pressed" aria-role="button" aria-label="查看学习目标">
           <text class="focus-plan-anchor-label">目标</text>
         </view>
       </view>
@@ -79,9 +79,12 @@
           <text>{{primaryTaskAction}}</text>
           <view class="primary-action-arrow">↗</view>
         </view>
-        <view class="secondary-action" bindtap="startSecondaryTask" hover-class="secondary-action-pressed">
-          <text>{{guestMode ? secondaryTaskAction : '查看学习报告'}}</text>
+        <view wx:if="{{!guestMode}}" class="secondary-action" bindtap="startSecondaryTask" hover-class="secondary-action-pressed">
+          <text>查看学习报告</text>
           <image class="secondary-action-icon" src="/assets/icons/home-hero/study-report.png" mode="aspectFit" />
+        </view>
+        <view wx:else class="secondary-action is-locked" aria-disabled="true">
+          <text>学习报告</text><image class="ui-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
         </view>
       </view>
 
@@ -151,7 +154,7 @@
       </view>
 
       <!-- Exam paper is also a permanent Home tool and must remain visible with Smart Study Hub recommendations. -->
-      <view class="route-card route-exam" bindtap="goExams" hover-class="card-pressed">
+      <view wx:if="{{!guestMode}}" class="route-card route-exam" bindtap="goExams" hover-class="card-pressed">
         <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/list-checks.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">套卷训练</text>
@@ -159,6 +162,11 @@
           <text class="route-desc">仅练适合手机作答的选择题，自动判分并生成四科复盘</text>
         </view>
         <view class="route-arrow">→</view>
+      </view>
+      <view wx:else class="route-card route-exam is-locked" aria-disabled="true">
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/list-checks.svg" mode="aspectFit" /></view>
+        <view class="route-copy"><text class="route-eyebrow">套卷训练</text><text class="route-title">选择题真题 / 模拟</text><text class="route-desc">登录后解锁正式套卷训练</text></view>
+        <image class="ui-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
       </view>
     </view>
 
@@ -168,17 +176,7 @@
         <view class="route-copy">
           <text class="route-eyebrow">记忆复习</text>
           <text class="route-title">今日复习</text>
-          <text class="route-desc">{{dueReviewCount > 0 ? dueReviewCount + ' 道错题正处于最佳复习窗口' : '暂无到期任务，也可以提前巩固'}}</text>
-        </view>
-        <view class="route-arrow">→</view>
-      </view>
-
-      <view class="route-card route-practice" bindtap="startRandom" hover-class="card-pressed">
-        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/shuffle.svg" mode="aspectFit" /></view>
-        <view class="route-copy">
-          <text class="route-eyebrow">新题训练</text>
-          <text class="route-title">随机练习</text>
-          <text class="route-desc">从数据结构、计组、操作系统、计网中检查知识边界</text>
+          <text class="route-desc">{{guestMode ? '登录后查看个人复习计划' : (dueReviewCount > 0 ? dueReviewCount + ' 道错题正处于最佳复习窗口' : '暂无到期任务，也可以提前巩固')}}</text>
         </view>
         <view class="route-arrow">→</view>
       </view>
@@ -193,7 +191,7 @@
         <view class="route-arrow">→</view>
       </view>
 
-      <view class="route-card route-exam" bindtap="goExams" hover-class="card-pressed">
+      <view wx:if="{{!guestMode}}" class="route-card route-exam" bindtap="goExams" hover-class="card-pressed">
         <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/list-checks.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">套卷训练</text>
@@ -201,6 +199,11 @@
           <text class="route-desc">仅练适合手机作答的选择题，自动判分并生成四科复盘</text>
         </view>
         <view class="route-arrow">→</view>
+      </view>
+      <view wx:else class="route-card route-exam is-locked" aria-disabled="true">
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/list-checks.svg" mode="aspectFit" /></view>
+        <view class="route-copy"><text class="route-eyebrow">套卷训练</text><text class="route-title">选择题真题 / 模拟</text><text class="route-desc">登录后解锁正式套卷训练</text></view>
+        <image class="ui-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
       </view>
     </view>
 

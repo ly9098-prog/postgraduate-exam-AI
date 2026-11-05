@@ -10,6 +10,7 @@ const path = require('node:path')
 const acorn = require('acorn')
 const miniRoot = path.resolve(__dirname, '..')
 const directories = [
+  'subpackages/study/components/mp-html/latex',
   'subpackages/exam/components/mp-html/latex',
   'subpackages/formulas/utils/katex',
 ]
@@ -35,4 +36,4 @@ for (const file of files) {
     assert.equal(source, reference, relative + ': vendor copies must stay identical')
   }
 }
-console.log('KaTeX upload syntax checks passed: 2 copies (ES2015)')
+console.log('KaTeX upload syntax checks passed: ' + directories.length + ' copies (ES2015)')

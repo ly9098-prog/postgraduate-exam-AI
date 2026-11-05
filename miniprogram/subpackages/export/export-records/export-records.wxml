@@ -3,6 +3,12 @@
 <view class="page export-records-page">
   <premium-nav title="导出记录" show-back="{{true}}" bind:back="onBack" />
 
+  <view wx:if="{{guestMode}}" class="empty-state guest-export-empty">
+    <view class="empty-illustration" aria-hidden="true"><view class="empty-paper"><view class="empty-paper-fold"></view></view></view>
+    <text class="empty-title">登录后查看导出记录</text>
+    <text class="empty-text">个人导出与账号关联，请从首页顶部进入登录。</text>
+  </view>
+  <block wx:else>
   <scroll-view
     class="records-scroll"
     scroll-y="{{true}}"
@@ -301,6 +307,7 @@
       <view class="safe-bottom-space"></view>
     </view>
   </scroll-view>
+  </block>
 
   <!-- Unified custom dialog -->
   <view wx:if="{{dialogVisible}}" class="dialog-layer" catchtouchmove="onDialogMaskTap">

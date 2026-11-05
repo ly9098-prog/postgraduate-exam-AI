@@ -3118,3 +3118,46 @@ page { background:#F2F3EF; background-color:#F2F3EF; }
   .knowledge-subject-tile { transition: none; }
 }
 @media (max-width:350px){.knowledge-diagnosis-card-title{font-size:32rpx}.knowledge-subject-current{font-size:24rpx}.knowledge-subject-sheet{padding-right:24rpx;padding-left:24rpx}}
+
+/* Guest empty state follows the mint palette of the practice setup page. */
+.dashboard-page-guest {
+  background:
+    radial-gradient(circle at 92% 0%, rgba(126, 216, 181, .20), transparent 320rpx),
+    linear-gradient(180deg, #F4FBF8 0%, #EAF7F1 100%);
+}
+
+.dashboard-state-guest {
+  box-sizing: border-box;
+  min-height: 66vh;
+  margin-top: 8rpx;
+  padding: 56rpx 30rpx 64rpx;
+  border: 1rpx solid #D3EDE3;
+  border-radius: 36rpx;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(126, 216, 181, .30), transparent 46%),
+    linear-gradient(160deg, #F1FBF7 0%, #E1F5EC 100%);
+  box-shadow: 0 20rpx 50rpx rgba(43, 117, 91, .08);
+}
+
+.dashboard-state-guest .empty-visual {
+  border: 1rpx solid #CFEDE1;
+  background: linear-gradient(150deg, #FFFFFF 0%, #E7F7F0 100%);
+  box-shadow: 0 20rpx 44rpx rgba(43, 117, 91, .10);
+}
+
+.dashboard-state-guest .line-a { background: #2F8066; }
+.dashboard-state-guest .line-b { background: #7ED8B5; }
+.dashboard-state-guest .line-c { background: #55C89B; }
+.dashboard-state-guest .empty-chart-dot {
+  background: #2F8066;
+  box-shadow: 0 0 0 8rpx rgba(85, 200, 155, .22);
+}
+
+.dashboard-state-guest .state-kicker { color: #2F8066; }
+.dashboard-state-guest .state-title { color: #23483C; }
+.dashboard-state-guest .state-desc { color: #507568; }
+.dashboard-state-guest .state-button {
+  background: linear-gradient(135deg, #3A6F5B 0%, #55C89B 100%);
+  box-shadow: 0 16rpx 34rpx rgba(58, 111, 91, .18);
+}
+.dashboard-state-guest .state-link { color: #2F8066; }

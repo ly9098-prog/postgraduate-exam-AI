@@ -55,13 +55,27 @@ try {
 const miniRoot = path.resolve(__dirname, '..')
 const readJson = name => JSON.parse(fs.readFileSync(path.join(miniRoot, name), 'utf8'))
 const config = readJson('project.config.json')
-assert.deepEqual(config.setting.babelSetting.ignore, [],
-  'no prebuilt main-package vendor files remain after the main KaTeX runtime removal')
+const vendorPrefix = 'subpackages/study/components/mp-html/latex/'
+const vendorFiles = [
+  'katex-core.js', 'katex-part-150.js', 'katex-part-187.js',
+  'katex-part-64.js', 'katex-part-970.js', 'katex.min.js',
+]
+assert.deepEqual(config.setting.babelSetting.ignore, vendorFiles.map(file => vendorPrefix + file),
+  'skip Babel only for the six prebuilt study vendors to prevent compiled-package expansion')
+for (const file of vendorFiles) {
+  const relative = vendorPrefix + file
+  assert.equal(fs.existsSync(path.join(miniRoot, relative)), true,
+    'Babel exclusions must point to existing local vendor files: ' + relative)
+  assert.equal(config.packOptions.ignore.some(rule => matchesPackIgnore(relative, rule)), false,
+    'skip vendor transpilation without excluding required code from the package: ' + relative)
+  assert.equal(fs.existsSync(path.join(miniRoot, 'vendor/katex', file)), false,
+    'do not restore unused main-package KaTeX vendors: ' + file)
+}
 assert.equal(config.setting.es6, true, 'business code still needs ES6 compilation')
 assert.equal(config.setting.enhance, true, 'business code still needs enhanced compilation')
 assert.equal(config.setting.minified, true)
 assert.equal(config.setting.ignoreCodeQuality, undefined, 'quality checks must not be bypassed')
-// Remaining subpackage vendor copies still satisfy upload grammar.
+// Every subpackage vendor copy, including the Babel exclusions, must satisfy upload grammar.
 require('./test-katex-upload-syntax')
 const app = readJson('app.json')
 assert.equal(app.usingComponents['app-dialog'], '/components/app-dialog/index')

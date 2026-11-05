@@ -309,3 +309,23 @@ page {
   .overview-title { max-width: 340rpx; font-size: 46rpx; }
   .overview-desc { max-width: 345rpx; font-size: 20rpx; }
 }
+
+/* Guest empty state: standalone card, no settings-title decorative rule. */
+.guest-plan-empty {
+  margin: 20rpx 38rpx 0;
+  padding: 56rpx 32rpx;
+}
+
+.guest-plan-title {
+  display: block;
+  color: #173B2D;
+  font-size: 32rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.guest-plan-empty .setting-desc {
+  margin-top: 14rpx;
+  font-size: 20rpx;
+  line-height: 1.5;
+}

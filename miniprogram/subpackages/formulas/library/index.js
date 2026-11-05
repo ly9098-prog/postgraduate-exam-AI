@@ -1,6 +1,5 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
-const loginGate = require('../../../utils/login-gate')
 const formulaContent = require('../utils/formula-content')
 const Parser = require('../utils/mp-html-parser')
 const LatexPlugin = require('../utils/katex/index')
@@ -193,6 +192,7 @@ Page({
 
     // Loading states
     initialLoading: true,
+    guestMode: false,
     loadingMore: false,
     loadError: false,
     loadErrorMessage: '',
@@ -211,8 +211,9 @@ Page({
     this._pageAlive = true
     this._visible = true
     this._favoriteBusyIds = new Set()
+    this.setData({ guestMode: !auth.isLoggedIn() })
     this.measureNavigation()
-    const onlyFavorites = options.favorites === '1'
+    const onlyFavorites = auth.isLoggedIn() && options.favorites === '1'
     if (onlyFavorites) this.setData({ onlyFavorites: true })
     this.loadCatalog()
     this.loadTags()
@@ -647,6 +648,7 @@ Page({
   // ── Favorites toggle ──
 
   toggleFavoritesOnly() {
+    if (!auth.isLoggedIn()) return
     this.setData({
       onlyFavorites: !this.data.onlyFavorites,
       page: 1,
@@ -831,10 +833,7 @@ Page({
   },
 
   async toggleFormulaFavorite(e) {
-    if (!auth.isLoggedIn()) {
-      loginGate.promptLogin({ content: '收藏公式需要登录。你仍然可以继续浏览其他公式。' })
-      return
-    }
+    if (!auth.isLoggedIn()) return
 
     const formulaId = Number(e.currentTarget.dataset.id)
     if (!formulaId || !this._pageAlive) return

@@ -76,6 +76,7 @@ function chooseChild(options, event) {
 
 function chooseMode(options, event) {
   const mode = dataset(event).mode
+  if (options.isGuest && options.isGuest() && mode !== 'random') return
   if (String(options.getSelectedMode() || '') !== String(mode || '')) {
     options.clearLaunchOverrides()
   }

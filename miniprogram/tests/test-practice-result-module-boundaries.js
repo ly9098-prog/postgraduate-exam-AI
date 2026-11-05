@@ -28,7 +28,7 @@ test('scans every governed practice-result module and the real page', () => {
   const result = scanPracticeResult()
   assert.deepEqual(result.violations, [])
   assert.equal(result.pageLines, PAGE_MAX_LINES)
-  assert.equal(result.pageLines, 870)
+  assert.equal(result.pageLines, 861)
   assert.equal(result.controllers, 4)
   assert.equal(result.modules, 22)
   assert.equal(Object.keys(MODULES).length, Object.keys(MODULE_BUDGETS).length)

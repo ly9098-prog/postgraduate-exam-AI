@@ -29,10 +29,6 @@
 </view>
 <view class="setup-content" wx:if="{{!errorText}}">
 <view class="guest-notice" wx:if="{{guestNotice}}">{{guestNotice}}</view>
-<view class="guest-intro" wx:if="{{guestMode}}">
-<text class="guest-intro-title">先体验，再决定</text>
-<text class="guest-intro-desc">每组最多 5 道真题，可查看答案与解析。体验记录仅保存在本机 24 小时，不写入学习统计。</text>
-</view>
 <view class="practice-hero">
 <view class="hero-grid hero-grid-a"></view>
 <view class="hero-grid hero-grid-b"></view>
@@ -74,7 +70,7 @@
 <text>{{selectedSubjectId ? '开始本组练习' : '请先选择科目'}}</text>
 <view class="hero-start-arrow"><text class="line-icon icon-chevron-right" aria-hidden="true"></text></view>
 </button>
-<view class="hero-config" hover-class="soft-pressed" bindtap="toggleSettings" wx:if="{{!guestMode}}">
+<view class="hero-config" hover-class="soft-pressed" bindtap="toggleSettings">
 <view class="hero-config-icon"><image src="/assets/icons/practice/{{selectedMode === 'sequential' ? 'list-ordered' : (selectedMode === 'smart' ? 'target' : 'shuffle')}}.svg" mode="aspectFit" aria-hidden="true"></image></view><text class="hero-config-text">{{selectedModeLabel}} · {{count}}题 · 约{{estimatedMinutes}}分钟</text>
 <view class="hero-config-edit">
 <text>{{settingsExpanded ? '收起' : '调整'}}</text>
@@ -82,7 +78,7 @@
 </view>
 </view>
 </view>
-<view class="settings-panel" wx:if="{{settingsExpanded && !guestMode}}">
+<view class="settings-panel" wx:if="{{settingsExpanded}}">
 <view class="panel-heading">
 <view>
 <text class="panel-title">练习设置</text>
@@ -104,19 +100,22 @@
 <text class="mode-desc">综合查漏</text>
 <view class="option-check" wx:if="{{selectedMode==='random'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
-<view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="sequential">
+<view class="mode-card {{guestMode ? 'mode-card-locked' : (selectedMode==='sequential' ? 'active' : '')}}" hover-class="{{guestMode ? '' : 'option-pressed'}}" bindtap="{{guestMode ? '' : 'chooseMode'}}" data-mode="sequential" aria-disabled="{{guestMode}}">
 <image class="mode-icon-image" src="/assets/icons/practice/list-ordered.svg" mode="aspectFit" aria-hidden="true"></image>
 <text class="mode-title">顺序推进</text>
 <text class="mode-desc">按题库顺序续刷</text>
-<view class="option-check" wx:if="{{selectedMode==='sequential'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
+<image class="mode-lock" wx:if="{{guestMode}}" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
+<view class="option-check" wx:if="{{!guestMode && selectedMode==='sequential'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
-<view class="mode-card {{selectedMode==='smart' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="smart">
+<view class="mode-card {{guestMode ? 'mode-card-locked' : (selectedMode==='smart' ? 'active' : '')}}" hover-class="{{guestMode ? '' : 'option-pressed'}}" bindtap="{{guestMode ? '' : 'chooseMode'}}" data-mode="smart" aria-disabled="{{guestMode}}">
 <image class="mode-icon-image" src="/assets/icons/practice/target.svg" mode="aspectFit" aria-hidden="true"></image>
 <text class="mode-title">智能推荐</text>
 <text class="mode-desc">薄弱优先</text>
-<view class="option-check" wx:if="{{selectedMode==='smart'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
+<image class="mode-lock" wx:if="{{guestMode}}" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
+<view class="option-check" wx:if="{{!guestMode && selectedMode==='smart'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 </view>
+<text class="guest-mode-note" wx:if="{{guestMode}}">顺序推进和智能推荐依赖个人练习数据，登录后可用。</text>
 </view>
 <view class="setting-block count-setting-block">
 <view class="setting-head">
@@ -135,6 +134,10 @@
 <view class="count-btn {{count===20 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="20">
 <text class="count-main">20题</text><text class="count-time">约40分钟</text>
 <view class="option-check count-check" wx:if="{{count===20}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
+</view>
+<view class="count-btn {{count===30 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="30">
+<text class="count-main">30题</text><text class="count-time">约60分钟</text>
+<view class="option-check count-check" wx:if="{{count===30}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 </view>
 </view>

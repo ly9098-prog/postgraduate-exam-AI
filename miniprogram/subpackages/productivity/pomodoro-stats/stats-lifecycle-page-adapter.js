@@ -1,11 +1,19 @@
-function onLoad(page) {
+function onLoad(page, options) {
+    const isGuest = Boolean(options && String(options.guest) === '1')
     const initialized = page._getPageInitController().initialize()
     Object.assign(page, initialized.internal)
-    page.setData(initialized.data)
+    page.setData(isGuest
+      ? { ...initialized.data, guestMode: true, loading: false, contentReady: true, historyReady: true }
+      : initialized.data)
+    if (isGuest) {
+      page._guestMode = true
+      return
+    }
     page._init()
   }
 
 async function _init(page, dependencies) {
+if (page._guestMode) return
 const { getConsole } = dependencies
     await page._ensureSettings()
     page._ensureSubjectMeta().catch(err => {
@@ -58,6 +66,7 @@ const { createLifecycleController, getPlatform, getSetTimeout } = dependencies
       page._lifecycleController = createLifecycleController({
         isAlive: () => page._alive,
         isVisible: () => page._isVisible,
+        isGuest: () => page._guestMode,
         isViewReady: () => page._viewReady,
         setVisible: value => { page._isVisible = value },
         setViewReady: () => { page._viewReady = true },

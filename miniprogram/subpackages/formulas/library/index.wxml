@@ -63,7 +63,7 @@
     </view>
 
     <view class="fl-quick-row">
-      <view
+      <view wx:if="{{!guestMode}}"
         class="fl-quick-action {{onlyFavorites ? 'active' : ''}}"
         hover-class="fl-pressed"
         bindtap="toggleFavoritesOnly"
@@ -71,6 +71,10 @@
         <view class="fl-quick-icon"><text class="line-icon icon-book"></text></view>
         <text class="fl-quick-title">{{onlyFavorites ? '已筛选收藏' : '只看收藏'}}</text>
         <view class="fl-quick-status" wx:if="{{onlyFavorites}}"></view>
+      </view>
+      <view wx:else class="fl-quick-action is-locked" aria-disabled="true">
+        <view class="fl-quick-icon"><text class="line-icon icon-book"></text></view>
+        <text class="fl-quick-title">收藏筛选</text><image class="ui-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
       </view>
 
       <view class="fl-quick-action fl-random-action" hover-class="fl-pressed" bindtap="goToRandom">
@@ -189,13 +193,16 @@
               >{{t.name}}</text>
             </view>
           </view>
-          <view
+          <view wx:if="{{!guestMode}}"
             class="fl-favorite-btn {{item.isFavorited || item.is_favorited ? 'active' : ''}}"
             data-id="{{item.id}}"
             catchtap="toggleFormulaFavorite"
             hover-class="fl-pressed"
           >
             <view class="fl-bookmark-icon"></view>
+          </view>
+          <view wx:else class="fl-favorite-btn is-locked" aria-disabled="true">
+            <view class="fl-bookmark-icon"></view><image class="ui-lock" src="/assets/icons/lock.svg" mode="aspectFit" aria-hidden="true" />
           </view>
         </view>
 

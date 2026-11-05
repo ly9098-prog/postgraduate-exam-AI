@@ -3827,3 +3827,36 @@ page {
 .theme-light .history-placeholder-row {
   border-bottom-color: rgba(207, 220, 210, .62);
 }
+
+.stat-lock {
+  width: 24rpx;
+  height: 24rpx;
+  flex: 0 0 auto;
+  opacity: .75;
+}
+
+.period-segment-disabled {
+  opacity: .45;
+}
+
+/* Guest disabled chips keep readable contrast; the lock marks why. */
+.cumulative-start-picker.is-locked,
+.study-day-chip.is-locked {
+  opacity: .92;
+  filter: none;
+}
+
+.theme-light .cumulative-start-picker.is-locked,
+.theme-light .study-day-chip.is-locked {
+  color: #6F8375;
+}
+
+.theme-light .study-day-chip.is-locked {
+  border-color: #DCE7DA;
+  background: #F3F7F1;
+}
+
+.is-locked .stat-lock {
+  opacity: 1;
+  filter: none;
+}

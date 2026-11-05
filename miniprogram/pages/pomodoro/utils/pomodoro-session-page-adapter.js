@@ -7,15 +7,15 @@ const { readSubjectCache, writeSubjectCache } = require('./subject-cache')
 const { buildSubjectChoices } = require('./subject-options')
 const { filter408SubjectTree } = require('./subject-scope')
 const { formatElapsedSec } = require('./timer-math')
-
 function buildSubjectLoadPageCapabilities(page, deps) {
   const { api } = deps
+  const fetchSubjects = () => page.data.guestMode ? api.get('/guest/practice/subjects', {}, { auth: 'none' }).then(r => r.items || []) : api.get('/practice/subjects')
   return {
-    readSubjectCache,
-    fetchSubjects: () => api.get('/practice/subjects'),
+    readSubjectCache: () => page.data.guestMode ? null : readSubjectCache(),
+    fetchSubjects,
     filterSubjectTree: filter408SubjectTree,
     buildSubjectChoices,
-    writeSubjectCache,
+    writeSubjectCache: subjects => page.data.guestMode ? null : writeSubjectCache(subjects),
     applySubjects: flat => page._applySubjects(flat),
     setSubjectsState: patch => page.setData(patch),
     logError: (message, error) => console.error(message, error),
@@ -24,7 +24,7 @@ function buildSubjectLoadPageCapabilities(page, deps) {
 
 function buildStartSessionPageCapabilities(page, deps) {
   return {
-    page,
+    page, isGuest: () => page.data.guestMode,
     phases: PHASE,
     ceremonyDelayMs: 2500,
     debugCeremonyDelayMs: 1000,

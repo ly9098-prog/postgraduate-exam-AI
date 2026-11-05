@@ -159,8 +159,9 @@
           </view>
 
 <!-- START BUTTON -->
-          <button class="btn-start" catchtap="startSession" hover-class="btn-hover">
+          <button class="btn-start {{guestMode ? 'is-locked' : ''}}" catchtap="startSession" hover-class="{{guestMode ? 'none' : 'btn-hover'}}" disabled="{{guestMode}}" aria-disabled="{{guestMode}}">
             <text class="btn-start-text">开始专注</text>
+            <image wx:if="{{guestMode}}" class="btn-start-lock" src="/assets/icons/lock-light.svg" mode="aspectFit" aria-hidden="true" />
           </button>
         </view>
       </block>

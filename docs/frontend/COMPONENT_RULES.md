@@ -164,8 +164,8 @@ node tests/test-component-paths.js
 并将媒体源码合计预算限制为 190 KiB，为开发者工具的 200 KiB 阈值留余量。
 该脚本不是编译器，不能用源码统计替代开发者工具的「重新扫描」；
 本次另在模拟器实际 JS 上下文验证了 11 个公式的 HTML/DOM-tree 渲染。
-`test-katex-upload-syntax.js` 使用 Acorn 的保守 ES2015 语法检查 exam/formulas 的 12 个 vendor JS，
-并校验两份文件字节一致；`test-package-quality.js` 同时调用此语法检查。
+`test-katex-upload-syntax.js` 使用 Acorn 的保守 ES2015 语法检查 study/exam/formulas 的 18 个 vendor JS，
+并校验三份文件字节一致；`test-package-quality.js` 同时调用此语法检查。
 Node 回归在独立进程测试 33 个公式案例，包含重音、上下标、矩阵、带分隔线数组和 aligned；
 本次临时对比确认修复前后 HTML 完全一致。语法回归与质量扫描不能代替微信服务器实际上传，
 本次未执行新的版本上传或发布。
@@ -178,14 +178,36 @@ Android/iOS 真机渲染仍未验证。
 study、exam 的 `latex/index.js`、Parser、组件模板和样式保留各自实现。study 的 DOM-tree
 转 rich-text 与 exam 的 HTML 解析存在语义差异，不能合并包装器或替换整套组件。
 2026-11-01 当前规则：普通分包不得把主包 vendor 作为运行时依赖；如再次提取主包 vendor，必须保持至少一个主包直接消费者，并重新验证微信打包扫描。
-这次曾把 study 源码降至 1,124,220 字节；2026-11-01 恢复本地副本后 study 为 1,485,461 字节，源码预算按当前结构调整为 1.45 MiB（容差到 1,484,800 字节）仍不足，实际测试输入显示需 1.48 MiB 量级，后续应以新消费链或真实微信验证驱动调整。
+这次曾把 study 源码降至 1,124,220 字节；2026-11-01 恢复本地副本后，按 `packOptions.ignore`
+排除文件的 study 源码为 1,485,461 字节（1450.6 KiB）。当前源码预算为 1.45 MiB
+（整数上限 1,520,435 字节），余量为 34,974 字节；源码预算通过不能证明微信编译包通过。
 
-历史测试曾有主包 vendor 哈希与六转发入口检查；2026-11-01 改为 exam/formulas 2份副本语法/一致性检查，vendor runtime 覆盖 study/exam/formulas 3份副本，`test-katex-main-vendor.js` 已删除。
+历史测试曾有主包 vendor 哈希与六转发入口检查；`test-katex-main-vendor.js` 已删除。
+当前语法/一致性与 vendor runtime 检查均覆盖 study/exam/formulas 三份副本。
 比较包括默认/natural 布局、复杂矩阵、无效 LaTeX 和中文；不要求 study 与 exam 节点相同。
 质量与运行时回归已接入 reliability；加载顺序对照脚本保留，但其主包 vendor 专用边界测试已删除。
 
-当前迁移仅有 Node 与源码体积证据；微信开发者工具重新编译、编译包扫描、模拟器、
-Android/iOS 真机及服务器上传尚未验证，不能复用历史结果作为本次验收。
+恢复本地副本时最初仅有 Node 与源码体积证据；后续编译配置修复与模拟器验证见下节，
+不能复用历史扫描结果作为本次验收。
+
+### 2026-11-01：恢复 study 预构建 vendor 的精确 Babel 排除
+
+用户截图显示「主包尺寸（不包含插件）应小于 1.5M」未通过，包体详情中 study 为 1495.1 KB。
+恢复 study 本地 KaTeX 副本时同时清空了 `babelSetting.ignore`，使六个预构建文件再次进入
+增强编译链。现将这六条排除路径从旧的主包位置改为当前 study 位置，避免二次编译展开；
+不排除 `latex/index.js` 和其他业务代码，不新增打包忽略项，不调整大小预算。
+
+`test-package-quality.js` 校验六条精确路径存在、仍参与打包且主包对应 vendor 文件不存在。
+study 也重新纳入 ES2015 上传语法检查，防止跳过 Babel 后出现上传语法错误。
+配置已同步到开发者工具实际打开的 Windows 镜像目录并触发重新编译。在模拟器加载 study
+错题详情页后，直接调用该分包的 KaTeX 0.16.47，11 个公式的 HTML 与 Node 基准逐项相同，
+DOM-tree 转回 markup 也全部一致；覆盖矩阵、带分隔线数组和 aligned。
+本地包体/媒体门禁、18 个 vendor 文件的上传语法、33 个独立进程公式案例、43 项渲染不变性、
+31 项渲染回归和 48 个组件引用检查通过。
+
+开发者工具代码质量「重新扫描」尚未取得结果；当前命令接口未提供该扫描动作，
+Windows 桌面自动化连接受 WSL 工作目录识别错误阻断。编译触发成功、模拟器公式运行和
+源码统计均不能代替 1.5M 检查结果。Android/iOS 真机及服务器上传也未验证。
 
 ---
 

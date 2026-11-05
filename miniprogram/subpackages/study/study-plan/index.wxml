@@ -1,7 +1,11 @@
 <view class="plan-page {{configured ? 'is-configured' : 'is-setup'}}" capture-bind:touchstart="onPlanInteraction">
 <app-dialog id="appDialog"></app-dialog>
 <premium-nav title="学习计划" variant="light" bind:back="goBack" />
-<view class="plan-shell {{!loading ? 'route-enter' : ''}}">
+<view wx:if="{{guestMode}}" class="state-card guest-plan-empty">
+<text class="guest-plan-title">登录后使用学习计划</text>
+<text class="setting-desc">计划与个人练习数据绑定，请从首页顶部进入登录。</text>
+</view>
+<view wx:else class="plan-shell {{!loading ? 'route-enter' : ''}}">
 <view class="plan-hero">
 <view class="plan-hero-copy">
 <text class="plan-hero-kicker">PLAN YOUR STUDY</text>

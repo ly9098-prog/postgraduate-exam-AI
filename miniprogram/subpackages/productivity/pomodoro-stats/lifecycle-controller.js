@@ -1,6 +1,7 @@
 function createLifecycleController(options) {
+  const canLoad = () => !options.isGuest || !options.isGuest()
   const warmCanvases = () => {
-    if (!options.isAlive() || !options.isVisible()) return
+    if (!canLoad() || !options.isAlive() || !options.isVisible()) return
     options.initCanvases(() => {})
   }
 
@@ -8,7 +9,7 @@ function createLifecycleController(options) {
     show() {
       options.setVisible(true)
       options.syncTheme()
-      if (!options.isViewReady()) return
+      if (!options.isViewReady() || !canLoad()) return
       options.incrementRequestId()
       options.loadData()
       options.scheduleDynamicRefresh()
@@ -16,6 +17,7 @@ function createLifecycleController(options) {
     ready() {
       options.setViewReady(true)
       options.setVisible(true)
+      if (!canLoad()) return
       options.incrementRequestId()
       options.loadData()
       options.scheduleDynamicRefresh()

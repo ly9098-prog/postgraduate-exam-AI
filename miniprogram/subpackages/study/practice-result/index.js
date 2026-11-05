@@ -1,6 +1,4 @@
 const api = require('../../../utils/api');
-const auth = require('../../../utils/auth');
-const loginGate = require('../../../utils/login-gate');
 const { knowledgePracticeSync } = require('../../../utils/storage');
 const { getChinaDate } = require('../../../utils/china-time');
 const errorDiagnosis = require('../utils/error-diagnosis');
@@ -224,10 +222,6 @@ this._teacherRequestSeq++;
 this._teacherInflight = null;
 },
 onShow() {
-if (this._guestMode && auth.isLoggedIn()) {
-wx.reLaunch({ url: '/pages/home/home' });
-return;
-}
 this._navigationLocked = false;
 this._resultVisible = true;
 this.refreshWrongDiagnoses();
@@ -855,9 +849,6 @@ this.navigateToWrongDetail(wrongQuestionId);
   },
   repeatGuestPractice() {
     return this._backNavigationController().repeatGuest()
-  },
-  openGuestLogin() {
-    return loginGate.openLogin()
   },
   _backNavigationController() {
     if (!this._backNavigation) {
