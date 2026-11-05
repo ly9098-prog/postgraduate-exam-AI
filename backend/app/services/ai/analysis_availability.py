@@ -31,6 +31,10 @@ def unavailable_state(reason: str) -> dict:
     }
 
 
+def availability_retryable(state: dict) -> bool:
+    return state.get("reason") in {"checking", "transient", "status_unavailable"}
+
+
 async def _probe(runtime: Any, token: str) -> None:
     from app.services.ai import connection_probe
 
@@ -111,6 +115,8 @@ async def _resolve_available(db: Any, excluded: set[int]) -> tuple[Any, dict]:
     now = time.time()
     for runtime, record in records:
         if model_health.public_state(record, now=now)["enabled"]:
+            if record.get("next_probe_at", 0) <= now:
+                await request_probe(runtime)
             return runtime, model_health.public_state(record, now=now)
     # Probe one eligible candidate at a time, retaining warm healthy fallbacks.
     pending = next(
@@ -164,5 +170,12 @@ async def availability_for_user(db: Any, user_id: int) -> dict:
 async def note_failure(runtime: Any, exc: Exception) -> None:
     try:
         await model_health.record_failure(runtime, exc)
+    except CacheUnavailableError:
+        logger.warning("ai.analysis.health_store_unavailable")
+
+
+async def note_success(runtime: Any, *, started_at: float) -> None:
+    try:
+        await model_health.record_success(runtime, started_at=started_at)
     except CacheUnavailableError:
         logger.warning("ai.analysis.health_store_unavailable")

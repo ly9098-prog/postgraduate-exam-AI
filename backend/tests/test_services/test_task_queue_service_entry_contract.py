@@ -784,6 +784,14 @@ class TestV2CompleteEntry:
 
 
 class TestV2FailEntry:
+    async def test_provider_cooldown_extends_delay_without_changing_budget(self, harness):
+        built = harness(responses={"script:_lua_fail_retry_v2": [1]})
+        task = make_task(retry_count=0, max_retries=3)
+        assert await built.queue.fail_v2(task, "checking", retry_delay=65) == 1
+        _, _, args = built.script_log[0]
+        assert args[7] == "65"
+        assert task.max_retries == 3
+
     async def test_task_with_budget_uses_retry_script(self, harness):
         task = make_task(retry_count=0, max_retries=3)
         built = harness(responses={"script:_lua_fail_retry_v2": [1]})

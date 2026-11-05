@@ -1653,6 +1653,7 @@ class DurableTaskQueue:
         *,
         task_type: str | None = None,
         lease_sec: int = _DEFAULT_LEASE_SEC,
+        retry_delay: float | None = None,
     ) -> int:
         """Handle task failure with v2 owner+generation fencing.
 
@@ -1683,6 +1684,8 @@ class DurableTaskQueue:
         retry_count, max_retries, retry_plan = self._v2_fail_retry_budget(
             task_or_id, error
         )
+        if retry_plan is not None and retry_delay is not None:
+            retry_plan.delay = max(retry_plan.delay, min(300, max(0, retry_delay)))
 
         return await self._execute_v2_fail_transition(
             task_or_id,

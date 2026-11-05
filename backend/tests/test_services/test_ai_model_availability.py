@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 
 from app.ai import gateway
 from app.ai.client import OpenAICompatibleAPIError, _classify_http_error_kind
@@ -104,13 +106,88 @@ async def test_concurrent_page_checks_share_one_probe(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_success_expires_after_30_seconds(monkeypatch, runtime):
+async def test_success_is_shared_for_thirty_minutes(monkeypatch, runtime):
     monkeypatch.setattr(model_health.time, "time", lambda: 1000.0)
     await finish(runtime)
     record = await model_health.read_health(runtime)
-    assert model_health.public_state(record, now=1029)["enabled"]
-    state = model_health.public_state(record, now=1030)
+    assert model_health.public_state(record, now=1031)["enabled"]
+    assert model_health.public_state(record, now=2799)["enabled"]
+    state = model_health.public_state(record, now=2800)
     assert state["enabled"] is False and state["status"] == "checking"
+
+
+@pytest.mark.asyncio
+async def test_background_refresh_keeps_verified_model_usable(monkeypatch, runtime):
+    clock = [1000.0]
+    monkeypatch.setattr(model_health.time, "time", lambda: clock[0])
+    await finish(runtime)
+    clock[0] = 1301.0
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def probe(*args, **kwargs):
+        entered.set()
+        await release.wait()
+        return {"success": True}
+
+    mock = AsyncMock(side_effect=probe)
+    monkeypatch.setattr(connection_probe, "probe_chat_connection", mock)
+    for _ in range(10):
+        selected, state = await analysis_availability.resolve_available_runtime("db")
+        assert selected == runtime and state["enabled"]
+    await entered.wait()
+    assert mock.await_count == 1
+    release.set()
+
+
+@pytest.mark.asyncio
+async def test_business_success_renews_health_but_cannot_erase_newer_failure(
+    monkeypatch, runtime
+):
+    clock = [1000.0]
+    monkeypatch.setattr(model_health.time, "time", lambda: clock[0])
+    await finish(runtime)
+    clock[0] = 1200.0
+    await model_health.record_success(runtime, started_at=1100.0)
+    assert model_health.public_state(
+        await model_health.read_health(runtime), now=2900
+    )["enabled"]
+    clock[0] = 1250.0
+    await model_health.record_failure(runtime, TimeoutError())
+    clock[0] = 1260.0
+    await model_health.record_success(runtime, started_at=1200.0)
+    assert not model_health.public_state(await model_health.read_health(runtime))["enabled"]
+
+
+@pytest.mark.asyncio
+async def test_independent_redis_clients_share_success_probe_lock_and_real_failure(
+    monkeypatch, runtime
+):
+    server = FakeServer()
+    first, second = CacheClient(), CacheClient()
+    first._enabled = second._enabled = True
+    first._client = FakeRedis(server=server, decode_responses=True)
+    second._client = FakeRedis(server=server, decode_responses=True)
+    try:
+        monkeypatch.setattr(model_health, "cache", first)
+        await finish(runtime)
+        monkeypatch.setattr(model_health, "cache", second)
+        assert model_health.public_state(await model_health.read_health(runtime))["enabled"]
+        _, duplicate = await model_health.claim_probe(runtime)
+        assert duplicate is None
+        monkeypatch.setattr(model_health, "cache", first)
+        _, token = await model_health.claim_probe(runtime, force=True)
+        assert token
+        monkeypatch.setattr(model_health, "cache", second)
+        _, duplicate = await model_health.claim_probe(runtime, force=True)
+        assert duplicate is None
+        assert await model_health.finish_probe(runtime, token, {"success": True})
+        await model_health.record_failure(runtime, TimeoutError())
+        monkeypatch.setattr(model_health, "cache", first)
+        state = model_health.public_state(await model_health.read_health(runtime))
+        assert not state["enabled"] and state["reason"] == "transient"
+    finally:
+        await first._client.aclose()
+        await second._client.aclose()
 
 
 @pytest.mark.asyncio

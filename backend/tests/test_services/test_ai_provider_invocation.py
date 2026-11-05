@@ -58,6 +58,7 @@ def verified_runtime(monkeypatch):
         "require_runtime_verified",
         AsyncMock(),
     )
+    monkeypatch.setattr(provider_invocation, "note_success", AsyncMock())
 
 
 @pytest.mark.asyncio
@@ -82,6 +83,8 @@ async def test_success_passes_analysis_contract_to_selected_model():
         "prefer_direct_answer": True,
     }
     item.quarantine_runtime.assert_not_awaited()
+    provider_invocation.note_success.assert_awaited_once()
+    assert provider_invocation.note_success.await_args.args == (item.runtime,)
 
 
 @pytest.mark.asyncio

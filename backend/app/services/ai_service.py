@@ -171,11 +171,13 @@ async def _analyze_error_with_lease(
 
 
 def _unavailable_analysis_response(preparation: Any, state: dict) -> dict:
+    from app.services.ai.analysis_availability import availability_retryable
+
     cached = build_any_cached_error_analysis_response(preparation.wrong_question)
     return {
         **(cached or quota_exceeded_response()),
         "error_code": "ai_service_unavailable",
-        "retryable": False,
+        "retryable": availability_retryable(state),
         "cache_preserved": bool(cached),
         "availability": state,
     }
@@ -376,11 +378,13 @@ class PrewarmAnalysisError(RuntimeError):
         retryable: bool,
         model: str = "fallback",
         detail: str = "",
+        retry_after: float = 0,
     ) -> None:
         self.error_code = str(error_code or "ai_analysis_failed")
         self.retryable = bool(retryable)
         self.model = str(model or "fallback")
         self.detail = str(detail or "")
+        self.retry_after = min(300, max(0, float(retry_after)))
         message = (
             self.error_code if not self.detail else f"{self.error_code}: {self.detail}"
         )
@@ -394,9 +398,14 @@ def _classify_ai_provider_exception(
 
 
 def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
+    from app.services.ai.analysis_availability import availability_retryable
+
     model = str(result.get("model") or "fallback")
     error_code = str(result.get("error_code") or "")
     retryable = result.get("retryable")
+    availability = result.get("availability") or {}
+    if error_code == "ai_service_unavailable" and availability:
+        retryable = availability_retryable(availability)
 
     if not error_code:
         defaults = {
@@ -418,6 +427,14 @@ def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
         error_code,
         retryable=bool(retryable),
         model=model,
+        detail=str(availability.get("reason") or ""),
+        retry_after=(
+            max(
+                65 if availability.get("reason") == "checking" else 5,
+                float(availability.get("retry_after_ms", 0)) / 1000,
+            )
+            if retryable and availability else 0
+        ),
     )
 
 

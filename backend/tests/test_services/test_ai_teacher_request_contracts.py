@@ -89,6 +89,7 @@ def prepared_teacher(monkeypatch):
         AsyncMock(return_value=state.runtime),
     )
     monkeypatch.setattr(svc, "note_failure", AsyncMock())
+    monkeypatch.setattr(svc, "note_success", AsyncMock())
     return state
 
 
@@ -109,6 +110,7 @@ async def test_teacher_uses_server_fact_and_records_usage_before_parsing(
     )
     assert state.trace[:4] == ["quota", "provider", "usage", "parse"]
     state.quota.assert_awaited_once_with(state.db, 3, 900)
+    svc.note_success.assert_awaited_once()
     kwargs = state.provider.await_args.kwargs
     assert kwargs == {
         "feature": "analysis",

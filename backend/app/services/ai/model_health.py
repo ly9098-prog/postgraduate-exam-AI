@@ -11,7 +11,8 @@ from typing import Any
 from app.core.cache import CacheUnavailableError, cache
 from app.services.ai.provider_exception import classify_ai_provider_exception
 
-SUCCESS_TTL = 30
+SUCCESS_TTL = 1800
+REFRESH_INTERVAL = 300
 PROBE_TIMEOUT = 60
 CHECKING_RETRY_MS = 2000
 HARD_FAILURE_COOLDOWN = 300
@@ -41,7 +42,9 @@ def public_state(record: dict | None, *, now: float | None = None) -> dict:
     record = record or {}
     status = str(record.get("status") or "checking")
     reason = str(record.get("reason") or "checking")
-    enabled = status == "available" and float(record.get("next_probe_at", 0)) > now
+    enabled = status == "available" and float(
+        record.get("healthy_until", record.get("next_probe_at", 0))
+    ) > now
     if status == "available" and not enabled:
         status, reason = "checking", "checking"
     retry_after_ms = max(1000, int((record.get("next_probe_at", now + 2) - now) * 1000))
@@ -86,21 +89,24 @@ async def claim_probe(runtime: Any, *, force: bool = False) -> tuple[dict, str |
 
     def change(previous: dict) -> dict:
         nonlocal claimed
-        if (
-            previous.get("status") == "checking"
-            and previous.get("next_probe_at", 0) > now
+        if previous.get("probe_until", 0) > now or (
+            previous.get("status") == "checking" and previous.get("next_probe_at", 0) > now
         ):
             return previous
         if not force and previous.get("next_probe_at", 0) > now:
             return previous
         claimed = True
-        return {
+        record = {
             "status": "checking",
             "reason": "checking",
             "probe_token": token,
             "failures": previous.get("failures", 0),
             "next_probe_at": now + PROBE_TIMEOUT + 5,
+            "probe_until": now + PROBE_TIMEOUT + 5,
         }
+        if not force and public_state(previous, now=now)["enabled"]:
+            record.update(status="available", reason="", healthy_until=previous["healthy_until"])
+        return record
 
     record = await _mutate(runtime, change)
     return record or {}, token if claimed else None
@@ -118,6 +124,7 @@ def _failed_record(previous: dict, reason: str) -> dict:
         "reason": reason,
         "failures": failures,
         "next_probe_at": time.time() + delay,
+        "updated_at": time.time(),
     }
 
 
@@ -127,12 +134,7 @@ async def finish_probe(runtime: Any, token: str, result: dict) -> bool:
         if previous.get("probe_token") != token:
             return None
         if result.get("success"):
-            record = {
-                "status": "available",
-                "reason": "",
-                "failures": 0,
-                "next_probe_at": time.time() + SUCCESS_TTL,
-            }
+            record = _success_record()
         else:
             status = result.get("status")
             reason = (
@@ -151,6 +153,31 @@ async def finish_probe(runtime: Any, token: str, result: dict) -> bool:
         return record
 
     return await _mutate(runtime, change) is not None
+
+
+def _success_record() -> dict:
+    now = time.time()
+    return {
+        "status": "available", "reason": "", "failures": 0,
+        "next_probe_at": now + REFRESH_INTERVAL,
+        "healthy_until": now + SUCCESS_TTL,
+        "updated_at": now,
+    }
+
+
+async def record_success(runtime: Any, *, started_at: float) -> None:
+    if runtime is None or getattr(runtime, "model_config_id", None) is None:
+        return
+
+    def change(previous: dict) -> dict | None:
+        if (
+            previous.get("status") == "unavailable"
+            and previous.get("updated_at", 0) >= started_at
+        ):
+            return None
+        return _success_record()
+
+    await _mutate(runtime, change)
 
 
 async def record_failure(runtime: Any, exc: Exception) -> None:

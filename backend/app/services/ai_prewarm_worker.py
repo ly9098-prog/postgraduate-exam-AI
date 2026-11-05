@@ -132,7 +132,7 @@ def _schedule_local_fallback(
                     except PrewarmAnalysisError as exc:
                         if exc.retryable and attempt < max_local_retries:
                             attempt += 1
-                            backoff = min(2**attempt, 30)
+                            backoff = max(min(2**attempt, 30), exc.retry_after)
                             logger.warning(
                                 "[prewarm] local retry wq_id=%d uid=%d attempt=%d/%d "
                                 "delay_sec=%d error_code=%s recovery=%s",
@@ -425,7 +425,8 @@ async def run_prewarm_worker(
                         task.max_retries = task.retry_count + 1
 
                     fail_result = await task_queue.fail_v2(
-                        task, f"{exc.error_code}: {exc.model}"
+                        task, f"{exc.error_code}: {exc.detail or exc.model}",
+                        retry_delay=exc.retry_after,
                     )
                     task_status = str(getattr(task.status, "value", task.status or ""))
                     dead_lettered = fail_result == 2 or task_status == "dead"

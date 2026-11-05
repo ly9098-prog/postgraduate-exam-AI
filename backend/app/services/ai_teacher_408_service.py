@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections import OrderedDict
 from typing import Any
 
@@ -35,6 +36,7 @@ from app.services import error_diagnosis_service
 from app.services.ai.analysis_availability import (
     AnalysisUnavailableError,
     note_failure,
+    note_success,
     require_available_runtime,
 )
 from app.services.ai_learning_service import check_token_limit, record_token_usage
@@ -1155,6 +1157,7 @@ async def run_teacher_action(
         return {**base, **fallback, "tokens_used": 0, "from_fallback": True}
 
     teacher_runtime = await require_available_runtime(db)
+    started_at = time.time()
     try:
         result = await chat_with_db_model(
             db,
@@ -1167,6 +1170,8 @@ async def run_teacher_action(
             prefer_direct_answer=True,
             runtime=teacher_runtime,
         )
+        if result is not None:
+            await note_success(teacher_runtime, started_at=started_at)
     except AnalysisUnavailableError:
         raise
     except Exception as exc:

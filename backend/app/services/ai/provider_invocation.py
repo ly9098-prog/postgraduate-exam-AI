@@ -1,11 +1,4 @@
-"""Invoke the selected analysis model and own one auth-failure failover.
-
-The multimodal message stays vendor-neutral: protocol dialects are negotiated
-by the OpenAI-compatible client rather than from provider/model-name checks.
-Authentication failures quarantine the saved model revision and try the next
-configured analysis model once, so one invalid credential cannot fail every
-wrong-question prewarm while a healthy fallback model is available.
-"""
+"""Invoke vendor-neutral analysis and try one healthy fallback on auth failure."""
 
 from __future__ import annotations
 
@@ -19,7 +12,9 @@ from typing import Any
 from app.ai.prompts import build_error_analysis
 from app.services.ai.analysis_availability import (
     AnalysisUnavailableError,
+    availability_retryable,
     note_failure,
+    note_success,
     require_runtime_verified,
 )
 from app.services.ai.provider_exception import classify_ai_provider_exception
@@ -86,6 +81,7 @@ def _attempted_model_ids(runtime) -> set[int]:
 
 async def _invoke_runtime(payload: ProviderInvocationInput, selected_runtime):
     await require_runtime_verified(selected_runtime)
+    started_at = time.time()
     messages = build_error_analysis(
         payload.question,
         payload.wrong_answer,
@@ -94,7 +90,7 @@ async def _invoke_runtime(payload: ProviderInvocationInput, selected_runtime):
         image_data_urls=payload.image_data_urls,
     )
     async with asyncio.timeout(payload.model_timeout_sec + payload.timeout_guard_sec):
-        return await payload.chat(
+        result = await payload.chat(
             messages,
             temperature=0.2,
             model=selected_runtime.model_name,
@@ -105,6 +101,8 @@ async def _invoke_runtime(payload: ProviderInvocationInput, selected_runtime):
             max_tokens=payload.max_tokens,
             prefer_direct_answer=True,
         )
+    await note_success(selected_runtime, started_at=started_at)
+    return result
 
 
 async def _failure_or_failover(
@@ -195,9 +193,7 @@ def _auth_failure_without_fallback(
     )
 
 
-def _log_auth_failover(
-    payload: ProviderInvocationInput, runtime, fallback_runtime
-) -> None:
+def _log_auth_failover(payload: ProviderInvocationInput, runtime, fallback_runtime) -> None:
     payload.logger.warning(
         "ai.error_analysis.auth_failover wq_id=%s from_model_config_id=%s "
         "to_model_config_id=%s from_model=%s to_model=%s",
@@ -231,7 +227,7 @@ def _availability_failure(
 ) -> dict:
     return payload.failure_response(
         error_code="ai_service_unavailable",
-        retryable=False,
+        retryable=availability_retryable(exc.state),
         failure_model="availability",
         availability=exc.state,
     )
