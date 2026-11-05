@@ -140,11 +140,21 @@ class TestFormulaList:
     def teardown_method(self):
         _clear_overrides()
 
-    def test_list_requires_auth(self):
-        """Without auth override, endpoint is protected."""
+    def test_list_allows_anonymous_browsing(self):
+        """Anonymous readers can browse without writing personal records."""
         _clear_overrides()
+        result = MagicMock()
+        result.scalar.return_value = 0
+        result.scalars.return_value.all.return_value = []
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=result)
+        app.dependency_overrides[formulas_router.get_db] = lambda: db
         resp = client.get("/api/v1/formulas?subject_code=math2_high_math")
-        assert resp.status_code in (401, 403)
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
+        assert resp.json()["total"] == 0
+        db.add.assert_not_called()
+        db.commit.assert_not_called()
 
     def test_chapter_not_in_subject_returns_400(self, monkeypatch):
         """chapter_id that doesn't belong to subject_code returns 400."""

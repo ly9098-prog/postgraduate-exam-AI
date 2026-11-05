@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.log_context import get_log_context, normalize_trace_id  # noqa: F401
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_optional_current_user
 from app.models.user import User
 from app.schemas.common import paginated_response
 from app.schemas.practice import (
@@ -54,9 +54,9 @@ router = APIRouter(prefix="/api/v1/practice")
 @router.get("/subjects")
 async def get_practice_subjects(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
-    """返回刷题页可用科目树（动态，不硬编码）。"""
+    """返回公共学习科目目录，不按游客可出题范围裁剪。"""
     return await svc.get_practice_subject_tree(db)
 
 

@@ -87,6 +87,7 @@ def test_invalid_optional_credentials_are_never_silently_anonymous(client, heade
     "/api/v1/formulas/tags",
     "/api/v1/formulas/random/next",
     "/api/v1/guest/practice/subjects",
+    "/api/v1/practice/subjects",
     "/api/v1/guest/practice/questions?subject_id=1",
 ])
 def test_public_reads_do_not_require_identity(client, path):
@@ -107,4 +108,34 @@ def test_guest_http_budget_rejects_before_content_reads(client, monkeypatch, cou
     monkeypatch.setattr(guest_rate_limit.cache, "increment_strict", mock)
     response = test_client.get("/api/v1/guest/practice/subjects")
     assert response.status_code == status
+    database.execute.assert_not_called()
+
+
+def test_anonymous_subject_catalog_preserves_non_question_subjects(client, monkeypatch):
+    from app.api.v1 import practice
+
+    test_client, database = client
+    tree = [{
+        "subject_id": 1, "subject_name": "数学", "children": [
+            {"subject_id": 5, "subject_name": "高数", "children": []},
+            {"subject_id": 6, "subject_name": "线性代数", "children": []},
+        ],
+    }]
+    loader = AsyncMock(return_value=tree)
+    monkeypatch.setattr(practice.svc, "get_practice_subject_tree", loader)
+    response = test_client.get("/api/v1/practice/subjects")
+    assert response.status_code == 200
+    assert response.json() == tree
+    loader.assert_awaited_once_with(database)
+    database.add.assert_not_called()
+    database.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("header", ["Bearer invalid", "Basic invalid", "Bearer", ""])
+def test_subject_catalog_rejects_invalid_supplied_identity(client, header):
+    test_client, database = client
+    response = test_client.get(
+        "/api/v1/practice/subjects", headers={"Authorization": header},
+    )
+    assert response.status_code == 401
     database.execute.assert_not_called()
