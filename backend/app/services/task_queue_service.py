@@ -1682,10 +1682,8 @@ class DurableTaskQueue:
             return 0
 
         retry_count, max_retries, retry_plan = self._v2_fail_retry_budget(
-            task_or_id, error
+            task_or_id, error, retry_delay=retry_delay
         )
-        if retry_plan is not None and retry_delay is not None:
-            retry_plan.delay = max(retry_plan.delay, min(300, max(0, retry_delay)))
 
         return await self._execute_v2_fail_transition(
             task_or_id,
@@ -1698,15 +1696,23 @@ class DurableTaskQueue:
             error=error,
         )
 
-    def _v2_fail_retry_budget(self, task_or_id: Task | str, error: str):
+    def _v2_fail_retry_budget(
+        self,
+        task_or_id: Task | str,
+        error: str,
+        retry_delay: float | None = None,
+    ):
         """Derive the retry budget for a fail transition.
 
         Only a ``Task`` caller carries retry bookkeeping; bare-id callers
-        always take the dead-letter path with a zero retry budget.
+        always take the dead-letter path with a zero retry budget. A
+        caller-supplied ``retry_delay`` is clamped into the plan delay.
         """
         if not isinstance(task_or_id, Task):
             return 0, _DEFAULT_MAX_RETRIES, None
         retry_plan = self._build_v2_fail_retry_plan(task_or_id, error)
+        if retry_plan is not None and retry_delay is not None:
+            retry_plan.delay = max(retry_plan.delay, min(300, max(0, retry_delay)))
         return retry_plan.retry_count, retry_plan.max_retries, retry_plan
 
     async def _execute_v2_fail_transition(
