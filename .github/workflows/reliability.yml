@@ -64,6 +64,8 @@ jobs:
           pip install -r backend/requirements.txt
           # app.main imports the DOCX export stack during router import.
           pip install python-docx pytest pytest-asyncio
+          # Reliability tests import fakeredis; pin matches pyproject [test] extra.
+          pip install "fakeredis[lua]==2.37.0"
 
       - name: Compile backend
         run: python -m compileall -q backend/app
@@ -178,18 +180,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Keep this list limited to tests that exist in this revision;
+          # stale entries only produce recurring "not present" warnings.
           candidates=(
-            backend/tests/unit/test_practice_recommendation_pipeline.py
-            backend/tests/unit/test_task_queue_reliability.py
-            backend/tests/unit/test_local_runtime_and_outbox_backoff.py
-            backend/tests/unit/test_task_observability.py
-            backend/tests/unit/test_ai_resource_governance.py
             backend/tests/test_services/test_ai_model_availability.py
             backend/tests/test_api/test_admin_ai_config_health.py
             backend/tests/contract/test_openapi_contract.py
-            backend/tests/integration/test_practice_answer_projection.py
-            backend/tests/integration/test_answer_projection_reconciliation.py
-            backend/tests/integration/test_shared_ai_token_budget.py
           )
 
           tests=()
