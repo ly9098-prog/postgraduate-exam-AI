@@ -36,7 +36,7 @@ def monkeypatch_module():
     mp.undo()
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(loop_scope="module", scope="module")
 async def isolated_db(monkeypatch_module):
     tmp = tempfile.NamedTemporaryFile(prefix="review_session_stats_", suffix=".db", delete=False)
     tmp.close()

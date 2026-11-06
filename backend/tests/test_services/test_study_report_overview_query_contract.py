@@ -205,7 +205,7 @@ def monkeypatch_module():
     mp.undo()
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(loop_scope="module", scope="module")
 async def sqlite_session(monkeypatch_module, tmp_path_factory):
     from sqlalchemy.ext.asyncio import (
         AsyncSession,

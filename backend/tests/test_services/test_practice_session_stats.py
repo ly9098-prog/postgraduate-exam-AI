@@ -34,7 +34,7 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(loop_scope="module", scope="module")
 async def isolated_db(monkeypatch_module):
     tmp = tempfile.NamedTemporaryFile(prefix="prac_session_stats_", suffix=".db", delete=False)
     tmp.close()
