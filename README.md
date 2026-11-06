@@ -6,7 +6,7 @@ MemoGrad 是一个面向考研学习场景的智能刷题与题库治理系统�
 
 > 本 README 面向「首次运行项目、日常开发、CI 排错和部署维护」。API 的完整字段与协议应以运行时 OpenAPI 和 `docs/` 中的专项文档为准。
 
-> 当前实现快照（2026-09-23）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2.12 + React 19.2.4；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`，当前唯一生产入口是 `xzshub.top`（`/opt/22408-ai`）；用户与 Admin JWT 签名域隔离。408 选择题考试（试卷、作答、成绩、历史、管理端组卷）已接入。多空题分为每空单选 `multi_blank_choice` 与每空多选 `multi_blank_multiple_choice`。公式卡支持函数图，生产用命名卷 `formulas_data` 持久化上传图。错题展示、统计和 AI 分析会跟随当前题库内容，错因分析以服务端核对过的作答事实为准，同时保留错题产生时的历史版本；小程序错题详情会在前台切题时校验最新数据，并提供短时缓存弱网兜底。番茄钟统计只计入已结束会话。
+> 当前实现快照（2026-11-06）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2.12 + React 19.2.4；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`，当前唯一生产入口是 `xzshub.top`（`/opt/22408-ai`）；用户与 Admin JWT 签名域隔离。游客体验已上线：未登录可匿名浏览公式与公共科目目录，并按科目随机试做（5/10/20/30 题，批次独立签名、24 小时有效、不写个人学习数据），登录入口唯一且可取消。408 选择题考试（试卷、作答、成绩、历史、管理端组卷）已接入。多空题分为每空单选 `multi_blank_choice` 与每空多选 `multi_blank_multiple_choice`。公式卡支持函数图，生产用命名卷 `formulas_data` 持久化上传图。错题展示、统计和 AI 分析会跟随当前题库内容，错因分析以服务端核对过的作答事实为准，同时保留错题产生时的历史版本；小程序错题详情会在前台切题时校验最新数据，并提供短时缓存弱网兜底。AI 模型健康状态使用 Redis 共享缓存，预热失败走有界重试并恢复历史死信预算。番茄钟统计只计入已结束会话。
 
 ## 目录
 
@@ -68,6 +68,8 @@ flowchart LR
 ### 微信小程序
 
 - 微信登录、token / refresh token 自动续签
+- 游客模式：匿名浏览公式与公共科目目录、按科目随机试做（5/10/20/30 题）与匿名判分，本机草稿 24 小时有效
+- 自主登录：唯一入口在首页顶部，登录提示可取消，成功后返回来源页；手机号/头像/昵称不是体验前置条件
 - 刷题、随机练习、答题记录与学习统计
 - 错题本、错题详情、质量反馈
 - 今日复习、复习调度、掌握状态管理
@@ -102,6 +104,8 @@ flowchart LR
 - SQLAlchemy 2.0 Async ORM + Alembic
 - OCR 导题流水线：页面处理、识别、纠错、拆题、质量门禁、发布
 - AI 统一调用入口、并发/限流/熔断/Token 预算
+- AI 模型健康状态共享缓存与预热有界重试
+- 游客只读/试做 API：签名批次、按 IP 限流、不写个人数据；公式公共读取与 `/practice/subjects` 采用可选身份鉴权
 - Redis 缓存与持久任务队列
 - 自适应学习、知识状态、推荐与实验指标
 - pgvector 向量检索（可选）
@@ -535,6 +539,7 @@ WECHAT_APP_SECRET=...
 | 用户 | `/users/me` |
 | 题库 | `/questions`, `/questions/{id}` |
 | 刷题 | `/practice/*` |
+| 游客体验 | `/guest/practice/subjects`, `/guest/practice/questions`, `/guest/practice/evaluate` |
 | 错题 | `/wrong-questions/*` |
 | 复习 | `/review/*` |
 | 学习统计 | `/stats/*`, `/study-report/*` |
@@ -570,6 +575,7 @@ http://localhost:8000/openapi.json
 ```text
 docs/backend/API_SPEC.md
 docs/admin/ADMIN_API_SPEC.md
+docs/api/GUEST_EXPERIENCE_API.md
 ```
 
 > README 只保留稳定的接口领域和入口，避免复制完整路由清单后长期失真。
@@ -735,7 +741,7 @@ Reliability Gate 与上面两组 SQLite job 不同：它在 `pgvector/pgvector:p
 | 测试 | 覆盖 |
 |---|---|
 | `tests/test_features/test_migration_smoke.py` | 单一 head；空 SQLite 可 `upgrade head`。降级循环只在 `DATABASE_URL` 指向 PostgreSQL 时运行 |
-| `tests/test_features/test_migration_ci_scripts.py` | 检查点列表非空、不重复，并拒绝非法 JSON。文件仍断言最后一个检查点是 `s408seq20260911`；2026-09-23 采集结果的链尾已是 `v13_multi_blank_multiple_choice`，该断言与当前图不一致 |
+| `tests/test_features/test_migration_ci_scripts.py` | 检查点列表非空、不重复，并拒绝非法 JSON；断言最后一个检查点是当前迁移链链尾（2026-11-06 为 `v19_pomodoro_subject_allocations`），迁移链推进时需同步更新该断言 |
 | `tests/test_services/test_p5_0_schema_baseline_migration.py` | `p5_0_schema_baseline` 迁移文件和相关 ORM 声明 |
 | `tests/test_services/test_pomodoro_v2_migration.py` | 番茄钟 V2 回填、幂等和迁移后校验 |
 | `tests/integration/test_pomodoro_constraints_migration.py`、`tests/integration/test_pomodoro_constraint_definition_migration.py` | 在内存 SQLite 上执行对应迁移操作 |
@@ -857,7 +863,7 @@ app / worker / scheduler → redis:6379
 **日常更新：**
 
 ```bash
-# 先备份 PostgreSQL
+# 先备份 PostgreSQL 与 Redis
 ssh -i Linux_connect.pem root@101.33.231.186 \
   "cd /opt/22408-ai && bash deploy/scripts/deploy.sh backup"
 
@@ -888,7 +894,7 @@ ssh -i Linux_connect.pem root@101.33.231.186 \
   "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml up -d --no-deps app"
 ```
 
-`deploy.sh update` 不执行数据库迁移；app、scheduler 或 worker 重建后不要重启数据库、Redis 或 nginx。脚本会在 app/scheduler 更新后 reload nginx；若手动重建 app，应执行：
+`deploy.sh update` 不执行数据库迁移；app、scheduler 或 worker 重建后不要重启数据库、Redis 或 nginx。admin 前端或 scheduler 可用 `update-admin` / `update-scheduler` 单独更新（`update-all` 一次性更新 app + admin + scheduler）；worker 没有对应子命令，仍需手动重建。脚本会在 app/scheduler 更新后 reload nginx；若手动重建 app，应执行：
 
 ```bash
 ssh -i Linux_connect.pem root@101.33.231.186 \
@@ -907,6 +913,8 @@ ssh -i Linux_connect.pem root@101.33.231.186 \
 | ---------------------------------------- | -------------------------------------------- |
 | `deploy/docker-compose.prod.yml`         | 生产 Docker Compose 入口                     |
 | `deploy/scripts/deploy.sh`               | 生产部署脚本                                 |
+| `deploy/scripts/redis_backup.sh`         | Redis RDB 备份脚本（默认归档到宿主机 `redis_backups/`，可用 `REDIS_BACKUP_DIR` 覆盖） |
+| `deploy/scripts/redis_restore.sh`        | Redis 恢复脚本（AOF-safe，恢复期间短暂停止 Redis） |
 | `deploy/nginx/nginx.conf`                | Nginx 配置                                   |
 | `scripts/postgres_backup.py`             | PostgreSQL 备份脚本（pg_dump custom format） |
 | `deploy/scripts/backup.sh`               | 旧版备份脚本（已弃用，引用自 Python 脚本）   |
@@ -989,6 +997,12 @@ http://localhost:8000/api/v1
 - refresh 是否正常
 - 当前角色是否拥有对应 permission
 - `NEXT_PUBLIC_ADMIN_API_BASE_URL` 是否指向正确后端
+
+### 游客 / 匿名请求 401 / 403 / 429
+
+- 公式公共读取与 `/practice/subjects` 为可选身份鉴权：无凭据按匿名返回公共内容；携带无效凭据会直接 401，不会降级为匿名。
+- 游客试做三个端点按客户端 IP 限流 120 次/分钟，超限返回 429，限流缓存不可用返回 503。
+- 游客凭据只能调用 `/guest/practice/*` 与匿名判分，不能用于正式交卷；正式个人接口始终要求有效登录。
 
 ### Ruff 报 `F823 Local variable ... referenced before assignment`
 

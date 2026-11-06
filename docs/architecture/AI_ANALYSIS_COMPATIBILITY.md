@@ -373,6 +373,37 @@ I001/F401/N818 债务除外）、compileall 与 diff-check 通过；formatter �
 
 ---
 
+## 20. 共享健康租期、预热重试预算与队列策略收敛（2026-11-06）
+
+本节取代 §18 中「成功状态共享 30 秒」的口径；其余门禁结构（配置指纹隔离、
+共享锁探测、管理员测试同链路、额度不混同健康）不变。
+
+- **成功租期与按需刷新**：健康记录新增 `healthy_until`（成功租期 1800 秒）与
+  `next_probe_at`（刷新间隔 300 秒）。可用状态不再 30 秒过期；距上次成功超过
+  5 分钟时按需后台刷新，刷新期间未过期的成功状态仍然可用，不先把入口置为不可用。
+- **真实调用续期**：实际复盘或 AI 老师调用成功通过 `note_success(started_at)`
+  续期共享成功状态；较早发起的成功调用不能覆盖较新的故障（按 `updated_at` 比较）。
+- **可恢复性集中判定**：`checking` / `transient` / `status_unavailable` 为可恢复，
+  沿既有队列有界退避并尊重共享冷却时间；检查中的预热至少等待 65 秒再重试，
+  避免在 60 秒探测结束前耗尽次数。`configuration` / `quota` / `unconfigured` /
+  `user_quota` 不自动重复调用模型。预热本地退避不低于共享冷却 `retry_after`。
+- **死信预算恢复**：预热 worker 不再把尝试预算缩为 1 并立即死信；手动重试历史
+  `ai_service_unavailable` 死信时恢复至少 3 次尝试预算。重试策略选择集中在
+  `worker_task_types.py` 与 `task_queue_v2_dead_retry_contract.py`，通用队列
+  （`task_queue_service.py`）不再解析 AI 错误文本；`retry_delay` clamp 折叠进
+  v2 fail retry budget。既有预算、重试次数重置、任务版本与 fencing 行为保留。
+- **小程序生命周期**（`2f0de95a`）：可用性模块统一管理暂停、恢复、主动等待与
+  重试计时器；隐藏时暂停检查并使在途响应失效，不让迟响应修改状态；返回后复用
+  仍有效的成功缓存，命中失败缓存时按剩余冷却恢复重试，不重新延长完整冷却。
+  检查中用户主动点击生成/重试时保留一次意图，检查成功后延续执行，无主动操作
+  不自动生成。交互细则见 `docs/frontend/UI_RULES.md`。
+- 部署与生产验收边界见 `docs/project/DEPLOY_PLAN.md` §0.2/§0.3：生产仅验证了
+  连接探测与 app/worker 跨容器共享 Redis 状态，真实题目的复盘生成与预热成功、
+  历史死信重试仍未验证；历史死信需从 Admin 审计入口逐条重试并核对最终缓存。
+  API 口径同步见 `docs/backend/API_SPEC.md` 可用性章节。
+
+---
+
 ## 相关链接
 
 - [[docs/architecture/SYSTEM_ARCHITECTURE.md|SYSTEM_ARCHITECTURE]] — 系统架构
