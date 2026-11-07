@@ -1,5 +1,13 @@
 # Bugs History
 
+## 2026-11-08 — 生产 Admin 打开报 "Illegal invocation" 与 "This page couldn't load"（已修复）
+
+- **现象**：浏览器打开生产 Admin（xzshub.top）出现 Chrome "This page couldn't load" 失败页，控制台报 `Uncaught TypeError: Illegal invocation`，堆栈指向 `30w5beibdbniil.js` 与 `25o46h8mdjjr6.js` 两个混淆 chunk；服务端 HTTP、TLS、DNS 均正常。
+- **根因**：浏览器运行的是**旧构建**，而非现行代码缺陷。证据链：① 报错的两个 chunk 在生产已 404，当前 `/dashboard` HTML 引用的是前缀相同、哈希不同的 `25o46h8mdjlrg.js`（200，Last-Modified 2026-11-01 07:34 GMT，对应 `9087adf3` 部署）；② Playwright 全新浏览器访问 `/dashboard` 零 JS 错误（仅未登录 401→/login 正常）；③ "This page couldn't load" 文案不在仓库代码中，是 Chrome 通用失败页。结构性缺口：Next 预渲染 HTML 只发 `cache-control: s-maxage=31536000`（仅约束共享缓存），浏览器对 HTML 启发式缓存；chunk 为 `immutable, max-age=31536000`；部署重建 admin 镜像后旧 chunk 消失，旧标签页/缓存的旧 HTML 继续执行旧代码并引用 404 资源。旧 chunk 内抛 `Illegal invocation` 的具体代码行不可恢复（404、Wayback 无存档、本地 `.next` 已被新构建覆盖）；该错误类型为原生方法脱离宿主对象被解绑调用，现行代码中 history/clipboard/objectURL 均已绑定封装，`e01a7a77`（10-31）已清除最后的裸 innerHTML 写点。
+- **处理**：`deploy/nginx/nginx.conf` 新增 `map $upstream_http_content_type $admin_doc_cache_control`，对 `text/html`、`text/x-component`（RSC）文档类响应在 **server 级** `add_header Cache-Control ... always` 追加 `no-cache`（map 空值不发送头，chunk/JSON/图片/事件流不受影响）。关键实现约束：① 用前缀正则匹配——实际响应带 charset 后缀，精确匹配会漏；② `add_header` 必须留 server 级——location 有自己的 add_header 时 server 级安全头（CSP/HSTS 等）全部失效；③ chunk 保持 Next 自带 immutable 长缓存不变。发布按 DEPLOY_PLAN 流程：服务器备份（`nginx.conf.bak-nocache-20261107`）→ 新配置先传临时路径并在同网络、同证书挂载的临时 nginx:1.25-alpine 容器 `nginx -t` 预检 → 原地替换 → `up -d --no-deps --force-recreate nginx`（文件级 bind mount 换 inode 必须重建）→ 未触碰 admin/app/postgres/redis 容器。
+- **验证**：预检 syntax ok；发布后公网验证 HTML 带 `cache-control: no-cache`（与上游 s-maxage 并存）、chunk 仍 `public, max-age=31536000, immutable`、API JSON 无新增 Cache-Control、5 项安全头完整；内部健康探针带生产 Host 头返回 `{"status":"ok"}`（裸探针 400 是 DEPLOY_CHANGELOG §8.8 已记载的 ALLOWED_HOSTS 行为）；nginx 日志仅既有 `listen ... http2` 弃用 warn（非本次引入）；Playwright 端到端复访正常。新增防回退守卫 `backend/tests/test_deploy_nginx_forwarded_for.py::test_nginx_adds_no_cache_for_admin_html_documents`（仅约束生产配置；`backend/docker/nginx.conf` 是纯后端 API 开发配置，不承载 admin，不适用），5 项测试通过。用户侧遗留的旧标签页硬刷新一次即恢复。
+- **回退**：服务器恢复 `nginx.conf.bak-nocache-20261107` 后再次 `--force-recreate nginx` 即可；本次未触发回退。
+
 ## 2026-11-01 — 首页四科掌握概览全部显示无数据（已修复）
 
 - **现象**：首页“四科掌握概览”四张卡片始终显示 `--`、`数据不足` 和 `0/0 题`，即使 `/stats/dashboard` 已返回真实练习统计；整份成长快照也没有刷新。
