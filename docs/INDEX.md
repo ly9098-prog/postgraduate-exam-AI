@@ -134,7 +134,16 @@
 | `docs/architecture/OCR_BACKGROUND_RETENTION.md` | OCR-02诊断/工件/后台编排保留评估、定向验证与真实环境剩余 |
 | `docs/architecture/OCR_INTERFACE_RETENTION.md` | OCR-03上传/恢复/批量图片/worker接口保留评估、定向验证与真实环境剩余 |
 | `docs/architecture/REVIEW_STATS_HUB_ASSESSMENT.md` | MP-08复习/统计/学习中心职责核查，保留范围和MP-17诊断看板具体缺口 |
-| `docs/architecture/AI_ANALYSIS_COMPATIBILITY.md` §18–20 | 错题AI共享健康门禁（§20 为 2026-11-06 的 30 分钟成功租期、预热重试预算与队列策略收敛）、真实模型探测、额度/鉴权禁用、管理员解锁与小程序提示 |
+| `docs/architecture/AI_ANALYSIS_HISTORY.md` §18–20 | 错题AI共享健康门禁（§20 为 2026-11-06 的 30 分钟成功租期、预热重试预算与队列策略收敛）、真实模型探测、额度/鉴权禁用、管理员解锁与小程序提示 |
+| `docs/architecture/AI_ANALYSIS_HISTORY.md`（批记 §6–§20） | AI 分析域编号批记历史（原 AI_ANALYSIS_COMPATIBILITY §6 起，编号沿用） |
+| `docs/architecture/LEARNING_DATA_HISTORY.md` | 学习数据域编号批记历史（原 LEARNING_DATA_COMPATIBILITY §6 起，编号沿用） |
+| `docs/architecture/TASK_QUEUE_HISTORY.md` | 任务队列编号批记历史（原 TASK_QUEUE_COMPATIBILITY §6 起，编号沿用） |
+| `docs/architecture/OCR_IMPORT_HISTORY.md` | OCR 导入编号批记历史（原 OCR_IMPORT_COMPATIBILITY §6 起，编号沿用） |
+| `docs/architecture/PIPELINE_ORCHESTRATOR_HISTORY.md` | 管线编排编号批记历史（原 PIPELINE_ORCHESTRATOR_COMPATIBILITY §6 起，编号沿用） |
+| `docs/architecture/PRACTICE_SUBMISSION_HISTORY.md` | 刷题提交编号批记历史（原 PRACTICE_SUBMISSION_COMPATIBILITY §6 起，编号沿用） |
+| `docs/architecture/WRONG_DETAIL_HISTORY.md` | 错题详情编号批记历史（原 WRONG_DETAIL_COMPATIBILITY §6 起，编号沿用） |
+
+> 2026-11-08：七个大型 `*_COMPATIBILITY.md` 按「稳定契约 + 编号批记」拆分——契约与拆分索引留在 COMPATIBILITY，§6 起批记迁至同名 `_HISTORY.md`，编号沿用；新批记登记在 HISTORY 文件。
 | `docs/project/PRODUCTION_AI_ANALYSIS_AVAILABILITY_DEPLOY_2026-11-01.md` | 错题AI可用性门禁后端生产部署、备份、健康检查与真实模型验收边界 |
 | `docs/project/PRODUCTION_AI_MODEL_HEALTH_REVIEW_DEPLOY_2026-11-02.md` | 错题AI内聚/耦合复核、提交与三个后端角色再部署，含备份与限定验证 |
 | [诊断看板请求链兼容边界](architecture/DASHBOARD_INSIGHTS_COMPATIBILITY.md) | 诊断看板请求链的兼容边界说明 |

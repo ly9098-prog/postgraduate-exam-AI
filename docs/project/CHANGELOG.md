@@ -6,7 +6,7 @@
 
 ## 2026-11-06：共享 AI 健康租期、预热重试预算与队列策略收敛
 
-- 模型健康成功状态租期由 30 秒延长为 30 分钟（`healthy_until`），距上次成功超过 5 分钟按需后台刷新，刷新期间未过期的成功状态仍可用；实际复盘/AI 老师调用成功续期共享状态，较早发起的成功调用不能覆盖较新的故障。口径见 [[docs/architecture/AI_ANALYSIS_COMPATIBILITY.md|AI_ANALYSIS_COMPATIBILITY]] §20 与 `docs/backend/API_SPEC.md` 可用性章节。
+- 模型健康成功状态租期由 30 秒延长为 30 分钟（`healthy_until`），距上次成功超过 5 分钟按需后台刷新，刷新期间未过期的成功状态仍可用；实际复盘/AI 老师调用成功续期共享状态，较早发起的成功调用不能覆盖较新的故障。口径见 [[docs/architecture/AI_ANALYSIS_HISTORY.md|AI_ANALYSIS_HISTORY]] §20 与 `docs/backend/API_SPEC.md` 可用性章节。
 - 预热与队列：`checking` / `transient` / `status_unavailable` 判定为可恢复，沿既有队列有界退避并尊重共享冷却（检查中至少 65 秒）；预热死信不再强制 1 次预算，手动重试历史 `ai_service_unavailable` 死信恢复至少 3 次尝试。重试策略选择集中在 `worker_task_types.py` / `task_queue_v2_dead_retry_contract.py`，通用队列不再解析 AI 错误文本；`retry_delay` clamp 折叠进 v2 fail retry budget。
 - 小程序错题详情：可用性模块统一管理暂停/恢复/主动等待/重试计时器；隐藏暂停检查并失效在途响应，返回复用有效成功缓存、按剩余冷却恢复重试；检查中主动点击保留一次生成意图，无主动操作不自动生成。交互细则见 `docs/frontend/UI_RULES.md`。
 - CI/测试：`reliability.yml` 固定 fakeredis 版本并清理过期 reliability 测试候选；`pytest.ini` 显式钉住 pytest-asyncio 默认 fixture loop scope 为 function。
