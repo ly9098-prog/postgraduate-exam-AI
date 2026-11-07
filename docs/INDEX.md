@@ -56,7 +56,7 @@
 | `docs/project/MVP_SCOPE.md` | 原 MVP 清单（已完成；现行范围见路线图） |
 | `docs/project/ROADMAP.md` | 现行范围。不排新功能，也不要把 backlog 当待办 |
 | `docs/project/CHANGELOG.md` | 项目变更记录 |
-| `docs/project/BUGS.md` | Bug 完整记录 |
+| `docs/project/BUGS.md` | OCR 修复案例状态汇总与语料索引（完整语料见 `docs/ocr/OCR_FIX_CASES.md`） |
 | `docs/project/BUGS_HISTORY.md` | Bug 历史归档 |
 | `docs/project/DEPLOY_PLAN.md` | 部署方案与计划（现行架构、流程、环境变量与操作约束） |
 | `docs/project/DEPLOY_CHANGELOG.md` | 生产发布与部署变更记录（原 DEPLOY_PLAN §0.1–0.3、§6–§8，编号沿用） |
@@ -84,6 +84,7 @@
 | `docs/ai/AI_PIPELINE.md` | AI 管线 |
 | `docs/ai/AI_DEBUG_RULES.md` | AI 调试规则 |
 | `docs/ai/OCR_STRATEGY.md` | OCR 策略 |
+| `docs/ocr/OCR_FIX_CASES.md` | OCR 修复案例语料（BUGS Cases 1–6 完整原始语料与验收用例） |
 | `docs/ai/STANDARDIZATION_FLOW.md` | AI 标准化流程 |
 | `docs/architecture/OCR_FLOW.md` | OCR 导入架构流程 |
 | `docs/architecture/OCR_USAGE.md` | OCR 导入使用说明 |

@@ -1,6 +1,7 @@
 # Bugs
 
-> 一级目录兼容入口。权威内容请维护 `docs/project/BUGS.md`。
+> 一级目录兼容入口。权威内容请维护 `docs/project/BUGS.md`；
+> OCR 案例完整语料见 `docs/ocr/OCR_FIX_CASES.md`。
 
 ---
 
@@ -11,3 +12,4 @@
 - [[docs/INDEX.md|INDEX]] — 文档总索引
 - [[docs/COMMIT_RULES.md|COMMIT_RULES]] — 提交规范
 - [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
+- [[docs/ocr/OCR_FIX_CASES.md|OCR_FIX_CASES]] — OCR 修复案例语料
