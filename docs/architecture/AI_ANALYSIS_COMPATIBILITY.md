@@ -397,7 +397,7 @@ I001/F401/N818 债务除外）、compileall 与 diff-check 通过；formatter �
   仍有效的成功缓存，命中失败缓存时按剩余冷却恢复重试，不重新延长完整冷却。
   检查中用户主动点击生成/重试时保留一次意图，检查成功后延续执行，无主动操作
   不自动生成。交互细则见 `docs/frontend/UI_RULES.md`。
-- 部署与生产验收边界见 `docs/project/DEPLOY_PLAN.md` §0.2/§0.3：生产仅验证了
+- 部署与生产验收边界见 `docs/project/DEPLOY_CHANGELOG.md` §0.2/§0.3：生产仅验证了
   连接探测与 app/worker 跨容器共享 Redis 状态，真实题目的复盘生成与预热成功、
   历史死信重试仍未验证；历史死信需从 Admin 审计入口逐条重试并核对最终缓存。
   API 口径同步见 `docs/backend/API_SPEC.md` 可用性章节。

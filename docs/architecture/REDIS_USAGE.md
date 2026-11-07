@@ -276,3 +276,5 @@ bash deploy/scripts/deploy.sh update      # 如仅 Redis 配置变更，可单�
 - [[docs/architecture/API_ROUTER_STRUCTURE.md|API_ROUTER_STRUCTURE]] — 路由结构
 - [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
 - [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/DEPLOY_CHANGELOG.md|DEPLOY_CHANGELOG]] — 生产发布与部署变更记录
+- [[docs/project/DEPLOY_BUGS_HISTORY.md|DEPLOY_BUGS_HISTORY]] — 部署问题与修复记录

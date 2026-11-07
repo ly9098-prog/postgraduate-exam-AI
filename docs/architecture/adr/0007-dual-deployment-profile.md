@@ -63,3 +63,5 @@ When the deployment model is replaced by a different abstraction or the cloud se
 - [[docs/project/ROADMAP.md|ROADMAP]] — 现行范围
 - [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
 - [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/DEPLOY_CHANGELOG.md|DEPLOY_CHANGELOG]] — 生产发布与部署变更记录
+- [[docs/project/DEPLOY_BUGS_HISTORY.md|DEPLOY_BUGS_HISTORY]] — 部署问题与修复记录

@@ -58,7 +58,9 @@
 | `docs/project/CHANGELOG.md` | 项目变更记录 |
 | `docs/project/BUGS.md` | Bug 完整记录 |
 | `docs/project/BUGS_HISTORY.md` | Bug 历史归档 |
-| `docs/project/DEPLOY_PLAN.md` | 部署方案与计划 |
+| `docs/project/DEPLOY_PLAN.md` | 部署方案与计划（现行架构、流程、环境变量与操作约束） |
+| `docs/project/DEPLOY_CHANGELOG.md` | 生产发布与部署变更记录（原 DEPLOY_PLAN §0.1–0.3、§6–§8，编号沿用） |
+| `docs/project/DEPLOY_BUGS_HISTORY.md` | 部署问题与修复记录（原 DEPLOY_PLAN §9.x，编号沿用） |
 | `docs/project/KNOWLEDGE_BASE_MIGRATION_2026-11-04.md` | 旧 Wiki 归档与 `docs/` 唯一知识源的迁移对照 |
 | `docs/backend/REVIEW_SMOKE_CHECKLIST.md` | 复习模块冒烟测试清单 |
 | `docs/project/FILE_CHANGE_MAP.json` | 文件变更映射 |
@@ -175,6 +177,7 @@
 | `docs/architecture/refresh_token_architecture.md` | Refresh Token 架构 |
 | `docs/architecture/REDIS_USAGE.md` | Redis 使用情况、失败降级矩阵与稳定性修复记录 |
 | `docs/project/DEPLOY_PLAN.md` | 生产部署、Redis 持久化/备份与 AOF 安全恢复流程 |
+| `docs/project/DEPLOY_CHANGELOG.md` | 生产发布记录与历史部署批次（§ 编号与 DEPLOY_PLAN 拆分前一致） |
 | `docs/architecture/POMODORO_NOTIFICATION.md` | 番茄钟通知设计 |
 
 ### 一级目录兼容入口
@@ -195,7 +198,7 @@
 | `docs/CHANGELOG.md` | 调试变更日志；项目级变更以 `docs/project/CHANGELOG.md` 为准 |
 | `docs/BUGS.md` | `docs/project/BUGS.md` |
 | `docs/BUGS_HISTORY.md` | `docs/project/BUGS_HISTORY.md` |
-| `docs/DEPLOY_PLAN.md` | `docs/project/DEPLOY_PLAN.md` |
+| `docs/DEPLOY_PLAN.md` | `docs/project/DEPLOY_PLAN.md`（发布记录/问题史见 `docs/project/DEPLOY_CHANGELOG.md`、`docs/project/DEPLOY_BUGS_HISTORY.md`） |
 | `docs/FILE_CHANGE_MAP.json` | `docs/project/FILE_CHANGE_MAP.json` |
 | `docs/DEBUG_HISTORY.md` | `docs/debug/DEBUG_HISTORY.md` |
 | `docs/AUDIT_INDEX.md` | `docs/audit/AUDIT_INDEX.md` |

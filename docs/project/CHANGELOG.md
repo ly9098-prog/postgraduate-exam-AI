@@ -10,7 +10,7 @@
 - 预热与队列：`checking` / `transient` / `status_unavailable` 判定为可恢复，沿既有队列有界退避并尊重共享冷却（检查中至少 65 秒）；预热死信不再强制 1 次预算，手动重试历史 `ai_service_unavailable` 死信恢复至少 3 次尝试。重试策略选择集中在 `worker_task_types.py` / `task_queue_v2_dead_retry_contract.py`，通用队列不再解析 AI 错误文本；`retry_delay` clamp 折叠进 v2 fail retry budget。
 - 小程序错题详情：可用性模块统一管理暂停/恢复/主动等待/重试计时器；隐藏暂停检查并失效在途响应，返回复用有效成功缓存、按剩余冷却恢复重试；检查中主动点击保留一次生成意图，无主动操作不自动生成。交互细则见 `docs/frontend/UI_RULES.md`。
 - CI/测试：`reliability.yml` 固定 fakeredis 版本并清理过期 reliability 测试候选；`pytest.ini` 显式钉住 pytest-asyncio 默认 fixture loop scope 为 function。
-- 后端已于 2026-11-06 发布生产（app + worker，无数据库迁移），验收与回退入口见 [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] §0.2/§0.3；真实题目生成与历史死信重试待复验。
+- 后端已于 2026-11-06 发布生产（app + worker，无数据库迁移），验收与回退入口见 [[docs/project/DEPLOY_CHANGELOG.md|DEPLOY_CHANGELOG]] §0.2/§0.3；真实题目生成与历史死信重试待复验。
 
 ## 2026-11-05：游客体验与自主登录（本地整改）
 
@@ -32,7 +32,7 @@
 - **Redis 备份目录改造**（commit 206efb60）
   - `deploy/scripts/redis_backup.sh` 默认归档到宿主机 `/opt/22408-ai/redis_backups`（`BACKUP_DIR` 默认 `PROJECT_DIR/redis_backups`，可用 `REDIS_BACKUP_DIR` 覆盖）；`redis_restore.sh` 用法同步；`deploy.sh` 暴露 `backup-redis` / `redis-restore` 子命令，`deploy/Makefile` 有 `redis-restore` 目标。文档口径见 `docs/project/DEPLOY_PLAN.md` 与 `docs/architecture/REDIS_USAGE.md` §8。
 - **生产补录番茄钟记录（一次性运维留痕，2026-10-04/05）**
-  - 生产 `pomodoro_sessions` 为用户 1 补录两条 `completed` 记录：ID 391（操作系统，2026-10-05 02:00–02:45 北京时间，2700 秒）与 ID 392（英语，2026-10-05 14:50:54–15:06:54 北京时间，960 秒）；均为 free 计时（`work_duration=break_duration=0`），无暂停记录；已通过生产数据库回查确认。原记录在 `DEPLOY_PLAN.md` §9.6/§9.7，因属一次性数据操作已移出部署文档。
+  - 生产 `pomodoro_sessions` 为用户 1 补录两条 `completed` 记录：ID 391（操作系统，2026-10-05 02:00–02:45 北京时间，2700 秒）与 ID 392（英语，2026-10-05 14:50:54–15:06:54 北京时间，960 秒）；均为 free 计时（`work_duration=break_duration=0`），无暂停记录；已通过生产数据库回查确认。原记录在 原 `DEPLOY_PLAN.md`（现 `DEPLOY_CHANGELOG.md`）§9.6/§9.7，因属一次性数据操作已移出部署文档。
 
 ---
 

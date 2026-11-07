@@ -70,5 +70,7 @@
 - [[docs/project/PROJECT_RULES.md|PROJECT_RULES]] — 长期项目规则
 - [[docs/project/CHANGELOG.md|CHANGELOG]] — 项目变更记录
 - [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/DEPLOY_CHANGELOG.md|DEPLOY_CHANGELOG]] — 生产发布与部署变更记录
+- [[docs/project/DEPLOY_BUGS_HISTORY.md|DEPLOY_BUGS_HISTORY]] — 部署问题与修复记录
 - [[docs/project/BUGS_HISTORY.md|BUGS_HISTORY]] — 缺陷历史归档
 - [[docs/planning/TASK_PLAN.md|TASK_PLAN]] — 任务计划

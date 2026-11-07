@@ -173,3 +173,5 @@ systemctl restart backend.service
 - [[docs/ocr/OPERATIONS.md|OPERATIONS]] — OCR 运维
 - [[docs/ocr/TROUBLESHOOTING.md|TROUBLESHOOTING]] — OCR 排障
 - [[docs/project/DEPLOY_PLAN.md|DEPLOY_PLAN]] — 部署与运维
+- [[docs/project/DEPLOY_CHANGELOG.md|DEPLOY_CHANGELOG]] — 生产发布与部署变更记录
+- [[docs/project/DEPLOY_BUGS_HISTORY.md|DEPLOY_BUGS_HISTORY]] — 部署问题与修复记录
