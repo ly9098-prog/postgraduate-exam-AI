@@ -205,6 +205,37 @@ group('formatInlineMathText (integration)', function() {
   assert(y.includes('→'), 'to rendered: ' + JSON.stringify(y))
 })
 
+group('formatInlineMathText (spaced script limits)', function() {
+  // Imported questions carry spaced limits like `\sum_{i = 1}^{n}` (spaces, `=`,
+  // commas, tabs, nbsp). Math mode ignores inner whitespace, so scripts flatten
+  // exactly like the compact form instead of leaking literal `_{...}`/`^{...}`.
+  var s = mf.formatInlineMathText('\\sum_{i = 1}^{n} A[i][j]')
+  assertEq(s, '∑ᵢ₌₁ⁿ A[i][j]', 'spaced sum limit flattened')
+
+  // A comma is meaningful inside a subscript (two-index notation), so it is
+  // kept, matching how KaTeX renders `v_{i,j}`.
+  var c = mf.formatInlineMathText('v_{i, j}')
+  assertEq(c, 'vᵢ,ⱼ', 'comma kept, spaces dropped inside subscript')
+
+  var n = mf.formatInlineMathText('a_{i\t2}')
+  assertEq(n, 'aᵢ₂', 'tab inside subscript')
+
+  var nb = mf.formatInlineMathText('a_{i 2}')
+  assertEq(nb, 'aᵢ₂', 'nbsp inside subscript')
+
+  var sup = mf.formatInlineMathText('2^{n - 1}')
+  assertEq(sup, '2ⁿ⁻¹', 'spaced superscript')
+
+  // Newlines stay outside the script charset so damaged multi-line braces
+  // cannot swallow surrounding line structure.
+  var ml = mf.formatInlineMathText('a_{i\nj} b')
+  assert(ml.includes('a_{i'), 'newline not swallowed: ' + JSON.stringify(ml))
+
+  // Compact forms keep their original results.
+  assertEq(mf.formatInlineMathText('\\sum_{i=1}^{n} x_i'), '∑ᵢ₌₁ⁿ xᵢ', 'compact limit unchanged')
+  assertEq(mf.formatInlineMathText('w_1 + x^2'), 'w₁ + x²', 'bare single-char scripts unchanged')
+})
+
 // ── Key set verification against TypeScript source of truth ──
 
 group('key set consistency', function() {

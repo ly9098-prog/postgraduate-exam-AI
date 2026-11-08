@@ -2,14 +2,14 @@ const { applyLatexSymbols, unescapeFunctionNames } = require('./latex-symbols')
 const SUBSCRIPT = {
 '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
 '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-'+': '₊', '-': '₋', 'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ',
+'+': '₊', '-': '₋', '=': '₌', 'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ',
 'j': 'ⱼ', 'k': 'ₖ', 'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'o': 'ₒ',
 'p': 'ₚ', 'r': 'ᵣ', 's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ', 'v': 'ᵥ', 'x': 'ₓ'
 }
 const SUPERSCRIPT = {
 '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
 '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
-'+': '⁺', '-': '⁻', 'n': 'ⁿ'
+'+': '⁺', '-': '⁻', '=': '⁼', 'n': 'ⁿ'
 }
 function toScript(value, map) {
 const source = String(value || '')
@@ -58,11 +58,16 @@ let value = String(text)
 .replace(/\$([^$\n]+?)\$/g, '$1')
 value = replaceSimpleLatexCommands(value)
 value = value
-.replace(/_\{([0-9A-Za-z+-]+)\}/g, function(_, sub) {
-return toScript(sub, SUBSCRIPT)
+// Imported questions carry spaced limits such as `\sum_{i = 1}^{n}` (spaces,
+// `=`, commas, tabs, nbsp). Flatten them like the compact `_{i=1}` form; math
+// mode ignores inner whitespace, so it is dropped before mapping. The charset
+// deliberately excludes newlines so damaged multi-line braces cannot swallow
+// surrounding line structure.
+.replace(/_\{([-0-9A-Za-z+=,\t  ]+)\}/g, function(_, sub) {
+return toScript(sub.replace(/[\t  ]+/g, ''), SUBSCRIPT)
 })
-.replace(/\^\{([0-9A-Za-z+-]+)\}/g, function(_, sup) {
-return toScript(sup, SUPERSCRIPT)
+.replace(/\^\{([-0-9A-Za-z+=,\t  ]+)\}/g, function(_, sup) {
+return toScript(sup.replace(/[\t  ]+/g, ''), SUPERSCRIPT)
 })
 .replace(/(log|ln|sin|cos|tan)_([0-9]+)/g, function(_, name, sub) {
 return name + toScript(sub, SUBSCRIPT)
