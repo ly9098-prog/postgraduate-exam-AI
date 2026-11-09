@@ -19,13 +19,41 @@ global.wx = global.wx || {
 const StudyLatex = require('../subpackages/study/components/mp-html/latex/index')
 const ExamLatex = require('../subpackages/exam/components/mp-html/latex/index')
 
+// Mirror the runtime tokenizer in mp-html/latex/index.js: it splits text on
+// /\${1,2}/ and pairs delimiters; mismatched delimiters degrade to literal
+// text. Test helpers MUST use this grammar, otherwise '$$'-adjacency
+// corruption is invisible to CI.
+function tokenizeMath(html) {
+  const parts = String(html || '').split(/(\${1,2})/)
+  const math = []
+  const prose = []
+  let status = 0
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      if (!parts[i]) continue
+      if (status === 0) prose.push(parts[i])
+      else math.push(parts[i])
+    } else {
+      const next = parts[i + 2]
+      if (parts[i] === '$' && next === '$') {
+        status = 1
+        parts[i + 2] = ''
+      } else if (parts[i] === '$$' && next === '$$') {
+        status = 2
+        parts[i + 2] = ''
+      } else {
+        if (parts[i] && parts[i] !== '$$') {
+          parts[i + 1] = parts[i] + (parts[i + 1] || '')
+        }
+        status = 0
+      }
+    }
+  }
+  return { math, prose: prose.join('') }
+}
+
 function formulaBodies(html) {
-  const text = String(html || '')
-  const results = []
-  const re = /(\$\$|\$)([\s\S]*?)\1/g
-  let match
-  while ((match = re.exec(text))) results.push(match[2])
-  return results
+  return tokenizeMath(html).math
 }
 
 function assertKatexParses(html, message) {
@@ -75,6 +103,66 @@ const alternateDelimiterCard = buildAiRichText('结论：\\(a_n=n^2\\)，且 \\[
 assert.strictEqual(alternateDelimiterCard.needsRich, true, 'alternate LaTeX delimiters must use mp-html/KaTeX')
 assert(!/[\\][(\[]/.test(alternateDelimiterCard.html), 'alternate delimiters must not leak to rendered HTML')
 assertKatexParses(alternateDelimiterCard.html, 'alternate delimiter regression')
+
+// Wrong-detail AI review screenshot regression: the model delimited some
+// formulas ($2^{32}B$) but left bare scripts (2^{32}) in prose. Bare script
+// runs outside $...$ spans must be wrapped for KaTeX instead of leaking
+// literal ^{...} next to rendered math.
+function outsideMathText(html) {
+  return tokenizeMath(html).prose
+}
+const mixedScriptCard = buildAiRichText(
+  '作答核对：你选择 C（1MB+2^{32}MB），正确答案为 D。32位地址最多可寻址 $2^{32}B$，与主存、外存容量无关。'
+)
+assert.strictEqual(mixedScriptCard.needsRich, true, 'mixed delimited/bare passage must use mp-html/KaTeX')
+assert(mixedScriptCard.html.includes('1MB+$2^{32}$MB'), 'bare 2^{32} must be wrapped: ' + mixedScriptCard.html)
+assert(mixedScriptCard.html.includes('$2^{32}B$'), 'pre-delimited formula must stay untouched')
+assert(!/[\^_]\{/.test(outsideMathText(mixedScriptCard.html)), 'no bare script may remain outside math spans')
+assertKatexParses(mixedScriptCard.html, 'mixed bare/delimited script regression')
+
+// Multi-digit unbraced scripts must be consumed whole and braced, otherwise
+// 2^32 renders as 2^3 followed by a stray 2 (a wrong numeric value).
+const multiDigitCard = buildAiRichText('地址空间为 2^32 字节，$x^2$ 为对照')
+assert(multiDigitCard.html.includes('$2^{32}$'), 'multi-digit bare exponent must be braced: ' + multiDigitCard.html)
+assert(!/[\^_]/.test(outsideMathText(multiDigitCard.html)), 'no bare script may remain outside math spans')
+assertKatexParses(multiDigitCard.html, 'multi-digit bare exponent regression')
+
+// A bare run directly touching a delimited span must not insert a delimiter
+// that forms '$$': the runtime tokenizer would then destroy both formulas.
+const adjacencyCard = buildAiRichText('公式 $x^2$2^{10} 与相邻的 x^2y^3 对照')
+assert(adjacencyCard.html.includes('$x^2$'), 'pre-existing formula must still render')
+assert(!adjacencyCard.html.includes('$$'), 'inserted delimiters must never form $$: ' + adjacencyCard.html)
+assert(tokenizeMath(adjacencyCard.html).math.includes('x^2'), 'adjacent formula must stay a math span')
+
+// An unpaired '$' (currency) must not be re-paired with an inserted delimiter.
+const orphanDollarCard = buildAiRichText('面积 $S=\\pi r^2$，价格 $5，上限 2^{32}B')
+assert(!orphanDollarCard.html.includes('$$'), 'orphan $ must not pair with inserted delimiters: ' + orphanDollarCard.html)
+assert(orphanDollarCard.html.includes('2^{32}'), 'prose next to an orphan $ must stay untouched')
+
+// Wrapping must not swallow identifiers or LaTeX commands into script bases.
+const identifierCard = buildAiRichText('寄存器 x10、x_axis 与 flag_used 保持原样，\\log_{2} n 增长，内存 10^{6} 次，$x^2$ 对照')
+assert(!identifierCard.html.includes('x$10'), 'letter+digit compound token must not become a script base')
+assert(!identifierCard.html.includes('used$'), 'snake_case identifier must not become a script base')
+assert(!identifierCard.html.includes('$x_a$'), 'single-letter snake_case prefix must not become a script base')
+assert(identifierCard.html.includes('x_axis'), 'x_axis identifier must stay untouched')
+assert(identifierCard.html.includes('\\log_{2}'), 'LaTeX command subscript must stay one token')
+assert(identifierCard.html.includes('$10^{6}$'), 'multi-digit base wraps as a whole: ' + identifierCard.html)
+assertKatexParses(identifierCard.html, 'identifier guard regression')
+
+// Nested-brace bodies must not be half-wrapped into x^{$a_{1}$}.
+const nestedBraceCard = buildAiRichText('矩阵元素 x^{a_{1}} 与公式 $2^{32}B$ 有关')
+assert(nestedBraceCard.html.includes('x^{a_{1}}'), 'nested-brace script must stay untouched: ' + nestedBraceCard.html)
+assertKatexParses(nestedBraceCard.html, 'nested-brace regression')
+
+// HTML-formatted AI answers must get the same bare-script wrapping in their
+// text nodes, without touching tags or attributes.
+const htmlSourceCard = buildAiRichText('<p>地址宽度 2^{32}MB，公式 $2^{32}B$ 对照</p>')
+assert(htmlSourceCard.html.includes('$2^{32}$MB'), 'HTML text nodes must be wrapped: ' + htmlSourceCard.html)
+assert(htmlSourceCard.html.includes('<p>') && htmlSourceCard.html.includes('</p>'), 'HTML tags must stay intact')
+
+// Prose-only bare text without any $ delimiter keeps the lightweight path.
+const bareOnlyCard = buildAiRichText('增长到 2^{32} 数量级')
+assert.strictEqual(bareOnlyCard.needsRich, false, 'bare-only prose keeps the lightweight <text> path')
 
 // Other JSON control escapes that can damage common LaTeX commands.
 const structural = '$' + '\f' + 'rac{a}{b}=' + '\b' + 'eta,' + '\r' + 'ight)$'
