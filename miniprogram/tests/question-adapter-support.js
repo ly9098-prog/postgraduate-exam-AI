@@ -35,6 +35,7 @@ function loadAdapter(pkg, options = {}) {
       imports.push(request)
       if (request === './stem-render') return stem
       if (request === './answer') return answer
+      if (request === './segment-types') return nativeRequire('./segment-types')
       const target = path.resolve(path.dirname(filename), request + '.js')
       if (path.dirname(target) !== directory ||
           (target !== entry && !/^question-adapter-.*\.js$/.test(path.basename(target)))) {

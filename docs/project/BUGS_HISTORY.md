@@ -1,5 +1,14 @@
 # Bugs History
 
+## 2026-11-09 — 小程序题干内嵌图片段不渲染（视觉段题回落 RICH_TEXT 丢图，已修复）
+
+- **现象**：操作系统套卷第 5 题（本地 id 819，sync_uuid `08c86bb4-cc5e-4c58-aa70-db085369317a`；生产 numeric id 未核对）管理端与答案详情均显示进程调度表格图，小程序答题页题干只有文字，"见下表"指向的表格图缺失。题目内容为 `render_mode: 'segments'`，图片以 `type: 'image'` 段嵌在 segments 中（无 `content.image_url` 列）。本地库同形态（含 image/table_image/code_image 段）题共 85 道（image 77 + code_image 7 + 1 道兼含 table_markdown 段），其中 q909 因 table 段门控在修复前已走 SEGMENTS，实际回落 RICH_TEXT 丢图的是 84 道。
+- **根因**：`stem-render-model.js` 的 `selectPayload` 门控 `enableMathImage || hasTableSegments || _hasCodeSegments` 不含视觉段——生产配置 `enableMathImage: false`（config.js），`hasTableSegments` 只认 `table`/`table_markdown` 类型，故 84 道视觉段题未过门控；即使过门控，`_segmentsAgreeWithCanonicalStem` 把 image 段折算成 alt 文本参与与规范题干的比对，alt 不在题干中时判为"段过期"落回 `RICH_TEXT`，图片静默丢弃。门槛侧 code 段谓词随 exam 渲染器一起引入（b8d2a553），011cbf2d 只补了 agreement 侧的 code 豁免——本次把两处同类遗漏一并修复。
+- **处理**：视觉段（`image`/`table_image`/`code_image`）纳入与 code 段同等的 SEGMENTS 门槛与 agreement 豁免（`stem-render-segments.js` 的 `_hasVisualSegments` + `stem-render-model.js` 门控），study/exam 同构文件同步。`math_image` 继续受 `enableMathImage` 门控：关闭时从渲染段中过滤，也不参与 agreement 阻塞（混合数组不再绕过门控）。agreement 扩展段比对增加 OCR 伪差异归一（题号前缀、`[..见上图..]` 占位符、全半角标点/引号/波浪号），并把规范题干换行按 `\n` 结构回填进匹配的 text 段（修复 q2231 版式回归）；纯 newline+image 段形态会前置 `content.text`，避免题干文字消失。新增共享 `segment-types.js`（study/exam 各一份）统一 image-like/visual 类型清单，接入 stem-render-segments/model、table-structure、question-adapter-images 与 math-question（WXML 分支无法 import，新增类型时仍需同步两处 wxml）。
+- **验证**：本地库全量 A/B（git HEAD 旧渲染器经 `STEM_RENDER_OVERRIDE_DIR` 加载，sanity 确认 819 旧版为 RICH_TEXT 证明旧文件真实生效）：`render_mode: 'segments'` 的 175 道题中 SEGMENTS 由 25 → 103，相对 HEAD 回退 0；其中 7 道曾因 OCR 伪差异（865/872/899/900/1151/1215/1852）在首轮修复后仍被拦，归一后恢复；残余 6 道（410/412/420/425/426/486）段文本带额外 OCR 噪声 token，属 stale-segment 防线的正确拦截。真实数据：q819 image 段原样保留，q2231 换行由 1 处恢复为 3 处。契约测试新增视觉段/占位符/行结构/math_image 门控用例；`node --test` 契约（exam 42 + study 42 + dependency 6）、boundaries 30、quiz-runner observer 74、test-render-invariant 43、test-code-mode 197、test-question-adapter-images 16、render_regression 31、package-quality 与 architecture 预算脚本全部通过。
+- **未验证**：微信开发者工具编译与真机渲染未执行（本机无环境）；生产库题目内容未逐题核对（跨环境数据须按 `sync_uuid` 匹配，见 AGENTS.md 核心约束）。
+- **回退**：还原 stem-render-segments/model、segment-types、table-structure、question-adapter-images、math-question（study/exam 各份）即可；无数据或配置变更。
+
 ## 2026-11-09 — Admin "Illegal invocation" 复发排查（同一旧标签页，非新缺陷；修正 11-08 两处归因）
 
 - **现象**：11-08 部署修复两天后用户再次报告同款 "Illegal invocation" + "This page couldn't load"，控制台堆栈顶部在旧 chunk `30w5beibdbniil.js`（服务器 404）、其余帧在 `25o46h8mdjlrg.js`，前置 6× 401。

@@ -1,4 +1,5 @@
 var { stemRender } = require('./question-adapter-dependencies')
+var { isImageLikeSegmentType } = require('./segment-types')
 
 function _normalizeUrl(url) {
   if (!url || typeof url !== 'string') return ''
@@ -97,7 +98,7 @@ function getQuestionPrefetchUrls(q) {
       var seg = segments[i]
       if (!seg || typeof seg !== 'object') continue
       var type = String(seg.type || '').toLowerCase()
-      if (type === 'image' || type === 'math_image' || type === 'table_image' || type === 'code_image') {
+      if (isImageLikeSegmentType(type)) {
         add(seg.url)
       }
       if (type === 'table' || type === 'table_markdown') {

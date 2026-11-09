@@ -26,6 +26,44 @@ const modes = [
     segments: [{ type: 'text', text: 'old' }] }, { enableMathImage: true }, 'RICH_TEXT'],
   ['code segments', { text: 'int x = 1;', render_mode: 'segments',
     segments: [{ type: 'code', code: 'int x = 1;' }] }, {}, 'SEGMENTS'],
+  ['image segments', { text: 'see the table below', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: 'see the table below' },
+      { type: 'image', url: '/static/question-assets/t.webp', alt: '进程调度表', display: true },
+    ] }, {}, 'SEGMENTS'],
+  ['code_image segments', { text: 'see the snippet', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: 'see the snippet' },
+      { type: 'code_image', url: '/static/question-assets/c.webp' },
+    ] }, {}, 'SEGMENTS'],
+  ['stale segments with image extension', { text: 'current', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: 'old' },
+      { type: 'image', url: '/static/question-assets/t.webp', alt: '进程调度表' },
+    ] }, {}, 'RICH_TEXT'],
+  ['visual-only segments without text', { text: '见下表，选出正确选项', render_mode: 'segments',
+    segments: [
+      { type: 'newline' },
+      { type: 'image', url: '/static/question-assets/t.webp', alt: '表1' },
+    ] }, {}, 'SEGMENTS'],
+  ['mixed math_image stays gated', { text: '求 x 的值', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: '求 x 的值' },
+      { type: 'math_image', url: '/static/m.png', alt: 'x' },
+      { type: 'image', url: '/static/i.png', alt: '图1' },
+    ] }, {}, 'SEGMENTS'],
+  ['code image alt extension', { text: '见下表 进程调度表', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: '见下表 ' },
+      { type: 'image', url: '/static/t.webp', alt: '进程调度表' },
+      { type: 'code', code: 'for(;;){}' },
+    ] }, {}, 'SEGMENTS'],
+  ['ocr placeholder differences', {
+    text: '代码如下：[代码区域见上图]输出是什么？', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: '34.代码如下：输出是什么？' },
+      { type: 'image', url: '/static/c.webp', alt: '代码' },
+    ] }, {}, 'SEGMENTS'],
 ]
 
 for (const [name, content, config, mode] of modes) {
@@ -46,6 +84,45 @@ for (const [name, content, config, mode] of modes) {
     assert.equal(model.blocks.length > 0, mode === 'MIXED')
   })
 }
+
+test('visual-only segments prepend the canonical stem text', () => {
+  const { renderer } = loadRenderer()
+  const model = renderer.buildRenderModel({ id: 21, content: {
+    text: '见下表，选出正确选项', render_mode: 'segments',
+    segments: [{ type: 'newline' }, { type: 'image', url: '/static/x.webp', alt: '表1' }],
+  } }, null, {})
+  assert.equal(model.mode, 'SEGMENTS')
+  assert.equal(model.segments[0].type, 'text')
+  assert.equal(model.segments[0].text, '见下表，选出正确选项')
+})
+
+test('math_image segments stay gated when enableMathImage is false', () => {
+  const { renderer } = loadRenderer()
+  const model = renderer.buildRenderModel({ id: 22, content: {
+    text: '求 x 的值', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: '求 x 的值' },
+      { type: 'math_image', url: '/static/m.png', alt: 'x' },
+      { type: 'image', url: '/static/i.png', alt: '图1' },
+    ],
+  } }, null, {})
+  assert.equal(model.mode, 'SEGMENTS')
+  assert.equal(model.segments.some((segment) => segment.type === 'math_image'), false)
+})
+
+test('canonical line breaks are restored into matching segment text', () => {
+  const { renderer } = loadRenderer()
+  const model = renderer.buildRenderModel({ id: 23, content: {
+    text: '则图中\n①、\n②、\n③阶段分别使用的协议是？', render_mode: 'segments',
+    segments: [
+      { type: 'text', text: '则图中①、②、③阶段分别使用的协议是？' },
+      { type: 'image', url: '/static/d.png', alt: '流程图' },
+    ],
+  } }, null, {})
+  assert.equal(model.mode, 'SEGMENTS')
+  assert(model.segments[0].text.includes('\n'),
+    'restored text must keep canonical line breaks: ' + model.segments[0].text)
+})
 
 test('content and question getters retain their count and final id timing', () => {
   const seen = []

@@ -1,6 +1,7 @@
 var stemRender = require('../../utils/stem-render')
 var tableStructure = require('../../utils/table-structure')
 var codeBlockRender = require('../../utils/code-block-render')
+var { isImageLikeSegmentType } = require('../../utils/segment-types')
 Component({
 properties: {
 segments: { type: Array, value: [] }
@@ -81,7 +82,7 @@ var urls = []
 var currentUrl = ''
 for (var i = 0; i < segs.length; i++) {
 var s = segs[i]
-if (s.type === 'image' || s.type === 'math_image' || s.type === 'table_image' || s.type === 'code_image') {
+if (isImageLikeSegmentType(s.type)) {
 if (s.url && !s._error) {
 urls.push(s.url)
 if (i === index) currentUrl = s.url

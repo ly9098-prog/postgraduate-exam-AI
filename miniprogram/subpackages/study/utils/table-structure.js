@@ -1,4 +1,5 @@
 
+var { isImageLikeSegmentType } = require('./segment-types')
 var MAX_ROWS = 500
 var MAX_COLUMNS = 100
 function _record(value) {
@@ -165,7 +166,7 @@ _layout: layout,
 function _prepareBlock(block, helpers) {
 var type = String(block.type || 'text').toLowerCase()
 if (type === 'newline') return { type: 'newline' }
-if (type === 'image' || type === 'math_image' || type === 'table_image' || type === 'code_image') {
+if (isImageLikeSegmentType(type)) {
 return {
 type: 'image',
 url: block.url && helpers.resolveAssetUrl ? helpers.resolveAssetUrl(block.url) : String(block.url || ''),

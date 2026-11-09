@@ -36,7 +36,7 @@ RenderModel 在 DEV 环境下通过 `Object.freeze()` 冻结，页面层修改�
 ```
 buildRenderModel(question, options)
 │
-├─ render_mode==='segments' && (enableMathImage || 含 table segments)
+├─ render_mode==='segments' && (enableMathImage || 含 table/code/视觉段) && 段与本干一致
 │  └─ SEGMENTS → <math-question>
 │
 ├─ 多块（段落含 code/latex 混合，经 splitStemBlocks 分出 ≥2 种块类型）
@@ -60,7 +60,7 @@ buildRenderModel(question, options)
 
 | 模式 | 适用 | WXML 组件 | 说明 |
 |------|------|-----------|------|
-| `SEGMENTS` | `render_mode: 'segments'` 且（`enableMathImage` 或含表格片段） | `<math-question>` | 预渲染公式图片模式；当前 `enableMathImage=false`，仅表格片段触发 |
+| `SEGMENTS` | `render_mode: 'segments'` 且段与本干一致，且（`enableMathImage` 或含 `table`/`table_markdown`、`code`、`image`/`table_image`/`code_image` 段） | `<math-question>` | 结构化段渲染：表格/代码/题图原位显示。`math_image` 单独受 `enableMathImage` 门控（关闭时从渲染段中过滤，也不参与一致性阻塞）。扩展段比对前对 OCR 伪差异（题号前缀、`[见上图]` 占位符、全半角标点/引号/波浪号）归一，并把规范题干换行回填到匹配的 text 段；纯 newline+image 段会前置 `content.text`，避免题干文字丢失 |
 | `MIXED` | 同一题干包含 ≥2 种块（如文字+代码、文字+LaTeX） | 按块 `<rich-text>`/`<mp-html>`/`<scroll-view>` | 每个块独立渲染，不改动其他块 |
 | `LATEX` | 含 `$$...$$` 或 `\frac`/`\sqrt`/`\int` 等 LaTeX 命令 | `<mp-html>` | 通过 KaTeX 插件渲染，仅用于复杂公式 |
 | `CODE` | 纯代码题干（`{`/`;`/控制流等结构化特征） | `<scroll-view scroll-x>` + `<text>` | 零 HTML，原始文本 + 行号 |

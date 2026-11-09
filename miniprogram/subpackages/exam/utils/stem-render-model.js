@@ -4,8 +4,8 @@ var { _repairFalseNumberMarkerBreaks, _toPlainInlineMathText,
   _toPlainSimpleInlineMathText, _buildRichTextNodes, _textToHtml } = require('./stem-render-text')
 var { _cleanStemText } = require('./stem-render-options')
 var { _segmentsToText, _segmentsAgreeWithCanonicalStem, _hasCodeSegments,
-  _repairFalseRangeBreaksInSegments, _textToSegments,
-  _stemIsRepresentedByCodeSegment } = require('./stem-render-segments')
+  _hasVisualSegments, _restoreTextSegmentFormatting, _repairFalseRangeBreaksInSegments,
+  _textToSegments, _stemIsRepresentedByCodeSegment } = require('./stem-render-segments')
 var { splitStemBlocks, containsUnresolvedLatex } = require('./stem-render-blocks')
 var { _hashStem, _renderDiff, _reportDiff } = require('./stem-render-diagnostics')
 
@@ -26,16 +26,30 @@ function prepareStem(q, options) {
   }
 }
 
-function renderSegments(state, modes) {
+function renderSegments(state, modes, config) {
   var content = state.content
   state.mode = modes.SEGMENTS
   state.segments = (content.segments && content.segments.length > 0)
     ? _repairFalseRangeBreaksInSegments(content.segments)
     : _textToSegments(state.cleanedStem)
+  // math_image rendering is governed by enableMathImage even when the question
+  // also carries plain visual segments that opened the SEGMENTS gate.
+  if (config && !config.enableMathImage) {
+    var segmentsWithoutMathImage = state.segments.filter(function (segment) {
+      return !segment || typeof segment !== 'object' ||
+        String(segment.type || '').trim().toLowerCase() !== 'math_image'
+    })
+    if (segmentsWithoutMathImage.length !== state.segments.length) {
+      state.segments = segmentsWithoutMathImage
+    }
+  }
+  // Segment text occasionally lost the canonical line breaks during OCR
+  // import; restore them so SEGMENTS keeps the stem layout.
+  state.segments = _restoreTextSegmentFormatting(state.segments, state.cleanedStem)
   var hasTextualSegment = state.segments.some(function (segment) {
     var type = segment && typeof segment === 'object'
       ? String(segment.type || '').trim().toLowerCase() : ''
-    return type === 'text' || type === 'newline'
+    return type === 'text' && String(segment.text || '').trim().length > 0
   })
   if (!hasTextualSegment && state.stemText && state.cleanedStem &&
       !_stemIsRepresentedByCodeSegment(state.segments, state.cleanedStem)) {
@@ -157,11 +171,11 @@ function renderSingle(state, q, config, modes) {
 function selectPayload(state, q, options, config, modes) {
   var content = state.content
   var agrees = !content || _segmentsAgreeWithCanonicalStem(
-    content.segments, state.cleanedStem, options, state.optionKeys)
+    content.segments, state.cleanedStem, options, state.optionKeys, config)
   if (content && content.render_mode === 'segments' && agrees &&
       (config.enableMathImage || tableStructure.hasTableSegments(content.segments) ||
-        _hasCodeSegments(content.segments))) {
-    renderSegments(state, modes)
+        _hasCodeSegments(content.segments) || _hasVisualSegments(content.segments))) {
+    renderSegments(state, modes, config)
     return
   }
   var stemBlocks = splitStemBlocks(state.cleanedStem)
