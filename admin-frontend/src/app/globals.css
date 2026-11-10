@@ -1033,6 +1033,48 @@ body {
   }
 }
 
+/* Soft seam: the brand panel's right edge crossfades into the warm canvas
+   over its last 76px, so the halves meet in a gentle ramp rather than a hard
+   vertical line. Colors are sampled from the canvas gradient at the seam. */
+.auth-surface .auth-seam-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 76px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    #efefee 0%,
+    #f7f5f1 24%,
+    #faf8f5 52%,
+    #f8f6f2 74%,
+    #f6f3ee 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.16) 24%,
+    rgba(0, 0, 0, 0.48) 52%,
+    rgba(0, 0, 0, 0.82) 80%,
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.16) 24%,
+    rgba(0, 0, 0, 0.48) 52%,
+    rgba(0, 0, 0, 0.82) 80%,
+    #000 100%
+  );
+}
+
+@media (max-width: 1279px) {
+  .auth-surface .auth-seam-fade {
+    width: 48px;
+  }
+}
+
 /* Keep the two halves in one continuously lit scene. */
 .auth-ambient + .auth-ambient {
   position: relative;

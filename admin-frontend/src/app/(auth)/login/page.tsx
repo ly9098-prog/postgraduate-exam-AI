@@ -241,6 +241,8 @@ function LoginForm() {
             <span className="auth-particle auth-particle-e" />
           </div>
           <div className="absolute inset-0 shadow-[inset_0_0_150px_rgba(3,8,14,0.55)]" />
+          {/* Soft seam: the panel's right edge crossfades into the warm canvas. */}
+          <div className="auth-seam-fade" />
           <div className="auth-noise absolute inset-0" />
         </div>
 
