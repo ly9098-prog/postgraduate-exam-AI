@@ -16,7 +16,6 @@
     "@tanstack/react-table": "^8.21.3",
     "clsx": "^2.1.1",
     "echarts": "^6.1.0",
-    "framer-motion": "^14.10.1",
     "katex": "^0.17.0",
     "lucide-react": "^1.17.0",
     "next": "16.2.12",
