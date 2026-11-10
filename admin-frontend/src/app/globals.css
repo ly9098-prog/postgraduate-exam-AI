@@ -467,52 +467,6 @@ body {
   background: radial-gradient(55% 70% at 50% 48%, rgba(74, 111, 138, 0.1), rgba(74, 111, 138, 0) 74%);
 }
 
-.auth-surface .auth-flow-track {
-  overflow: hidden;
-  background: linear-gradient(90deg, rgba(169, 192, 208, 0.08), rgba(169, 192, 208, 0.3) 50%, rgba(169, 192, 208, 0.08));
-}
-
-.auth-surface .auth-flow-track::after {
-  content: "";
-  position: absolute;
-  inset: -1px 0;
-  background: linear-gradient(90deg, rgba(215, 227, 234, 0), rgba(215, 227, 234, 0.78), rgba(215, 227, 234, 0));
-  background-repeat: no-repeat;
-  background-size: 34% 100%;
-  animation: auth-workflow-glide 8s ease-in-out infinite;
-}
-
-.auth-surface .auth-flow-node {
-  position: relative;
-  border: 1px solid rgba(198, 213, 223, 0.16);
-  background: linear-gradient(145deg, rgba(232, 240, 245, 0.095), rgba(74, 111, 138, 0.035));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 10px 24px -18px rgba(3, 8, 14, 0.72);
-  backdrop-filter: blur(8px);
-}
-
-.auth-surface .auth-flow-node::after {
-  content: "";
-  position: absolute;
-  inset: 4px;
-  border: 1px solid rgba(198, 213, 223, 0.045);
-  border-radius: 9px;
-}
-
-.auth-surface .auth-flow-node-review {
-  border-color: rgba(196, 154, 107, 0.25);
-  background: linear-gradient(145deg, rgba(196, 154, 107, 0.11), rgba(74, 111, 138, 0.045));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 28px rgba(196, 154, 107, 0.045),
-    0 10px 24px -18px rgba(3, 8, 14, 0.72);
-}
-
-.auth-surface .auth-flow-node-review::after {
-  border-color: rgba(216, 191, 163, 0.06);
-}
-
 @keyframes auth-workflow-glide {
   0% { opacity: 0; background-position: -110% 0; }
   18% { opacity: 0.72; }
@@ -1051,10 +1005,6 @@ body {
 
   .auth-surface .auth-blueprint {
     margin-top: 24px;
-  }
-
-  .auth-surface .auth-blueprint-meta {
-    margin-bottom: 14px;
   }
 
   .auth-surface .auth-ledger > div {
