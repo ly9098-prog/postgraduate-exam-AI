@@ -1,7 +1,7 @@
 # Admin UI Rules
 
-> 版本：v1.4（当前 Admin 页面与运维权限同步版） | 状态：核心页面已实施 | 更新：2026-09-02
-> 变更原因：同步 `admin-frontend` 新增 `/ai-settings` 独立页面、侧边栏入口、权限门禁、AI 解析开关/月度额度/月度用量展示，以及 build 网络阻塞验证结果。
+> 版本：v1.5（登录页材质与字体同步版） | 状态：核心页面已实施 | 更新：2026-11-09
+> 变更原因：记录 `/login` 的 Tailwind 双栏、玻璃材质、本地中文可变字体及无障碍降级；保留已有 AI 设置与后台权限规则。
 
 ---
 
@@ -32,6 +32,14 @@
 - 登录成功后写入内存态：`accessToken`、`user`、`role`、`permissions`，再跳转 `next` 或 `/dashboard`。
 - 登录按钮必须有 loading/disabled 态，避免重复提交。
 - 登录页不得展示后台菜单；已登录访问登录页可跳转 Dashboard。
+
+### 3.1 登录页视觉实现（2026-11-09）
+
+- 登录页的布局、材质与交互样式集中在 `src/app/(auth)/login/page.tsx`；不通过全局 `.login-*` 规则覆盖 Tailwind utility classes。
+- 桌面为品牌文案与表单双栏；小于 1024px 收起品牌大标题，保留页首品牌和完整登录表单。标题使用 500 字重，强调词仅改变颜色。
+- 卡片使用 60% 白色、`backdrop-blur-2xl`、白色细边框、黑色 5% 外环和两层向下弥散阴影；表单聚焦采用主题色边框与 2px 外环，按钮使用垂直灰蓝渐变和顶部内高光。
+- 本地字体 `public/fonts/noto-sans-sc-login.woff2` 为 Noto Sans SC 的 400–600 可变字重子集，覆盖登录页固定文案及可打印 ASCII，大小 40,884 字节。来源为 Google Fonts 的 Noto Sans SC，OFL 许可保存在同目录 `NotoSansSC-OFL.txt`；浏览器不请求外部字体服务。新增固定中文文案时需更新字体子集；未收录字符按字体栈回退。
+- Framer Motion 负责文案与卡片错落入场；`prefers-reduced-motion` 下立即显示内容并关闭位移和模糊，`prefers-reduced-transparency` 或不支持 backdrop filter 时使用不透明卡片。
 
 ---
 
