@@ -430,6 +430,7 @@ function LoginForm() {
               <path d="M 758 340 h 28 M 772 326 v 28" stroke="rgba(74,111,138,0.16)" />
             </g>
           </svg>
+          <div className="auth-seam-veil" />
           <div className="auth-noise absolute inset-0" />
         </div>
 
