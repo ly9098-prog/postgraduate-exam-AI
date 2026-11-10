@@ -1033,9 +1033,10 @@ body {
   }
 }
 
-/* Soft seam: the brand panel's right edge crossfades into the warm canvas
-   over its last 76px, so the halves meet in a gentle ramp rather than a hard
-   vertical line. Colors are sampled from the canvas gradient at the seam. */
+/* Soft seam, part one: the brand panel's right edge reaches a 50/50 blend
+   with the canvas at the boundary, easing in over its last 76px. The half
+   alpha is deliberate — the canvas side (part two, below) carries the other
+   half, so the two panels crossfade instead of meeting at a line. */
 .auth-surface .auth-seam-fade {
   position: absolute;
   top: 0;
@@ -1054,19 +1055,83 @@ body {
   -webkit-mask-image: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(0, 0, 0, 0.16) 24%,
-    rgba(0, 0, 0, 0.48) 52%,
-    rgba(0, 0, 0, 0.82) 80%,
-    #000 100%
+    rgba(0, 0, 0, 0.02) 20%,
+    rgba(0, 0, 0, 0.06) 38%,
+    rgba(0, 0, 0, 0.14) 56%,
+    rgba(0, 0, 0, 0.26) 74%,
+    rgba(0, 0, 0, 0.4) 90%,
+    rgba(0, 0, 0, 0.5) 100%
   );
   mask-image: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(0, 0, 0, 0.16) 24%,
-    rgba(0, 0, 0, 0.48) 52%,
-    rgba(0, 0, 0, 0.82) 80%,
-    #000 100%
+    rgba(0, 0, 0, 0.02) 20%,
+    rgba(0, 0, 0, 0.06) 38%,
+    rgba(0, 0, 0, 0.14) 56%,
+    rgba(0, 0, 0, 0.26) 74%,
+    rgba(0, 0, 0, 0.4) 90%,
+    rgba(0, 0, 0, 0.5) 100%
   );
+}
+
+/* Soft seam, part two: the warm canvas picks up the panel's half of the
+   blend at the boundary and lets it dissolve over 200px — the dark panel
+   reads as casting light falloff onto the canvas, not as a wall. The
+   vertical stops are sampled from the panel's own rendered colour at the
+   seam so both sides meet at the same value. */
+.auth-surface .auth-seam-veil {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 72px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    #14222e 0%,
+    #1b2b34 22%,
+    #26323a 40%,
+    #2b3c48 58%,
+    #11222c 78%,
+    #0d1c26 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.5) 0%,
+    rgba(0, 0, 0, 0.4) 16%,
+    rgba(0, 0, 0, 0.26) 38%,
+    rgba(0, 0, 0, 0.13) 60%,
+    rgba(0, 0, 0, 0.045) 80%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.5) 0%,
+    rgba(0, 0, 0, 0.4) 16%,
+    rgba(0, 0, 0, 0.26) 38%,
+    rgba(0, 0, 0, 0.13) 60%,
+    rgba(0, 0, 0, 0.045) 80%,
+    transparent 100%
+  );
+}
+
+@media (min-width: 1024px) {
+  .auth-surface .auth-seam-veil {
+    display: block;
+  }
+}
+
+@media (min-width: 1280px) {
+  .auth-surface .auth-seam-veil {
+    width: 96px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .auth-surface .auth-seam-veil {
+    width: 200px;
+  }
 }
 
 @media (max-width: 1279px) {
