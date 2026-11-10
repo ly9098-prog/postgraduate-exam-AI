@@ -1,7 +1,7 @@
 # Admin UI Rules
 
-> 版本：v1.5（登录页材质与字体同步版） | 状态：核心页面已实施 | 更新：2026-11-09
-> 变更原因：记录 `/login` 的 Tailwind 双栏、玻璃材质、本地中文可变字体及无障碍降级；保留已有 AI 设置与后台权限规则。
+> 版本：v1.6（登录页环境光与哑光材质版） | 状态：核心页面已实施 | 更新：2026-11-10
+> 变更原因：同步 `/login` 当前实现——环境光品牌区、蓝图流程预览、哑光按钮、设计 token；移除已失效的玻璃材质/渐变按钮/本地字体/Framer Motion 描述。
 
 ---
 
@@ -33,13 +33,15 @@
 - 登录按钮必须有 loading/disabled 态，避免重复提交。
 - 登录页不得展示后台菜单；已登录访问登录页可跳转 Dashboard。
 
-### 3.1 登录页视觉实现（2026-11-09）
+### 3.1 登录页视觉实现（2026-11-10）
 
-- 登录页的布局、材质与交互样式集中在 `src/app/(auth)/login/page.tsx`；不通过全局 `.login-*` 规则覆盖 Tailwind utility classes。
-- 桌面为品牌文案与表单双栏；小于 1024px 收起品牌大标题，保留页首品牌和完整登录表单。标题使用 500 字重，强调词仅改变颜色。
-- 卡片使用 60% 白色、`backdrop-blur-2xl`、白色细边框、黑色 5% 外环和两层向下弥散阴影；表单聚焦采用主题色边框与 2px 外环，按钮使用垂直灰蓝渐变和顶部内高光。
-- 本地字体 `public/fonts/noto-sans-sc-login.woff2` 为 Noto Sans SC 的 400–600 可变字重子集，覆盖登录页固定文案及可打印 ASCII，大小 40,884 字节。来源为 Google Fonts 的 Noto Sans SC，OFL 许可保存在同目录 `NotoSansSC-OFL.txt`；浏览器不请求外部字体服务。新增固定中文文案时需更新字体子集；未收录字符按字体栈回退。
-- Framer Motion 负责文案与卡片错落入场；`prefers-reduced-motion` 下立即显示内容并关闭位移和模糊，`prefers-reduced-transparency` 或不支持 backdrop filter 时使用不透明卡片。
+- 登录页布局与交互逻辑在 `src/app/(auth)/login/page.tsx`；所有自定义视觉样式集中在 `src/app/globals.css` 的 `.auth-surface` 作用域下（约 100 条 `.auth-*` 规则），不污染其他页面，也不通过全局 `.login-*` 规则覆盖 Tailwind utility classes。
+- 桌面为品牌区与表单双栏（`lg:grid-cols-[5fr_7fr]`）；小于 1024px 收起品牌区，保留页首品牌锁标与完整登录表单。
+- 品牌区为六层环境光：墨蓝基底渐变、北极青主光（标题区上方）、电光蓝冷高光、深海暗部、青色桥接与边缘渐隐；叠加精细网格、蓝图曲线、柔光节点、「内容工作台」流程预览（智能识别 → 人工审核 → 确认入库）与三模块台账。Aurora/orbit/particle 动画在 `prefers-reduced-motion` 下全部关闭。
+- 登录卡片为暖白渐变实心表面 + 细边框 + 三层软阴影 + `.auth-card::before` 内缘光；右侧背景与卡片之间通过冷白漫射光和椭圆接触阴影衔接。
+- 登录按钮为哑光材质（`.auth-cta`，globals.css）：纯色 `#4a6f8a` 系品牌蓝、低对比描边、单层轻投影；hover 提亮并上浮 1px，active 下压，loading/disabled 为灰蓝色且无阴影；无渐变、无顶部内高光、无强发光。键盘焦点使用 `focus-visible` 描边环。
+- 设计 token 集中在 `.auth-surface` 的 CSS 变量（`--auth-brand`、`--auth-card`、`--auth-field` 等）；新增登录页样式优先引用这些 token，不硬编码色值。
+- 认证逻辑、状态顺序、错误提示与跳转契约受 `identity-page-contracts.test.ts` 锁定，视觉改动不得触碰。
 
 ---
 
