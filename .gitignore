@@ -64,6 +64,7 @@ miniprogram/miniprogram_npm/
 .vscode/
 *.swp
 .claude/
+.codex/agents/
 
 # OS
 .DS_Store
@@ -86,15 +87,15 @@ backend/exports/
 # Dev/import artifacts & one-off scripts（本地 dev 产物，不提交；已跟踪文件不受 gitignore 影响）
 # 根级锚定(/)：避免匹配 deploy/scripts 等被跟踪的子目录
 /artifacts/
+/docs/
 /scripts/
 /reports/
 /tools/
 /utils/
 /fix/
+/backups/
+/prompts/
 
-# 项目文档属于源码，应持续纳入 Git 跟踪
-!docs/
-!docs/**
 backend/scripts/
 backend/reports/
 backend/tools/

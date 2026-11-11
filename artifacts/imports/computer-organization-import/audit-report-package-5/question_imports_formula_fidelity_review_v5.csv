@@ -1,6 +1,0 @@
-﻿id,source_page,field,current_text,suggested_text,issue_type,severity,auto_applied,reason
-672,85,A-D,A Xi⊕Yi；B XiYi；C XiYiCi；D Xi+Yi+Ci,A X_i⊕Y_i；B X_iY_i；C X_iY_iC_i；D X_i+Y_i+C_i,数学下标丢失/公式扁平化,低,否,源页中i均为下标；当前纯文本仍可理解，但公式语义不够精确。
-684,98,stem,C0、C1,C_0、C_1,数学下标丢失/公式扁平化,低,否,源页明确以0、1作为进位信号下标。
-685,99,stem,S_s1S_s2=10,S_{s1}S_{s2}=10,复合下标表达不清,低,否,源页为两个带下标的符号位，当前串联写法容易被误解为普通字符串。
-686,100,stem/A-D,[X]补=X0X1X2…Xn；X0、X1,[X]补=X_0X_1X_2…X_n；X_0、X_1,数学下标丢失/公式扁平化,低,否,源页变量序号均以数学下标排版。
-1111,514,stem,L4~L0，M4M3M2M1M0，Mi，Li,L_4~L_0，M_4M_3M_2M_1M_0，M_i，L_i,数学下标丢失/公式扁平化,低,否,源页中级别编号和屏蔽字位编号均采用下标。

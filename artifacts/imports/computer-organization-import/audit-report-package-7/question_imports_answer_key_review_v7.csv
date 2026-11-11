@@ -1,4 +1,0 @@
-﻿id,source_page,review_type,current_answer,reviewed_answer,basis,confidence,auto_applied
-648,61,确认错误并修正,B,D,n位有符号定点整数的数值位为n-1位，最大值为2^(n-1)-1。,高,是
-856,260,确认错误并修正,A,D,地址0008 2840H对应虚页号82H；页表存在位为0，必须产生缺页异常。,高,是
-1105,508,答案口径疑义,C,未自动修改,DMA和通道控制通常都不属于由CPU执行程序直接控制的数据传送方式；需依据本题采用的教材分类口径确认。,中,否

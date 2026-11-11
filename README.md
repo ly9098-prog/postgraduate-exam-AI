@@ -1,4 +1,6 @@
-# MemoGrad / 22408AI 智能刷题系统
+# MemoGrad / 408AI 智能刷题系统
+
+![小程序码](assets/qr_code.jpg)
 
 MemoGrad 是一个面向考研学习场景的智能刷题与题库治理系统，由 **FastAPI 后端**、**Next.js 管理后台** 和 **微信小程序** 三部分组成。
 

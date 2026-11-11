@@ -1,7 +1,0 @@
-status: SUCCESS
-finished_at: 2026-08-02T10:45:02+08:00
-imported_questions: 528
-pages_covered: 528
-questions_table_changed: False
-backup: /home/lmh/projects/postgraduate-ai/artifacts/computer-organization-import/backups/pre_import_backup.db
-report: /home/lmh/projects/postgraduate-ai/artifacts/computer-organization-import/reports/final-import-audit.md
