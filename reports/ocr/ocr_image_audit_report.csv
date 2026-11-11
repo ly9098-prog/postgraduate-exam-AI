@@ -1,7 +1,0 @@
-qid,source_no,import_id,question_type,issue_type,severity,text_preview,detail
-147,200,301,single_choice,hint_but_no_image,high,【2009统考真题】给定二叉树如右图所示。设N代表二叉树的根，L代表根结点的左子树，R 代表根结点的右子树。若遍历后的结点序列是3175624，则其遍历方式是（,text suggests image needed (右图) but no image found
-152,205,306,single_choice,hint_but_no_image,high,【2014统考真题】若对右图所示的二叉树进行中序线索化，则结点X的左、右线索指向的结点 分别是（ ）。 a,text suggests image needed (右图) but no image found
-154,207,308,single_choice,hint_but_no_image,high,"【2017 统考真题】某二叉树的树形如右图所示，其后序序列为 e,a,c,b,d,g,f,树中与结点 a 同层的 结点是（ ）。",text suggests image needed (右图) but no image found
-294,369,450,single_choice,image_file_issue,medium,【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是（ ）。,1/1 images have issues
-296,371,452,single_choice,text_only_segments,medium,【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。,"render_mode=segments contains only text segments, no image — may indicate lost image"
-305,380,461,single_choice,image_file_issue,medium,下图所示是一棵（ ）。,1/1 images have issues
