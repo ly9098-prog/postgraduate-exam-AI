@@ -24,7 +24,6 @@ from app.ai.answer_grounding import (
 )
 from app.ai.client import llm
 from app.ai.context import build_error_context
-from app.core.runtime_paths import STATIC_PREFIX
 from app.ai.fallback import get_fallback_advice, get_fallback_analysis
 from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
 from app.ai.prompts import (
@@ -34,6 +33,7 @@ from app.ai.prompts import (
     build_visual_evidence_probe,
 )
 from app.core.config import settings
+from app.core.runtime_paths import STATIC_PREFIX
 from app.models.admin import QuestionVersion
 from app.models.ai_chat import AiChat
 from app.models.question import Question

@@ -10,11 +10,6 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.config import resolve_effective_process_role, settings
-from app.core.runtime_paths import (
-    STATIC_AVATARS_PREFIX,
-    STATIC_FORMULAS_PREFIX,
-    STATIC_QUESTION_ASSETS_PREFIX,
-)
 from app.core.database import async_session, init_db
 from app.core.deployment_profile import is_restricted_environment
 from app.core.event_loop_health import event_loop_health, monitor_event_loop_lag
@@ -36,6 +31,11 @@ from app.core.runtime_http_shutdown import (
     raise_after_http_shutdown,
     stop_export_processor,
     stop_lag_monitor,
+)
+from app.core.runtime_paths import (
+    STATIC_AVATARS_PREFIX,
+    STATIC_FORMULAS_PREFIX,
+    STATIC_QUESTION_ASSETS_PREFIX,
 )
 from app.core.runtime_resource_shutdown import (
     close_runtime_connections,
