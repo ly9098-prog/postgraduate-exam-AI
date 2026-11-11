@@ -8,7 +8,7 @@ MemoGrad 是一个面向考研学习场景的智能刷题与题库治理系统�
 
 > 本 README 面向「首次运行项目、日常开发、CI 排错和部署维护」。API 的完整字段与协议应以运行时 OpenAPI 和 `docs/` 中的专项文档为准。
 
-> 当前实现快照（2026-11-06）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2.12 + React 19.2.4；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`，当前唯一生产入口是 `xzshub.top`（`/opt/22408-ai`）；用户与 Admin JWT 签名域隔离。游客体验已上线：未登录可匿名浏览公式与公共科目目录，并按科目随机试做（5/10/20/30 题，批次独立签名、24 小时有效、不写个人学习数据），登录入口唯一且可取消。408 选择题考试（试卷、作答、成绩、历史、管理端组卷）已接入。多空题分为每空单选 `multi_blank_choice` 与每空多选 `multi_blank_multiple_choice`。公式卡支持函数图，生产用命名卷 `formulas_data` 持久化上传图。错题展示、统计和 AI 分析会跟随当前题库内容，错因分析以服务端核对过的作答事实为准，同时保留错题产生时的历史版本；小程序错题详情会在前台切题时校验最新数据，并提供短时缓存弱网兜底。AI 模型健康状态使用 Redis 共享缓存，预热失败走有界重试并恢复历史死信预算。番茄钟统计只计入已结束会话。
+> 当前实现快照（2026-11-06）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2.12 + React 19.2.4；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`，生产入口与服务器连接信息见 [DEPLOY_PLAN.md](docs/project/DEPLOY_PLAN.md)；用户与 Admin JWT 签名域隔离。游客体验已上线：未登录可匿名浏览公式与公共科目目录，并按科目随机试做（5/10/20/30 题，批次独立签名、24 小时有效、不写个人学习数据），登录入口唯一且可取消。408 选择题考试（试卷、作答、成绩、历史、管理端组卷）已接入。多空题分为每空单选 `multi_blank_choice` 与每空多选 `multi_blank_multiple_choice`。公式卡支持函数图，生产用命名卷 `formulas_data` 持久化上传图。错题展示、统计和 AI 分析会跟随当前题库内容，错因分析以服务端核对过的作答事实为准，同时保留错题产生时的历史版本；小程序错题详情会在前台切题时校验最新数据，并提供短时缓存弱网兜底。AI 模型健康状态使用 Redis 共享缓存，预热失败走有界重试并恢复历史死信预算。番茄钟统计只计入已结束会话。
 
 ## 目录
 
@@ -405,7 +405,7 @@ const LOCAL_DEBUG = true
 | 模式 | API |
 |---|---|
 | 本地开发 | `http://localhost:8000/api/v1` |
-| 体验版 / 正式版 | `https://xzshub.top/api/v1` |
+| 体验版 / 正式版 | 生产 API，地址见 `miniprogram/config.js` |
 
 发布或真机测试前应将：
 
@@ -845,63 +845,13 @@ app / worker / scheduler → redis:6379
 
 ### 10.4 服务器信息
 
-当前唯一生产入口。旧服务器已停用，不再作为冷备或回滚目标，这里不保留它的连接信息。细节以 `docs/project/DEPLOY_PLAN.md` 为准。
-
-| 项目     | 当前生产 |
-| -------- | -------- |
-| 域名     | `xzshub.top`（`www` 与 `api` 子域同一 Nginx） |
-| 公网 IP  | `101.33.231.186` |
-| 内网 IP  | `10.1.0.13` |
-| 部署目录 | `/opt/22408-ai` |
-| 连接密钥 | `Linux_connect.pem` |
-| 规格     | 4 核 / 3.6 GiB / 40 GB，OpenCloudOS 9.6 |
+生产入口、服务器规格与连接信息保留在本地部署文档中，README 不再重复记录。完整内容见 [DEPLOY_PLAN.md](docs/project/DEPLOY_PLAN.md)。
 
 构建前先 `df -h`。主机级操作按 RPM 系命令执行。
 
 ### 10.5 部署流程
 
-详细部署文档见 `docs/project/DEPLOY_PLAN.md`。
-
-**日常更新：**
-
-```bash
-# 先备份 PostgreSQL 与 Redis
-ssh -i Linux_connect.pem root@101.33.231.186 \
-  "cd /opt/22408-ai && bash deploy/scripts/deploy.sh backup"
-
-# 同步代码
-rsync -az --exclude-from=".deployignore" \
-  -e "ssh -i Linux_connect.pem -o BatchMode=yes" \
-  ./ root@101.33.231.186:/opt/22408-ai/
-
-# 构建镜像并替换 app + scheduler（含健康检查和 nginx reload）
-ssh -i Linux_connect.pem root@101.33.231.186 \
-  "cd /opt/22408-ai && bash deploy/scripts/deploy.sh update"
-
-# 后端 worker 需单独重建；deploy.sh update 不会替换 worker
-ssh -i Linux_connect.pem root@101.33.231.186 \
-  "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml build worker && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml up -d --no-deps worker"
-
-# 仅在确认包含新 migration 时执行显式迁移
-ssh -i Linux_connect.pem root@101.33.231.186 \
-  "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
-```
-
-如果 app 因迁移版本落后而无法保持运行，改用一次性容器执行迁移，再重新替换 app：
-
-```bash
-ssh -i Linux_connect.pem root@101.33.231.186 \
-  "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml run --rm --no-deps app alembic upgrade head"
-ssh -i Linux_connect.pem root@101.33.231.186 \
-  "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml up -d --no-deps app"
-```
-
-`deploy.sh update` 不执行数据库迁移；app、scheduler 或 worker 重建后不要重启数据库、Redis 或 nginx。admin 前端或 scheduler 可用 `update-admin` / `update-scheduler` 单独更新（`update-all` 一次性更新 app + admin + scheduler）；worker 没有对应子命令，仍需手动重建。脚本会在 app/scheduler 更新后 reload nginx；若手动重建 app，应执行：
-
-```bash
-ssh -i Linux_connect.pem root@101.33.231.186 \
-  "docker exec deploy-nginx-1 nginx -s reload"
-```
+完整备份、同步、更新、worker 重建、显式迁移和 nginx reload 命令见本地 [DEPLOY_PLAN.md](docs/project/DEPLOY_PLAN.md)。
 
 **禁止的日常操作：**
 
