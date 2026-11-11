@@ -11,7 +11,6 @@ from starlette.middleware.base import DispatchFunction, RequestResponseEndpoint
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 import app.core.log_context as log_context
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX, API_V1_PREFIX
 
 
 def create_security_headers_middleware(*, production_mode: bool) -> DispatchFunction:
@@ -31,7 +30,7 @@ def create_security_headers_middleware(*, production_mode: bool) -> DispatchFunc
                 "Strict-Transport-Security",
                 "max-age=31536000; includeSubDomains",
             )
-        if request.url.path.startswith((API_V1_PREFIX + "/auth", API_ADMIN_V1_PREFIX + "/auth")):
+        if request.url.path.startswith(("/api/v1/auth", "/api/admin/v1/auth")):
             response.headers.setdefault("Cache-Control", "no-store")
             response.headers.setdefault("Pragma", "no-cache")
         return response

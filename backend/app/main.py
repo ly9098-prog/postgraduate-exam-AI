@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
+from app.core import runtime_paths
 from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
 from app.core.deployment_profile import is_restricted_environment
@@ -31,11 +32,6 @@ from app.core.runtime_http_shutdown import (
     raise_after_http_shutdown,
     stop_export_processor,
     stop_lag_monitor,
-)
-from app.core.runtime_paths import (
-    STATIC_AVATARS_PREFIX,
-    STATIC_FORMULAS_PREFIX,
-    STATIC_QUESTION_ASSETS_PREFIX,
 )
 from app.core.runtime_resource_shutdown import (
     close_runtime_connections,
@@ -462,17 +458,17 @@ import mimetypes
 
 mimetypes.add_type("image/webp", ".webp")
 app.mount(
-    STATIC_FORMULAS_PREFIX,
+    runtime_paths.STATIC_FORMULAS_PREFIX,
     StaticFiles(directory="static/formulas", html=False),
     name="static_formulas",
 )
 app.mount(
-    STATIC_QUESTION_ASSETS_PREFIX,
+    runtime_paths.STATIC_QUESTION_ASSETS_PREFIX,
     StaticFiles(directory="static/question-assets", html=False),
     name="static_question_assets",
 )
 app.mount(
-    STATIC_AVATARS_PREFIX,
+    runtime_paths.STATIC_AVATARS_PREFIX,
     StaticFiles(directory="static/avatars", html=False),
     name="static_avatars",
 )
