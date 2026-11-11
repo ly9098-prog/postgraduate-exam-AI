@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 2240AI — Redis RDB 恢复（AOF-safe restore）
+# 22408AI — Redis RDB 恢复（AOF-safe restore）
 #
 # 用法：
 #   bash deploy/scripts/redis_restore.sh /opt/22408-ai/redis_backups/redis_YYYYmmdd_HHMMSS.rdb

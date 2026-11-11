@@ -1,6 +1,6 @@
 #!/bin/bash
-# === 2240AI PostgreSQL 自动备份 ===
-# 建议 cron 每日执行: 0 3 * * * /opt/2240ai-v2/deploy/scripts/backup.sh
+# === 22408AI PostgreSQL 自动备份 ===
+# 建议 cron 每日执行: 0 3 * * * /opt/22408-ai/deploy/scripts/backup.sh
 set -euo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-/data/backups/postgres}"

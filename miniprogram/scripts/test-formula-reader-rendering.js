@@ -730,7 +730,7 @@ assert.strictEqual(formulaContent.normalizeMixedContent('2026-07-18'), '2026-07-
 assert.strictEqual(formulaContent.normalizeMixedContent('2026/07/18'), '2026/07/18', 'dates with slash must not be converted')
 
 // URLs must not be converted
-assert.strictEqual(formulaContent.normalizeMixedContent('https://xzshub.top/api/v1'), 'https://xzshub.top/api/v1', 'URLs must not be converted')
+assert.strictEqual(formulaContent.normalizeMixedContent('https://your-production-domain.example/api/v1'), 'https://your-production-domain.example/api/v1', 'URLs must not be converted')
 
 // Version numbers must not be converted
 assert.strictEqual(formulaContent.normalizeMixedContent('v2.1.0'), 'v2.1.0', 'version numbers must not be converted')

@@ -822,7 +822,7 @@ class ResourceGuard:
             # Development uses the same sibling fallback as bootstrap.py.
             staging = (getattr(settings, "STAGING_STORAGE_DIR", "") or "").strip()
             fallback_scratch = os.path.join(
-                os.path.dirname(staging or "/opt/2240ai-v2/staging"),
+                os.path.dirname(staging or "/app/staging"),
                 "scratch",
             )
             add_path(fallback_scratch)

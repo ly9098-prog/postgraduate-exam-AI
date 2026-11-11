@@ -84,7 +84,7 @@ def ensure_worker_scratch_directory(config: Settings) -> str:
                 f"Current value: {scratch!r}"
             )
         scratch = os.path.join(
-            os.path.dirname(config.STAGING_STORAGE_DIR or "/opt/2240ai-v2/staging"),
+            os.path.dirname(config.STAGING_STORAGE_DIR or "/app/staging"),
             "scratch",
         )
     os.makedirs(scratch, exist_ok=True)

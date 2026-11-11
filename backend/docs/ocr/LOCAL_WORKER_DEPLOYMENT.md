@@ -1,7 +1,7 @@
 # Local OCR Worker Deployment Guide
 
 > Applies to: Local GPU OCR Worker (RTX 3050 / CUDA 12.x)
-> Server target: xzshub.top (2C/2G thin production server)
+> Server target: your-production-domain.example (2C/2G thin production server)
 > Last updated: 2026-07-17
 
 ## Architecture
@@ -27,14 +27,14 @@ The worker uses **pull mode**: it polls the production server's internal API, cl
 | NVIDIA Driver | >= 535 (CUDA 12.x) | `nvidia-smi --query-gpu=driver_version` |
 | Python | 3.10 – 3.12 | `python3 --version` |
 | Disk | 20GB+ free for workspace | `df -h /data` |
-| Network | HTTPS to production server | `curl https://xzshub.top/health` |
+| Network | HTTPS to production server | `curl https://your-production-domain.example/health` |
 
 ## Installation
 
 ### 1. Prepare Python environment
 
 ```bash
-cd /opt/2240ai-v2/backend
+cd /opt/22408-ai/backend
 source .venv/bin/activate
 PYTHONPATH=. python -c "import paddleocr; print(paddleocr.__version__)"
 ```
@@ -54,7 +54,7 @@ Expected: OCR 走 CPU / remote paddlex backend。
 On the production server, generate a credential:
 ```bash
 # Start Python REPL on server
-cd /opt/2240ai-v2/backend
+cd /opt/22408-ai/backend
 source .venv/bin/activate
 PYTHONPATH=. python -c "
 from app.services.worker_credential_service import create_credential, hash_key
@@ -92,11 +92,11 @@ sudo systemctl start ocr-worker
 ## Quick Start (Manual)
 
 ```bash
-cd /opt/2240ai-v2/backend
+cd /opt/22408-ai/backend
 source .venv-ocr-gpu/bin/activate
 
 # Export env vars
-export OCR_WORKER_SERVER_URL=https://xzshub.top
+export OCR_WORKER_SERVER_URL=https://your-production-domain.example
 export OCR_WORKER_ID=local-ocr-01
 export OCR_WORKER_API_KEY=<generated-key>
 

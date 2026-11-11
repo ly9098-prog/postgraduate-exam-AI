@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 2240AI — legacy deployment entry
+# 22408AI — legacy deployment entry
 # Current production entry: bash deploy/scripts/deploy.sh "$@"
 
 set -euo pipefail

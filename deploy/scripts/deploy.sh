@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 2240AI — 生产部署脚本
+# 22408AI — 生产部署脚本
 # 使用方法:
 #   首次部署:  sudo bash deploy/scripts/deploy.sh init
 #   日常更新:  sudo bash deploy/scripts/deploy.sh update
@@ -14,7 +14,7 @@ cd "$PROJECT_DIR"
 
 COMPOSE_FILE="deploy/docker-compose.prod.yml"
 ENV_FILE="backend/.env"
-HEALTH_HOST="${HEALTH_HOST:-xzshub.top}"
+HEALTH_HOST="${HEALTH_HOST:?必须设置 HEALTH_HOST}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
@@ -151,7 +151,7 @@ do_health_check() {
   info "检查 app 容器内健康接口..."
   local attempt
   for attempt in 1 2 3 4 5; do
-      if compose exec -T app python -c "import urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/health/live', headers={'Host': 'xzshub.top'}); resp = urllib.request.urlopen(req, timeout=5); assert resp.status == 200" >/dev/null 2>&1; then
+      if compose exec -T app python -c "import urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/health/live', headers={'Host': '${HEALTH_HOST}'}); resp = urllib.request.urlopen(req, timeout=5); assert resp.status == 200" >/dev/null 2>&1; then
       break
     fi
 

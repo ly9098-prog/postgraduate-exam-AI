@@ -1,4 +1,4 @@
-# 2240AI — 上线前检查清单
+# 22408AI — 上线前检查清单
 
 > 部署前逐项确认，所有项目通过后方可正式上线。
 
@@ -31,13 +31,14 @@
 - [ ] `DATABASE_URL` 指向生产 PostgreSQL
 - [ ] `WECHAT_APP_ID` / `WECHAT_APP_SECRET` 已填写
 - [ ] `DEEPSEEK_API_KEY` 已配置（如使用 AI 功能）
+- [ ] `PRODUCTION_DOMAIN` / `ALLOWED_HOSTS` / `PUBLIC_BASE_URL` / `HEALTH_HOST` 已配置
 - [ ] `CORS_ORIGINS` 已限制为具体域名
 
 ## 部署检查
 
 - [ ] 云服务器已购买（建议 2C4G 以上）
 - [ ] 域名已购买并 DNS 解析到服务器 IP
-- [ ] HTTPS 证书已配置（服务器 `/cert/www.xzshub.top.pem` 与 `/cert/www.xzshub.top.key`）
+- [ ] HTTPS 证书已配置（文件名与 `PRODUCTION_DOMAIN` 一致，并挂载到 nginx `/etc/nginx/ssl/`）
 - [ ] Docker + Docker Compose 已安装
 - [ ] 生产环境 `backend/.env` 文件已在服务器侧配置，且不会由本地同步覆盖
 - [ ] 使用 `.deployignore` 同步代码，不上传本地 `.env`、密钥、数据库、`.claude/`、虚拟环境和缓存

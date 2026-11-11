@@ -1,5 +1,5 @@
 [Unit]
-Description=2240AI Local OCR Worker — GPU-powered OCR processing
+Description=22408AI Local OCR Worker — GPU-powered OCR processing
 Documentation=https://github.com/ly9098-prog/postgraduate-ai
 After=network-online.target
 Wants=network-online.target
@@ -8,16 +8,16 @@ Wants=network-online.target
 Type=simple
 User=ocr-worker
 Group=ocr-worker
-WorkingDirectory=/opt/2240ai-v2/backend
+WorkingDirectory=/opt/22408-ai/backend
 
 # GPU environment — isolated from main CPU env
-ExecStart=/opt/2240ai-v2/backend/.venv-ocr-gpu/bin/python \
+ExecStart=/opt/22408-ai/backend/.venv-ocr-gpu/bin/python \
     -m app.ocr_worker.daemon \
-    --server https://xzshub.top \
+    --server https://your-production-domain.example \
     --worker-id local-ocr-01
 
 # Environment file (0600 permissions required)
-EnvironmentFile=/opt/2240ai-v2/deploy/ocr-worker/ocr-worker.env
+EnvironmentFile=/opt/22408-ai/deploy/ocr-worker/ocr-worker.env
 
 # Logging
 StandardOutput=journal

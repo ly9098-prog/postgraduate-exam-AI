@@ -12,7 +12,7 @@ pollution that require manual review.
 MUST be run against the server PostgreSQL database (not local SQLite).
 
 Usage (run on server after deploy):
-    ssh xzshub.top
+    ssh your-production-domain.example
     docker exec deploy-app-1 python -m scripts.fix_code_newlines --dry-run
     docker exec deploy-app-1 python -m scripts.fix_code_newlines
 """

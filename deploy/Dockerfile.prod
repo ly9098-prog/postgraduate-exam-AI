@@ -18,7 +18,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY . .
 
-RUN mkdir -p /opt/2240ai-v2/exports && chown appuser:appuser /opt/2240ai-v2/exports && chmod 700 /opt/2240ai-v2/exports
+RUN mkdir -p /app/exports && chown appuser:appuser /app/exports && chmod 700 /app/exports
 RUN chown -R appuser:appuser /app
 
 USER appuser

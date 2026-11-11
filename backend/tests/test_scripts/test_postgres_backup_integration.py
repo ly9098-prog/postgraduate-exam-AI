@@ -8,7 +8,7 @@
   - pg_dump、pg_restore、psql、createdb、dropdb 命令可用
 
 使用方法：
-  cd /opt/2240ai-v2
+  cd /opt/22408-ai
   DATABASE_URL=postgresql://pguser:pgpass@localhost:5432/postgraduate \\
     python -m pytest backend/tests/test_scripts/test_postgres_backup_integration.py \\
     -v --run-integration

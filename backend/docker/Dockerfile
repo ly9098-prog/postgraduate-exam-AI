@@ -49,9 +49,9 @@ ENV PYTHONUNBUFFERED=1
 ENV MPLCONFIGDIR=/tmp/matplotlib
 
 # Pre-create staging dir for durable task files (Docker volume mount point)
-RUN mkdir -p /opt/2240ai-v2/staging && chown app:app /opt/2240ai-v2/staging && chmod 700 /opt/2240ai-v2/staging
+RUN mkdir -p /app/staging && chown app:app /app/staging && chmod 700 /app/staging
 # Pre-create export dir for local export file persistence
-RUN mkdir -p /opt/2240ai-v2/exports && chown app:app /opt/2240ai-v2/exports && chmod 700 /opt/2240ai-v2/exports
+RUN mkdir -p /app/exports && chown app:app /app/exports && chmod 700 /app/exports
 # fontconfig 缓存目录（app 无写权限 → "No writable cache directories"，字体仍可用但无缓存）
 RUN mkdir -p /home/app/.cache && chown app:app /home/app/.cache
 # 用户头像上传持久化（Docker volume mount point；static/ 被 gitignore，镜像内显式预建保证命名卷首挂继承 app 属主）

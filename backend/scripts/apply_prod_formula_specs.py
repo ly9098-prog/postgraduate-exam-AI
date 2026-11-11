@@ -58,7 +58,7 @@ async def main():
         print(f"   Skipped {skipped} (not found)")
 
     print("\nTo sync graph images to production:")
-    print("  rsync -az -e 'ssh -i loginkey.pem' backend/static/formulas/graphs/ root@8.163.56.109:/opt/2240ai-v2/backend/static/formulas/graphs/")
+    print("  rsync -az backend/static/formulas/graphs/ user@your-production-domain.example:/opt/22408-ai/backend/static/formulas/graphs/")
     print("\nTo regenerate images on server (if CJK fonts available):")
     print("  docker compose exec -T app python scripts/batch_cross_axis_remaining.py")
 

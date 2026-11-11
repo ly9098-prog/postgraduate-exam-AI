@@ -781,7 +781,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--ssh-host",
-        default="root@8.163.56.109",
+        default="user@your-production-domain.example",
         help="Production SSH host",
     )
     p.add_argument(
@@ -791,7 +791,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--docker-workdir",
-        default="/opt/2240ai-v2",
+        default="/opt/22408-ai",
         help="Production docker-compose directory",
     )
     p.add_argument(

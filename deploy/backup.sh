@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 2240AI — legacy backup entry
+# 22408AI — legacy backup entry
 # Current backup entry: bash deploy/scripts/backup.sh
 
 set -euo pipefail

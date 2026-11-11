@@ -35,7 +35,7 @@ logger = logging.getLogger("postgraduate-ai.staging")
 
 # Resolve staging directory — use STAGING_STORAGE_DIR from settings or a sensible default.
 # In production/cloud_api, the staging directory must be explicitly configured and writable.
-_candidate = getattr(settings, "STAGING_STORAGE_DIR", "") or "/opt/2240ai-v2/staging"
+_candidate = getattr(settings, "STAGING_STORAGE_DIR", "") or "/app/staging"
 _STAGING_DIR = Path(_candidate)
 
 # In restricted environments, fail if the staging directory parent doesn't exist

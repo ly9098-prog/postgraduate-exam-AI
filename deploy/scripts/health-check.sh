@@ -1,5 +1,5 @@
 #!/bin/bash
-# === 2240AI 健康检查脚本 ===
+# === 22408AI 健康检查脚本 ===
 # 用法: ./deploy/scripts/health-check.sh [domain]
 set -euo pipefail
 
@@ -29,7 +29,7 @@ check() {
     fi
 }
 
-echo "=== 2240AI 健康检查 ==="
+echo "=== 22408AI 健康检查 ==="
 echo "目标: $BASE_URL"
 echo ""
 

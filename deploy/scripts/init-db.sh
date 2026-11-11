@@ -3,7 +3,7 @@
 # Current production migration entry: bash deploy/scripts/deploy.sh migrate
 set -euo pipefail
 
-echo "=== 2240AI 数据库初始化 ==="
+echo "=== 22408AI 数据库初始化 ==="
 
 DB_USER="${POSTGRES_USER:-postgraduate}"
 DB_NAME="${POSTGRES_DB:-postgraduate}"

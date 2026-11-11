@@ -40,5 +40,5 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            cd /opt/2240ai-v2
+            cd /opt/22408-ai
             bash deploy/scripts/deploy.sh update

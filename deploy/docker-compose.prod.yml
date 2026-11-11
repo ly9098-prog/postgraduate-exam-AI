@@ -1,4 +1,4 @@
-# 2240AI — 生产环境 docker-compose
+# 22408AI — 生产环境 docker-compose
 # 使用方法：
 #   docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env up -d
 #   docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env exec app alembic upgrade head
@@ -81,9 +81,9 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-["https://xzshub.top","https://www.xzshub.top"]}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["xzshub.top","www.xzshub.top"]}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://xzshub.top}
+      CORS_ORIGINS: ${CORS_ORIGINS:?必须设置 CORS_ORIGINS}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?必须设置 ALLOWED_HOSTS}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?必须设置 PUBLIC_BASE_URL}
       OCR_ENABLED: ${OCR_ENABLED:-false}
       OCR_MAX_WORKERS: ${OCR_MAX_WORKERS:-1}
       DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cloud_api}
@@ -120,15 +120,15 @@ services:
       # AI 配置加密密钥（Fernet）
       AI_CONFIG_ENCRYPT_KEY: ${AI_CONFIG_ENCRYPT_KEY:?必须设置 AI_CONFIG_ENCRYPT_KEY}
       # 导出 PDF 文件存储
-      EXPORT_DIR: ${EXPORT_DIR:-/opt/2240ai-v2/exports}
+      EXPORT_DIR: ${EXPORT_DIR:-/app/exports}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       WORKER_SCRATCH_DIR: ${WORKER_SCRATCH_DIR:-/tmp}
       PRODUCT_NAME: ${PRODUCT_NAME:-MemoGrad}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
-      - staging_data:/opt/2240ai-v2/staging
-      - exports_data:/opt/2240ai-v2/exports
+      - staging_data:/app/staging
+      - exports_data:/app/exports
       # 题图持久化：运行期上传写入命名卷，容器重建后不丢失（镜像内烘焙图由空卷首挂自动拷入）
       - question_assets_data:/app/static/question-assets
       # 公式图持久化：运行期上传写入 /app/static/formulas/graphs/{id}/uploaded，
@@ -137,7 +137,7 @@ services:
       # 用户头像持久化：命名卷挂 /app/static/avatars（Dockerfile 已预建 app 属主目录）
       - avatars_data:/app/static/avatars
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/health/live', headers={'Host': 'xzshub.top'}); resp = urllib.request.urlopen(req, timeout=5); assert resp.status == 200\""]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/health/live', headers={'Host': '${HEALTH_HOST}'}); resp = urllib.request.urlopen(req, timeout=5); assert resp.status == 200\""]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -174,7 +174,7 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cloud_api}
-      EXPORT_DIR: ${EXPORT_DIR:-/opt/2240ai-v2/exports}
+      EXPORT_DIR: ${EXPORT_DIR:-/app/exports}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       EXPORT_WEBSOCKET_ENABLED: ${EXPORT_WEBSOCKET_ENABLED:-true}
       EXPORT_POLL_INTERVAL_SEC: ${EXPORT_POLL_INTERVAL_SEC:-5}
@@ -188,11 +188,11 @@ services:
       # AI 配置加密密钥（Fernet）
       AI_CONFIG_ENCRYPT_KEY: ${AI_CONFIG_ENCRYPT_KEY:?必须设置 AI_CONFIG_ENCRYPT_KEY}
       # 生产验证所需（scheduler 虽无 HTTP，但配置验证器会检查）
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["xzshub.top"]}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://xzshub.top}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?必须设置 ALLOWED_HOSTS}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?必须设置 PUBLIC_BASE_URL}
       WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-["https://xzshub.top"]}
+      CORS_ORIGINS: ${CORS_ORIGINS:?必须设置 CORS_ORIGINS}
       OCR_USE_GPU: ${OCR_USE_GPU:-false}
       OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-disabled}
       VECTOR_ENABLED: ${VECTOR_ENABLED:-false}
@@ -205,7 +205,7 @@ services:
       MPLCONFIGDIR: ${MPLCONFIGDIR:-/tmp/matplotlib}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - exports_data:/opt/2240ai-v2/exports
+      - exports_data:/app/exports
       # 公式图持久化：与 app 一致，公式图渲染/预览写入 /app/static/formulas
       - formulas_data:/app/static/formulas
     # Override CMD: run scheduler_main instead of gunicorn (no HTTP server)
@@ -238,7 +238,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cloud_api}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
-      EXPORT_DIR: ${EXPORT_DIR:-/opt/2240ai-v2/exports}
+      EXPORT_DIR: ${EXPORT_DIR:-/app/exports}
       DB_POOL_SIZE_WORKER: ${DB_POOL_SIZE_WORKER:-2}
       DB_MAX_OVERFLOW_WORKER: ${DB_MAX_OVERFLOW_WORKER:-3}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
@@ -246,14 +246,12 @@ services:
       # AI 配置加密密钥（Fernet）
       AI_CONFIG_ENCRYPT_KEY: ${AI_CONFIG_ENCRYPT_KEY:?必须设置 AI_CONFIG_ENCRYPT_KEY}
       # 生产验证所需（worker 虽无 HTTP，但配置验证器会检查）
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["xzshub.top"]}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://xzshub.top}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?必须设置 ALLOWED_HOSTS}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?必须设置 PUBLIC_BASE_URL}
       WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-["https://xzshub.top"]}
-      # 服务器 OCR 仅由 web 进程经外部 API 完成；worker 不承载 OCR，故硬编码
-      # OCR_EXECUTION_BACKEND=disabled（不能用 ${...:-disabled}，服务器 .env 的
-      # paddlex_http 会覆盖它，而 paddlex_http 在生产强制要求 remote token）。
+      CORS_ORIGINS: ${CORS_ORIGINS:?必须设置 CORS_ORIGINS}
+      # worker 不承载 OCR，固定禁用；OCR 由 web 进程按外部 API 配置执行。
       # OCR_USE_GPU 必须显式 false（生产校验器对所有角色强制要求）。
       OCR_USE_GPU: ${OCR_USE_GPU:-false}
       OCR_EXECUTION_BACKEND: "disabled"
@@ -269,7 +267,7 @@ services:
     volumes:
       # exports 卷与 scheduler 一致：校验器会检查 EXPORT_DIR 可写，且容器以
       # 非 root 用户运行，需挂载镜像已 chown 的卷（首次挂载继承 app:app）。
-      - exports_data:/opt/2240ai-v2/exports
+      - exports_data:/app/exports
       # prewarm_analysis 需要与 app 共享运行期上传的题图；生产启动校验要求该目录可写。
       - question_assets_data:/app/static/question-assets
       # 公式图持久化：与 app 一致，公式图渲染/预览写入 /app/static/formulas
@@ -307,8 +305,11 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      PRODUCTION_DOMAIN: ${PRODUCTION_DOMAIN:?必须设置 PRODUCTION_DOMAIN}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - nginx_config:/etc/nginx/conf.d
       - ./../cert:/etc/nginx/ssl:ro
       - ./../certbot/www:/var/www/certbot:ro
       - nginx_logs:/var/log/nginx
@@ -319,7 +320,7 @@ services:
   # 使用方法：
   #   docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env run --rm backup
   # 通过宿主机 systemd timer 或 crontab 定时执行：
-  #   0 3 * * * cd /opt/2240ai-v2 && docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env run --rm backup >> logs/backup_cron.log 2>&1
+#   0 3 * * * cd /opt/22408-ai && docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env run --rm backup >> logs/backup_cron.log 2>&1
   backup:
     build:
       context: ..
@@ -347,6 +348,7 @@ volumes:
   pgdata_prod:
   redisdata_prod:
   nginx_logs:
+  nginx_config:
   backup_data:
   staging_data:
   exports_data:

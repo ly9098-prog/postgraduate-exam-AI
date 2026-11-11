@@ -25,8 +25,8 @@ Create ──► Active ──► Rotated ──► Disabled (old)
 
 ### Environment File Security
 ```bash
-chmod 600 /opt/2240ai-v2/deploy/ocr-worker/ocr-worker.env
-chown ocr-worker:ocr-worker /opt/2240ai-v2/deploy/ocr-worker/ocr-worker.env
+chmod 600 /opt/22408-ai/deploy/ocr-worker/ocr-worker.env
+chown ocr-worker:ocr-worker /opt/22408-ai/deploy/ocr-worker/ocr-worker.env
 ```
 
 ## Network Security

@@ -249,7 +249,7 @@ class Settings(BaseSettings):
     STORAGE_BACKEND: str = "local"  # "local" 或 "cos"
 
     # Staging storage for durable task files (Docker volume in prod)
-    STAGING_STORAGE_DIR: str = "/opt/2240ai-v2/staging"
+    STAGING_STORAGE_DIR: str = "/app/staging"
     STAGING_DISK_QUOTA: int = 2 * 1024 * 1024 * 1024  # 2 GB
     STAGING_RETENTION_SEC: int = 604800  # 7 days default retention for staging objects
     # Internal OCR worker result artifacts; empty = <STAGING_STORAGE_DIR>/worker-artifacts

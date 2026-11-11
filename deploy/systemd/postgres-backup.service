@@ -6,11 +6,11 @@ After=network-online.target docker.service
 Requires=docker.service
 
 [Service]
-Environment=DOCKER_CONFIG=/opt/2240ai-v2/.docker
+Environment=DOCKER_CONFIG=/opt/22408-ai/.docker
 Type=oneshot
-WorkingDirectory=/opt/2240ai-v2
-ExecStartPre=-/usr/bin/docker compose --profile manual -f /opt/2240ai-v2/deploy/docker-compose.prod.yml --env-file /opt/2240ai-v2/backend/.env build backup
-ExecStart=/usr/bin/docker compose --profile manual -f /opt/2240ai-v2/deploy/docker-compose.prod.yml --env-file /opt/2240ai-v2/backend/.env run --rm backup
+WorkingDirectory=/opt/22408-ai
+ExecStartPre=-/usr/bin/docker compose --profile manual -f /opt/22408-ai/deploy/docker-compose.prod.yml --env-file /opt/22408-ai/backend/.env build backup
+ExecStart=/usr/bin/docker compose --profile manual -f /opt/22408-ai/deploy/docker-compose.prod.yml --env-file /opt/22408-ai/backend/.env run --rm backup
 
 SyslogIdentifier=pg-backup
 
@@ -20,8 +20,8 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
 # docker compose 需要写 DOCKER_CONFIG（/root/.docker 被 ProtectHome 只读，
-# 故指向 /opt/2240ai-v2/.docker 并加入可写路径）
-ReadWritePaths=/var/backups/postgraduate /opt/2240ai-v2/logs /opt/2240ai-v2/.docker
+# 故指向 /opt/22408-ai/.docker 并加入可写路径）
+ReadWritePaths=/var/backups/postgraduate /opt/22408-ai/logs /opt/22408-ai/.docker
 
 TimeoutStopSec=60
 Restart=no

@@ -14,14 +14,14 @@ journalctl -u ocr-worker -n 50 --no-pager
 journalctl -u ocr-worker | grep "Claimed job\|Processing job"
 
 # Query job status via API
-curl -s -H "Worker-API-Key: $(sudo cat /opt/2240ai-v2/deploy/ocr-worker/ocr-worker.env | grep OCR_WORKER_API_KEY | cut -d= -f2)" \
-  https://xzshub.top/api/internal/ocr-worker/jobs
+curl -s -H "Worker-API-Key: $(sudo cat /opt/22408-ai/deploy/ocr-worker/ocr-worker.env | grep OCR_WORKER_API_KEY | cut -d= -f2)" \
+  https://your-production-domain.example/api/internal/ocr-worker/jobs
 ```
 
 ### View Lease Status
 ```bash
 # Check database for active leases
-cd /opt/2240ai-v2/backend && source .venv/bin/activate
+cd /opt/22408-ai/backend && source .venv/bin/activate
 PYTHONPATH=. python -c "
 import asyncio
 from app.core.database import async_session
@@ -45,7 +45,7 @@ cat /data/ocr-worker/.circuit_breaker.json 2>/dev/null || echo "No circuit break
 ### List Workers
 ```bash
 # Via server API
-curl -s https://xzshub.top/api/admin/v1/ocr-workers | python -m json.tool
+curl -s https://your-production-domain.example/api/admin/v1/ocr-workers | python -m json.tool
 ```
 
 ## Maintenance
@@ -71,7 +71,7 @@ sudo systemctl stop ocr-worker
 ### Upgrade Worker
 ```bash
 # 1. Sync code
-cd /opt/2240ai-v2 && git pull
+cd /opt/22408-ai && git pull
 
 # 2. Restart
 sudo systemctl restart ocr-worker
@@ -79,7 +79,7 @@ sudo systemctl restart ocr-worker
 
 ### Rotate Credential
 ```bash
-cd /opt/2240ai-v2/backend
+cd /opt/22408-ai/backend
 source .venv/bin/activate
 PYTHONPATH=. python -c "
 import asyncio
@@ -103,7 +103,7 @@ sudo systemctl restart ocr-worker
 
 ### Migrate Database
 ```bash
-cd /opt/2240ai-v2/backend
+cd /opt/22408-ai/backend
 source .venv/bin/activate
 PYTHONPATH=. alembic upgrade head
 ```

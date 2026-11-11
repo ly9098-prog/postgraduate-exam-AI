@@ -15,8 +15,8 @@ describe("resolveAssetUrl — no API base configured (production)", () => {
 
   it("passes through absolute https asset URLs", () => {
     expect(
-      resolveAssetUrl("https://xzshub.top/static/question-assets/447/a.png"),
-    ).toBe("https://xzshub.top/static/question-assets/447/a.png");
+      resolveAssetUrl("https://your-production-domain.example/static/question-assets/447/a.png"),
+    ).toBe("https://your-production-domain.example/static/question-assets/447/a.png");
   });
 
   it("rejects localhost absolute URLs (fail closed)", () => {

@@ -2,7 +2,7 @@
 //  本地 / 生产切换 — 修改这里即可
 // ══════════════════════════════════════════════════════════════
 //  true  → 本地开发（localhost:8000），仅开发者工具可用
-//  false → 正式/体验/真机（https://xzshub.top）
+//  false → 正式/体验/真机（生产 BASE_URL）
 const LOCAL_DEBUG = true
 
 // ══════════════════════════════════════════════════════════════
@@ -11,8 +11,8 @@ const LOCAL_DEBUG = true
 
 const API_URLS = {
   local: 'http://localhost:8000/api/v1',
-  trial: 'https://xzshub.top/api/v1',
-  release: 'https://xzshub.top/api/v1',
+  trial: 'https://your-production-domain.example/api/v1',
+  release: 'https://your-production-domain.example/api/v1',
 }
 
 // 发布前检查：发布时必须改 LOCAL_DEBUG = false

@@ -1,10 +1,10 @@
 """Production load test — lightweight scenarios with pass/fail thresholds.
 
-Connects to production API at xzshub.top. All scenarios are read-only
+Connects to a configured production API endpoint. All scenarios are read-only
 or use test-specific endpoints to avoid affecting production data.
 
 Usage:
-    python tests/load/test_load_scenarios.py [--target https://xzshub.top]
+    python tests/load/test_load_scenarios.py [--target https://your-production-domain.example]
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import httpx
 
-TARGET = sys.argv[1] if len(sys.argv) > 1 else "https://xzshub.top"
+TARGET = sys.argv[1] if len(sys.argv) > 1 else "https://your-production-domain.example"
 CONCURRENCY = 10
 REQUESTS = 50
 TIMEOUT_SEC = 10

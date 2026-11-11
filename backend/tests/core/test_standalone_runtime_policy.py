@@ -80,7 +80,7 @@ def test_scratch_checks_profile_only_for_original_defaults_and_keeps_path_semant
 
 
 @pytest.mark.parametrize("staging,expected", [
-    (None, "/opt/2240ai-v2/scratch"), ("", "/opt/2240ai-v2/scratch"),
+    (None, "/app/scratch"), ("", "/app/scratch"),
     ("staging", "scratch"), ("/tmp/staging/", "/tmp/staging/scratch"),
 ])
 def test_scratch_fallback_uses_original_staging_dirname_without_normalization(ports, staging, expected):

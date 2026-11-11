@@ -13,15 +13,15 @@ PYTHONPATH=. python -m app.ocr_worker.daemon
 ```bash
 # Verify the key works
 curl -s -H "Worker-API-Key: local-ocr-01/$(cat deploy/ocr-worker/ocr-worker.env | grep OCR_WORKER_API_KEY | cut -d= -f2)" \
-  https://xzshub.top/api/internal/ocr-worker/jobs
+  https://your-production-domain.example/api/internal/ocr-worker/jobs
 # Should return {"ok":true,"data":null} or job list
 ```
 
 ### 3. Server unreachable
 ```bash
-curl https://xzshub.top/health
+curl https://your-production-domain.example/health
 # Should return 200 OK
-ping -c 1 xzshub.top
+ping -c 1 your-production-domain.example
 ```
 
 ## Job Claim Fails
@@ -29,13 +29,13 @@ ping -c 1 xzshub.top
 ### No Pending Jobs
 ```bash
 # Check if there are any pending jobs
-curl -s https://xzshub.top/api/admin/v1/ocr-jobs?status=pending
+curl -s https://your-production-domain.example/api/admin/v1/ocr-jobs?status=pending
 ```
 
 ### All Jobs Leased
 ```bash
 # Check for expired leases
-curl -s https://xzshub.top/api/admin/v1/ocr-jobs?status=leased
+curl -s https://your-production-domain.example/api/admin/v1/ocr-jobs?status=leased
 # Old leases should auto-expire after 5 minutes
 ```
 

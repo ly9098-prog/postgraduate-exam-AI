@@ -4,7 +4,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 NGINX_CONFIGS = [
-    ROOT / "deploy" / "nginx" / "nginx.conf",
+    ROOT / "deploy" / "nginx" / "nginx.conf.template",
     ROOT / "backend" / "docker" / "nginx.conf",
 ]
 
@@ -57,7 +57,9 @@ def test_nginx_adds_no_cache_for_admin_html_documents():
     仅约束生产配置：backend/docker/nginx.conf 是纯后端 API 开发配置，
     不承载 admin 前端，无此问题。
     """
-    text = (ROOT / "deploy" / "nginx" / "nginx.conf").read_text(encoding="utf-8")
+    text = (
+        ROOT / "deploy" / "nginx" / "nginx.conf.template"
+    ).read_text(encoding="utf-8")
     body = "\n".join(
         line for line in text.splitlines() if not line.strip().startswith("#")
     )

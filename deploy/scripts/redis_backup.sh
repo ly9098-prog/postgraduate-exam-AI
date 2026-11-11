@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 2240AI — Redis 一致性备份（生产 Docker 模式）
+# 22408AI — Redis 一致性备份（生产 Docker 模式）
 #
 # 用法：
 #   bash deploy/scripts/redis_backup.sh backup    # 生成一份 RDB 快照备份
