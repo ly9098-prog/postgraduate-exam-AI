@@ -23,6 +23,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.cache import CacheUnavailableError, cache
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.core.time_utils import unix_timestamp, utcnow
 
 logger = logging.getLogger("postgraduate-ai.admin_redis")
@@ -37,9 +38,9 @@ _RATELIMIT_ENDPOINTS: dict[str, int] = {
 _RATELIMIT_DEFAULT_LIMIT = 60
 _BYPASS_ALLOWED_PATHS = frozenset(
     {
-        "/api/admin/v1/dashboard/overview",
-        "/api/admin/v1/dashboard/daily",
-        "/api/admin/v1/redis/online",
+        f"{API_ADMIN_V1_PREFIX}/dashboard/overview",
+        f"{API_ADMIN_V1_PREFIX}/dashboard/daily",
+        f"{API_ADMIN_V1_PREFIX}/redis/online",
     }
 )
 _RATELIMIT_SUPER_ADMIN_MULTIPLIER = 2

@@ -17,8 +17,9 @@ from app.schemas.ai_import import (
     GenerateRequest,
     GenerateResponse,
 )
+from app.core.runtime_paths import API_V1_PREFIX
 
-router = APIRouter(prefix="/api/v1/ai-import")
+router = APIRouter(prefix=f"{API_V1_PREFIX}/ai-import")
 
 
 @router.post("/generate", response_model=GenerateResponse)

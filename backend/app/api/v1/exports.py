@@ -69,6 +69,7 @@ from app.services.storage_backend import (  # noqa: F401 -- live route dependenc
     LocalFileStorage,
     get_export_storage,
 )
+from app.core.runtime_paths import API_V1_PREFIX
 
 
 def _export_api_port(name):
@@ -80,7 +81,7 @@ def _export_api_port(name):
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/exports")
+router = APIRouter(prefix=f"{API_V1_PREFIX}/exports")
 
 # ── Idempotency window (seconds) ──
 _IDEMPOTENCY_WINDOW_SEC = 60

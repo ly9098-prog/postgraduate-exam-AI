@@ -66,6 +66,7 @@ from app.utils.question_content import (
     reconcile_student_stem_fields,  # noqa: F401 -- live route dependency port
     strip_student_segment_metadata,  # noqa: F401 -- live route dependency port
 )
+from app.core.runtime_paths import API_V1_PREFIX
 
 
 def _wrong_book_port(name):
@@ -145,7 +146,7 @@ def _contains_code(text: str) -> bool:
     return _wrong_wrong_book_sanitization._contains_code(text, ports=_wrong_book_port)
 
 
-router = APIRouter(prefix="/api/v1/wrong-questions")
+router = APIRouter(prefix=f"{API_V1_PREFIX}/wrong-questions")
 
 
 async def _resolve_product_subject_ids(

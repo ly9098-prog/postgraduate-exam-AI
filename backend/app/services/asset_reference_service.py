@@ -19,12 +19,17 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.runtime_paths import (
+    STATIC_PREFIX,
+    STATIC_QUESTION_ASSETS_PREFIX,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Asset URL patterns ────────────────────────────────────────────
 
 # Matches URLs like /static/question-assets/202607/ds_sc/q_229_p229_option_group.png
-_STATIC_ASSET_RE = re.compile(r"/static/question-assets/[^\s\"'<>]+")
+_STATIC_ASSET_RE = re.compile(rf"{STATIC_QUESTION_ASSETS_PREFIX}/[^\s\"'<>]+")
 _COS_ASSET_RE = re.compile(r"https://[^.]+\.cos\.[^/]+\.myqcloud\.com/[^\s\"'<>]+")
 
 
@@ -107,8 +112,8 @@ def url_to_storage_key(url: str) -> str:
             → question-assets/...
     """
     # Strip public base URL
-    if "/static/" in url:
-        key = url.split("/static/", 1)[1]
+    if STATIC_PREFIX in url:
+        key = url.split(STATIC_PREFIX, 1)[1]
     elif ".myqcloud.com/" in url:
         key = url.split(".myqcloud.com/", 1)[1]
     else:

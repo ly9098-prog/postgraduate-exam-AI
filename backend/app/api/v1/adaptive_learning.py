@@ -12,8 +12,8 @@ from app.schemas.adaptive_learning import (
     KnowledgePathResponse,
 )
 from app.services import adaptive_learning_service as svc
-
-router = APIRouter(prefix="/api/v1/adaptive-learning", tags=["adaptive-learning"])
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/adaptive-learning", tags=["adaptive-learning"])
 
 
 @router.get("/overview", response_model=AdaptiveOverviewResponse)

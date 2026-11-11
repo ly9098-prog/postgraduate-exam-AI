@@ -23,8 +23,9 @@ from app.services.admin_user_service import (
     reset_admin_user_password,
     update_admin_user,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
-router = APIRouter(prefix="/api/admin/v1/admin-users", tags=["admin-users"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/admin-users", tags=["admin-users"])
 
 
 def _status_for_error(exc: Exception) -> int:

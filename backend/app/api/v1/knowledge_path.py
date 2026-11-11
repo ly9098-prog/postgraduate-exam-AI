@@ -13,10 +13,11 @@ from app.schemas.knowledge_path import (
     KnowledgePathNode,
     KnowledgePathResponse,
 )
+from app.core.runtime_paths import API_V1_PREFIX
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["knowledge-path"])
+router = APIRouter(prefix=f"{API_V1_PREFIX}", tags=["knowledge-path"])
 
 
 @router.get("/knowledge-path", response_model=KnowledgePathResponse)

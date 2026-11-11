@@ -18,8 +18,8 @@ from app.schemas.exam import (
     ExamResult,
 )
 from app.services import exam_service
-
-router = APIRouter(prefix="/api/v1/exams", tags=["exams"])
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/exams", tags=["exams"])
 
 
 def _raise_exam_error(exc: ValueError) -> None:

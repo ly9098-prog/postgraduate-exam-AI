@@ -7,8 +7,8 @@ from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.schemas.coverage import CoverageReportResponse
 from app.services import coverage_service
-
-router = APIRouter(prefix="/api/admin/v1/coverage", tags=["admin-coverage"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/coverage", tags=["admin-coverage"])
 
 
 @router.get("/report", response_model=CoverageReportResponse)

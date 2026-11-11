@@ -24,6 +24,7 @@ from app.ai.answer_grounding import (
 )
 from app.ai.client import llm
 from app.ai.context import build_error_context
+from app.core.runtime_paths import STATIC_PREFIX
 from app.ai.fallback import get_fallback_advice, get_fallback_analysis
 from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
 from app.ai.prompts import (
@@ -448,7 +449,7 @@ def _read_local_public_asset(url: str) -> tuple[bytes, str] | None:
     public_base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
     if parsed.scheme and public_base and not raw.startswith(public_base + "/"):
         return None
-    if not path.startswith("/static/"):
+    if not path.startswith(f"{STATIC_PREFIX}/"):
         return None
 
     # services/ai_service.py lives under <repo>/app/services in production.

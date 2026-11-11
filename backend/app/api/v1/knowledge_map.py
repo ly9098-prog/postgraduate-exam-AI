@@ -12,8 +12,8 @@ from app.schemas.knowledge_map import (
     KnowledgeMapSubjectResponse,
 )
 from app.services import knowledge_map_service
-
-router = APIRouter(prefix="/api/v1/knowledge-map", tags=["knowledge-map"])
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/knowledge-map", tags=["knowledge-map"])
 
 
 @router.get("/overview", response_model=KnowledgeMapOverviewResponse)

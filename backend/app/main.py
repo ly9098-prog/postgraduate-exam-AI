@@ -10,6 +10,11 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.config import resolve_effective_process_role, settings
+from app.core.runtime_paths import (
+    STATIC_AVATARS_PREFIX,
+    STATIC_FORMULAS_PREFIX,
+    STATIC_QUESTION_ASSETS_PREFIX,
+)
 from app.core.database import async_session, init_db
 from app.core.deployment_profile import is_restricted_environment
 from app.core.event_loop_health import event_loop_health, monitor_event_loop_lag
@@ -457,17 +462,17 @@ import mimetypes
 
 mimetypes.add_type("image/webp", ".webp")
 app.mount(
-    "/static/formulas",
+    STATIC_FORMULAS_PREFIX,
     StaticFiles(directory="static/formulas", html=False),
     name="static_formulas",
 )
 app.mount(
-    "/static/question-assets",
+    STATIC_QUESTION_ASSETS_PREFIX,
     StaticFiles(directory="static/question-assets", html=False),
     name="static_question_assets",
 )
 app.mount(
-    "/static/avatars",
+    STATIC_AVATARS_PREFIX,
     StaticFiles(directory="static/avatars", html=False),
     name="static_avatars",
 )

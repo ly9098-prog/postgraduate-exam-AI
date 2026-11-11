@@ -12,8 +12,8 @@ from app.schemas.study_plan import (
     StudyPlanUpsertRequest,
 )
 from app.services import study_plan_service
-
-router = APIRouter(prefix="/api/v1/study-plan", tags=["study-plan"])
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/study-plan", tags=["study-plan"])
 
 
 @router.get("/overview", response_model=StudyPlanOverviewResponse)

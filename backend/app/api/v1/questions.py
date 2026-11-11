@@ -16,8 +16,9 @@ from app.utils.question_content import (
     reconcile_student_stem_fields,
     strip_student_segment_metadata,
 )
+from app.core.runtime_paths import API_V1_PREFIX
 
-router = APIRouter(prefix="/api/v1/questions")
+router = APIRouter(prefix=f"{API_V1_PREFIX}/questions")
 
 
 def _sanitize_content(content: dict | None) -> dict | None:

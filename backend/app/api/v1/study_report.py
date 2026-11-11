@@ -15,8 +15,8 @@ from app.schemas.study_report import (
     WrongQuestionSummaryResponse,
 )
 from app.services import study_report_service as svc
-
-router = APIRouter(prefix="/api/v1/study-report", tags=["study-report"])
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/study-report", tags=["study-report"])
 
 
 @router.get("/overview", response_model=StudyOverviewResponse)

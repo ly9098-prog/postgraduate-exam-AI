@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.admin_security import require_permissions
 from app.core.cache import cache
-
-router = APIRouter(prefix="/api/v1/cache")
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/cache")
 
 
 @router.get("/stats")

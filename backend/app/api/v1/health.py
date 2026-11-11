@@ -10,8 +10,8 @@ from sqlalchemy import text
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
-
-router = APIRouter(prefix="/api/v1", tags=["health"])
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}", tags=["health"])
 
 
 def _build_version() -> str:

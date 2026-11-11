@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.executor_registry import get_executor
+from app.core.runtime_paths import STATIC_FORMULAS_PREFIX
 from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.models.formula import FormulaCard, FormulaGraphAsset, FormulaGraphPreview
 from app.services.formula_graph_spec_renderer import (
@@ -419,7 +420,7 @@ async def _read_local_file(file_url: str | None) -> bytes | None:
     """Read a local storage file by URL. Returns None if not found."""
     if not file_url:
         return None
-    prefix = f"{settings.PUBLIC_BASE_URL}/static/formulas/"
+    prefix = f"{settings.PUBLIC_BASE_URL}{STATIC_FORMULAS_PREFIX}/"
     if not file_url.startswith(prefix):
         return None
     rel_path = file_url[len(prefix) :]

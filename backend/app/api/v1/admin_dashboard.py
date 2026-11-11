@@ -18,8 +18,9 @@ from app.services.admin_dashboard_service import (
     get_dashboard_overview,
     get_dashboard_question_stats,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
-router = APIRouter(prefix="/api/admin/v1/dashboard", tags=["admin-dashboard"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/dashboard", tags=["admin-dashboard"])
 
 
 @router.get("/overview", response_model=AdminDashboardOverview)

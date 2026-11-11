@@ -42,10 +42,10 @@ from app.schemas.ai_teacher_408 import (
 )
 from app.services import ai_learning_service, ai_teacher_408_service
 from app.services import ai_service as svc
-
+from app.core.runtime_paths import API_V1_PREFIX
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/ai")
+router = APIRouter(prefix=f"{API_V1_PREFIX}/ai")
 
 
 @router.get("/error-analysis/availability", response_model=AiModelAvailabilityResponse)

@@ -15,10 +15,10 @@ from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.schemas.observability import SystemHealthResponse
 from app.services.health_check_service import check_system_health
-
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/v1/system", tags=["admin-system-health"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/system", tags=["admin-system-health"])
 
 
 @router.get("/health", response_model=SystemHealthResponse)

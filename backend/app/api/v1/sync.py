@@ -16,10 +16,10 @@ from app.features.sync_merge_service import (
 )
 from app.schemas.sync import SyncPackage, SyncReportResponse
 from app.services.admin_audit_service import write_admin_audit
-
+from app.core.runtime_paths import API_V1_PREFIX
 logger = logging.getLogger("postgraduate-ai.sync")
 
-router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
+router = APIRouter(prefix=f"{API_V1_PREFIX}/sync", tags=["sync"])
 
 
 @router.post("/import", response_model=SyncReportResponse)

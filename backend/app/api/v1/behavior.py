@@ -6,8 +6,8 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.behavior import BehaviorStatsResponse
 from app.services import behavior_service as svc
-
-router = APIRouter(prefix="/api/v1/behavior")
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/behavior")
 
 
 @router.get("/stats", response_model=BehaviorStatsResponse)

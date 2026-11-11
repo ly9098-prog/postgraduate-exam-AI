@@ -26,10 +26,11 @@ from app.schemas.recommendation import (
     StrategyConfigResponse,
     VariantComparisonResponse,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/v1/recommendation", tags=["admin-recommendation"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/recommendation", tags=["admin-recommendation"])
 
 
 # ── 策略配置 ──

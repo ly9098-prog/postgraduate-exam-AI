@@ -14,10 +14,11 @@ from app.schemas.knowledge_mastery import (
     RecommendationFeedbackResponse,
     WeakKnowledgePointItem,
 )
+from app.core.runtime_paths import API_V1_PREFIX
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge-mastery"])
+router = APIRouter(prefix=f"{API_V1_PREFIX}/knowledge", tags=["knowledge-mastery"])
 
 
 @router.get("/states", response_model=list[KnowledgeStateItem])

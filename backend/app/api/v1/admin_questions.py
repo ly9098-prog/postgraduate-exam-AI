@@ -72,8 +72,9 @@ from app.utils.question_content import (
     extract_image_urls_from_content,
     normalize_segment_type,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
-router = APIRouter(prefix="/api/admin/v1/questions", tags=["admin-questions"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/questions", tags=["admin-questions"])
 
 
 def _raise_question_error(exc: ValueError) -> None:

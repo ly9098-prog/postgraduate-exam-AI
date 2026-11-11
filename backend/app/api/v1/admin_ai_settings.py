@@ -15,8 +15,9 @@ from app.services.admin_ai_settings_service import (
     get_ai_usage,
     update_ai_settings,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
-router = APIRouter(prefix="/api/admin/v1/ai-settings", tags=["admin-ai-settings"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/ai-settings", tags=["admin-ai-settings"])
 
 
 @router.get("", response_model=AdminAISettingsResponse)

@@ -99,10 +99,10 @@ from app.services.question_csv_import_service import (
     import_questions_csv,
 )
 from app.services.streaming_upload_handler import stream_to_temp, validate_image
-
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/v1/imports", tags=["admin-imports"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/imports", tags=["admin-imports"])
 
 
 def _question_csv_error_response(

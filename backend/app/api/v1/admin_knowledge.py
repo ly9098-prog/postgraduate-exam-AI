@@ -17,10 +17,10 @@ from app.schemas.knowledge_path import (
     KnowledgeEdgeStatusResponse,
 )
 from app.services.admin_audit_service import write_admin_audit
-
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/v1/knowledge", tags=["admin-knowledge"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/knowledge", tags=["admin-knowledge"])
 
 
 @router.get("/status", response_model=KnowledgeStatusResponse)

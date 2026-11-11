@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.schemas.guest import (
     GuestEvaluateRequest,
     GuestEvaluateResponse,
@@ -21,7 +22,7 @@ from app.services.guest_practice import (
 from app.services.guest_rate_limit import require_guest_request_budget
 
 router = APIRouter(
-    prefix="/api/v1/guest/practice", tags=["guest-practice"],
+    prefix=f"{API_V1_PREFIX}/guest/practice", tags=["guest-practice"],
     dependencies=[Depends(require_guest_request_budget)],
 )
 

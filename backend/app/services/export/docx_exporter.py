@@ -45,6 +45,10 @@ from docx.shared import Cm, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 
 from app.core.config import settings
+from app.core.runtime_paths import (
+    STATIC_FORMULAS_PREFIX,
+    STATIC_QUESTION_ASSETS_PREFIX,
+)
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
 from app.services.export.analysis_content import split_analysis_sections
 from app.services.export.docx_fonts import (
@@ -677,7 +681,9 @@ class DocxExporter(Exporter):
 
         parsed = urlsplit(str(url))
         path = unquote(parsed.path or str(url).split("?", 1)[0])
-        if not path.startswith(("/static/question-assets/", "/static/formulas/")):
+        if not path.startswith(
+            (f"{STATIC_QUESTION_ASSETS_PREFIX}/", f"{STATIC_FORMULAS_PREFIX}/")
+        ):
             return None
         candidate = os.path.abspath(os.path.join(_BACKEND_ROOT, path.lstrip("/")))
         if not any(

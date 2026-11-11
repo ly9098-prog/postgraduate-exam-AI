@@ -23,8 +23,9 @@ from app.services.vector_config_service import (
     resolve_embedding_model,
     test_embedding_connection,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
-router = APIRouter(prefix="/api/admin/v1", tags=["admin-vector-config"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}", tags=["admin-vector-config"])
 
 VECTOR_KEYS = frozenset(
     {

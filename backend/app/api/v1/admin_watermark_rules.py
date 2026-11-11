@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.services import watermark_service
-
-router = APIRouter(prefix="/api/admin/v1/watermark-rules")
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/watermark-rules")
 
 
 class WatermarkRuleCreate(BaseModel):

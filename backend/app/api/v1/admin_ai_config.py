@@ -23,8 +23,8 @@ from app.services.admin_ai_config_service import (
 )
 from app.services.admin_ai_model_test_service import test_model_connection
 from app.services.ai.analysis_admin_health import probe_saved_model
-
-router = APIRouter(prefix="/api/admin/v1", tags=["admin-ai-config"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}", tags=["admin-ai-config"])
 
 
 # ========== Model config ==========

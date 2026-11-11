@@ -20,8 +20,8 @@ from app.schemas.review_scheduler import (
     ReviewStatsResponse as ScheduleStatsResponse,
 )
 from app.services import review_scheduler
-
-router = APIRouter(prefix="/api/v1/review")
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/review")
 
 
 # ── Stage 12: SM-2 复习调度端点 ──

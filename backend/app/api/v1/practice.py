@@ -37,7 +37,7 @@ from app.services.practice.request_assembly import PracticeQuestionsRequest
 from app.services.practice.request_filters import PracticeRequestFilterError
 from app.services.practice.request_scope import PracticeScopeNotFoundError
 from app.utils.trace.debug import debug_log, save_debug_snapshot  # noqa: F401
-
+from app.core.runtime_paths import API_V1_PREFIX
 logger = logging.getLogger(__name__)
 
 
@@ -48,7 +48,7 @@ def _practice_request_port(name):
     return getattr(_practice_request_builtins, name)
 
 
-router = APIRouter(prefix="/api/v1/practice")
+router = APIRouter(prefix=f"{API_V1_PREFIX}/practice")
 
 
 @router.get("/subjects")

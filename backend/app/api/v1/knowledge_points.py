@@ -8,8 +8,8 @@ from app.models.admin import Subject
 from app.models.user import User
 from app.schemas.tag import TagCreate, TagResponse, TagSubjectGroup
 from app.services import knowledge_point_service as svc
-
-router = APIRouter(prefix="/api/v1/knowledge-points")
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/knowledge-points")
 
 
 @router.get("", response_model=list[TagSubjectGroup])

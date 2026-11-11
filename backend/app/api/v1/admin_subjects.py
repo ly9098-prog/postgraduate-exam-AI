@@ -18,8 +18,8 @@ from app.services.admin_subject_service import (
     update_subject,
 )
 from app.services.subject_tree_cache import invalidate_subject_tree_cache
-
-router = APIRouter(prefix="/api/admin/v1/subjects", tags=["admin-subjects"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/subjects", tags=["admin-subjects"])
 
 
 def _raise_subject_error(exc: ValueError) -> None:

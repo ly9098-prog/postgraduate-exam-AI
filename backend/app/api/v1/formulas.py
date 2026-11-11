@@ -104,8 +104,9 @@ from app.services.formula_subject_scope import (
     expand_formula_subject_code,  # noqa: F401 - live formula-library port
     formula_catalog_category_ids,  # noqa: F401 - live formula-library port
 )
+from app.core.runtime_paths import API_V1_PREFIX
 
-router = APIRouter(prefix="/api/v1/formulas", tags=["formulas"])
+router = APIRouter(prefix=f"{API_V1_PREFIX}/formulas", tags=["formulas"])
 
 
 def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:

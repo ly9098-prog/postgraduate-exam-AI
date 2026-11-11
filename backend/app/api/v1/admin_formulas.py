@@ -57,8 +57,8 @@ from app.services.formula_graph_spec_service import (
 from app.services.formula_review_rules import apply_formula_action
 from app.services.formula_study_card_service import default_template_for
 from app.services.streaming_upload_handler import stream_to_temp
-
-router = APIRouter(prefix="/api/admin/v1/formulas", tags=["admin-formulas"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/formulas", tags=["admin-formulas"])
 
 
 # ── Audit helper ──

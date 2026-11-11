@@ -22,10 +22,10 @@ from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.core.error_codes import ApiError, ErrorCode, task_not_found
 from app.schemas.observability import TaskDiagnosticsResponse, TaskTraceResponse
-
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/v1/tasks", tags=["admin-tasks"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/tasks", tags=["admin-tasks"])
 
 TASK_TYPES = [
     "import_pipeline",

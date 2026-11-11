@@ -22,8 +22,8 @@ from app.schemas.stats import (
 )
 from app.schemas.stats_v2 import DashboardV2Response
 from app.services import stats_service as svc
-
-router = APIRouter(prefix="/api/v1/stats")
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/stats")
 
 
 @router.get("/overview", response_model=OverviewStats)

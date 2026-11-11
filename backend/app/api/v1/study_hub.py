@@ -9,8 +9,8 @@ from app.models.user import User
 from app.schemas.knowledge_diagnosis import KnowledgeDiagnosisResponse
 from app.schemas.study_hub import StudyHubOverviewResponse
 from app.services import knowledge_diagnosis_service, study_hub_service
-
-router = APIRouter(prefix="/api/v1/study-hub", tags=["study-hub"])
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/study-hub", tags=["study-hub"])
 
 
 @router.get("/overview", response_model=StudyHubOverviewResponse)

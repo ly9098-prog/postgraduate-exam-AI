@@ -24,8 +24,8 @@ from app.schemas.user import (
     WechatLogin,
 )
 from app.services import account_erasure_service, token_service, user_service
-
-router = APIRouter(prefix="/api/v1")
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}")
 MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
 
 

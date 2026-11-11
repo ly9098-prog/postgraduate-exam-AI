@@ -21,8 +21,8 @@ from app.schemas.pomodoro import (
     PomodoroStatsResponse,
 )
 from app.services import pomodoro_service as svc
-
-router = APIRouter(prefix="/api/v1/pomodoro")
+from app.core.runtime_paths import API_V1_PREFIX
+router = APIRouter(prefix=f"{API_V1_PREFIX}/pomodoro")
 
 
 def _parse_study_date(value: str | None) -> date | None:

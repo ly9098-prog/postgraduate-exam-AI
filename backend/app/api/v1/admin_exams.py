@@ -13,8 +13,8 @@ from app.schemas.admin_exam import (
     AdminExamPastExamCandidatesResponse,
 )
 from app.services import admin_exam_service
-
-router = APIRouter(prefix="/api/admin/v1/exams", tags=["admin-exams"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/exams", tags=["admin-exams"])
 
 
 def _raise_exam_error(exc: ValueError) -> None:

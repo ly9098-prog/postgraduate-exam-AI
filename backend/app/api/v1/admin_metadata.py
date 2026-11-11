@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends
 
 from app.core.admin_security import require_permissions
 from app.features.question_type import get_question_type_metadata_items
-
-router = APIRouter(prefix="/api/admin/v1/metadata", tags=["admin-metadata"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/metadata", tags=["admin-metadata"])
 
 
 @router.get("/question-types")

@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 
 from app.core.config import settings
+from app.core.runtime_paths import STATIC_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -219,8 +220,8 @@ class LocalFileStorage(StorageBackend):
                 settings.PUBLIC_BASE_URL
             ):
                 rel = url_or_key[len(settings.PUBLIC_BASE_URL) :].lstrip("/")
-            elif "/static/" in url_or_key:
-                rel = url_or_key.split("/static/", 1)[1]
+            elif STATIC_PREFIX in url_or_key:
+                rel = url_or_key.split(STATIC_PREFIX, 1)[1]
             else:
                 logger.warning(
                     "Cannot extract path from URL outside public base: %s", url_or_key

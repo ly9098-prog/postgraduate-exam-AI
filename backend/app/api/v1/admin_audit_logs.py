@@ -10,8 +10,8 @@ from app.models.admin import AuditLog
 from app.schemas.admin_audit import AdminAuditLogDetail, AdminAuditLogListItem
 from app.schemas.common import paginated_response
 from app.services.admin_audit_service import get_admin_audit_log, list_admin_audit_logs
-
-router = APIRouter(prefix="/api/admin/v1/audit-logs", tags=["admin-audit-logs"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/audit-logs", tags=["admin-audit-logs"])
 
 
 def _build_detail_summary(log: AuditLog) -> dict | None:

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.runtime_paths import STATIC_FORMULAS_PREFIX, STATIC_PREFIX
 from app.core.time_utils import utcnow
 from app.models.formula import FormulaCard, FormulaGraphAsset
 from app.services.storage_backend import get_storage
@@ -66,7 +67,7 @@ def resolve_graph_asset_public_url(url: str | None) -> str | None:
     if not raw:
         return None
 
-    marker = "/static/formulas/"
+    marker = f"{STATIC_FORMULAS_PREFIX}/"
     if raw.startswith("static/formulas/"):
         asset_path = "/" + raw
     elif marker in raw:
@@ -270,11 +271,11 @@ def _safe_delete_file(file_url: str) -> None:
         return
     try:
         # Extract relative path from URL
-        prefix = f"{settings.PUBLIC_BASE_URL}/static/"
+        prefix = f"{settings.PUBLIC_BASE_URL}{STATIC_PREFIX}/"
         if file_url.startswith(prefix):
             rel_path = file_url[len(prefix) :]
-        elif "/static/" in file_url:
-            rel_path = file_url.split("/static/", 1)[1]
+        elif STATIC_PREFIX in file_url:
+            rel_path = file_url.split(STATIC_PREFIX, 1)[1]
         else:
             return
 

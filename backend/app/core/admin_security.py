@@ -17,6 +17,7 @@ from app.core.admin_redis import online_presence
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.core.time_utils import unix_timestamp, utcnow
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 
@@ -27,7 +28,7 @@ password_context = PasswordHash((BcryptHasher(),))
 # ── Refresh Token Cookie Config ──
 
 REFRESH_COOKIE_KEY = "admin_refresh_token"
-_REFRESH_COOKIE_PATH = "/api/admin/v1/auth"
+_REFRESH_COOKIE_PATH = f"{API_ADMIN_V1_PREFIX}/auth"
 
 
 def _resolve_refresh_cookie_secure(request: Request | None = None) -> bool:

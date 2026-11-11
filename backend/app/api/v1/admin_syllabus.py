@@ -19,8 +19,8 @@ from app.schemas.syllabus import (
 )
 from app.services import syllabus_service
 from app.services.admin_audit_service import write_admin_audit
-
-router = APIRouter(prefix="/api/admin/v1/knowledge/syllabus", tags=["admin-syllabus"])
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/knowledge/syllabus", tags=["admin-syllabus"])
 
 
 def _http_error(exc: syllabus_service.SyllabusError) -> HTTPException:

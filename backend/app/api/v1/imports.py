@@ -36,9 +36,9 @@ from app.services.import_upload_service import (
 from app.services.streaming_upload_handler import stream_to_temp
 from app.services.task_queue_worker import enqueue_resume_pipeline
 from app.services.upload_validator import get_upload_validator
-
+from app.core.runtime_paths import API_V1_PREFIX
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/import")
+router = APIRouter(prefix=f"{API_V1_PREFIX}/import")
 
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 _IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}

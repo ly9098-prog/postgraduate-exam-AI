@@ -23,8 +23,9 @@ from app.services.admin_app_user_service import (
     unbind_app_user_admin,
     update_app_user,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
-router = APIRouter(prefix="/api/admin/v1/app-users", tags=["admin-app-users"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/app-users", tags=["admin-app-users"])
 
 
 @router.get("")

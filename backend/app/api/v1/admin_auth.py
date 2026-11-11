@@ -33,10 +33,11 @@ from app.services.admin_auth_service import (
     change_admin_password,
     get_admin_me_response,
 )
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/v1/auth", tags=["admin-auth"])
+router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/auth", tags=["admin-auth"])
 
 
 def _normalized_origin(value: str) -> str | None:

@@ -11,8 +11,18 @@ if (process.env.NODE_ENV === "development") {
   // explicitly allowed. Without hydration, the login form does a native GET.
   nextConfig.allowedDevOrigins = ["127.0.0.1"];
   nextConfig.rewrites = async () => [
-    { source: "/api/:path*", destination: "http://localhost:8000/api/:path*" },
-    { source: "/static/:path*", destination: "http://localhost:8000/static/:path*" },
+    {
+      source: "/api/admin/:path*",
+      destination: `${process.env.ADMIN_API_ORIGIN ?? "http://localhost:8000"}/api/admin/:path*`,
+    },
+    {
+      source: "/api/v1/:path*",
+      destination: `${process.env.ADMIN_API_ORIGIN ?? "http://localhost:8000"}/api/v1/:path*`,
+    },
+    {
+      source: "/static/:path*",
+      destination: `${process.env.ADMIN_API_ORIGIN ?? "http://localhost:8000"}/static/:path*`,
+    },
   ];
 }
 
