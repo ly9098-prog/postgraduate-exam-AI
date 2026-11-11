@@ -110,6 +110,7 @@ backend/backend/
 # Sync tool generated files
 backend/sync_package.json
 backend/.last_sync
+.firecrawl/
 !artifacts/**/office-acceptance-checklist.md
 
 # Downloaded font files
