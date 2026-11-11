@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user
 from app.models.exam import ExamAttempt, ExamPaperQuestion
 from app.models.user import User
@@ -42,7 +43,7 @@ from app.schemas.ai_teacher_408 import (
 )
 from app.services import ai_learning_service, ai_teacher_408_service
 from app.services import ai_service as svc
-from app.core.runtime_paths import API_V1_PREFIX
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix=f"{API_V1_PREFIX}/ai")

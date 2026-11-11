@@ -11,9 +11,10 @@ from app.core.admin_security import (
     require_roles,
 )
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.models.admin import Permission, Role, RolePermission
 from app.services.admin_auth_service import update_role_permissions
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}", tags=["admin-rbac"])
 
 

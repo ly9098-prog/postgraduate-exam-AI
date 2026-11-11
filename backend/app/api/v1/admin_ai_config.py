@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.core.secret_crypto import SecretDecryptionError, SecretEncryptionError
 from app.schemas.admin_ai_config import (
     AdminAiConfigsPatchRequest,
@@ -23,7 +24,7 @@ from app.services.admin_ai_config_service import (
 )
 from app.services.admin_ai_model_test_service import test_model_connection
 from app.services.ai.analysis_admin_health import probe_saved_model
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}", tags=["admin-ai-config"])
 
 

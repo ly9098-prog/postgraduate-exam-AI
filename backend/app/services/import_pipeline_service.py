@@ -24,6 +24,15 @@ from app.features.pipeline_orchestrator import (
     resume_pipeline_background,
     run_pipeline_background,
 )
+from app.features.pipeline_orchestrator import (
+    get_pipeline_status as _orchestrator_get_pipeline_status,
+)
+from app.schemas.import_review import PipelineStatusResponse
+from app.services.import_background_execution import (
+    ImportBackgroundExecutionRequest,
+    execute_import_background,
+)
+from app.services.import_background_failure import record_background_pipeline_failure
 from app.services.import_image_completion import finalize_image_pipeline_result
 from app.services.import_image_lifecycle import (
     ImageLifecycleRequest,
@@ -35,15 +44,6 @@ from app.services.import_image_stages import (
     ImageStageCheckpointRequest,
     ensure_image_checkpoint,
 )
-from app.services.import_background_execution import (
-    ImportBackgroundExecutionRequest,
-    execute_import_background,
-)
-from app.services.import_background_failure import record_background_pipeline_failure
-from app.features.pipeline_orchestrator import (
-    get_pipeline_status as _orchestrator_get_pipeline_status,
-)
-from app.schemas.import_review import PipelineStatusResponse
 from app.utils.sentry_utils import capture_exception, set_tag
 
 logger = logging.getLogger(__name__)
@@ -424,7 +424,6 @@ def _image_lifecycle_request(
     created_by: str | None = None,
 ) -> ImageLifecycleRequest:
     from app.features import pipeline_checkpoint as ckpt
-
     from app.features.import_ai_policy import apply_image_single_pass_policy
     from app.services.ocr_service import clean_ocr_text
 

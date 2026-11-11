@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.knowledge_diagnosis import KnowledgeDiagnosisResponse
 from app.schemas.study_hub import StudyHubOverviewResponse
 from app.services import knowledge_diagnosis_service, study_hub_service
-from app.core.runtime_paths import API_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_V1_PREFIX}/study-hub", tags=["study-hub"])
 
 

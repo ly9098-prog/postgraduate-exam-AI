@@ -10,6 +10,7 @@ from sqlalchemy import and_, func, or_, select  # noqa: F401 - live formula-libr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user, get_optional_current_user
 from app.core.subject_scope import (
     EXAM408_FORMULA_SCOPE,  # noqa: F401 - live formula-library port
@@ -104,7 +105,6 @@ from app.services.formula_subject_scope import (
     expand_formula_subject_code,  # noqa: F401 - live formula-library port
     formula_catalog_category_ids,  # noqa: F401 - live formula-library port
 )
-from app.core.runtime_paths import API_V1_PREFIX
 
 router = APIRouter(prefix=f"{API_V1_PREFIX}/formulas", tags=["formulas"])
 

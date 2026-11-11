@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.models.admin import AuditLog
 from app.models.formula import (
@@ -57,7 +58,7 @@ from app.services.formula_graph_spec_service import (
 from app.services.formula_review_rules import apply_formula_action
 from app.services.formula_study_card_service import default_template_for
 from app.services.streaming_upload_handler import stream_to_temp
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/formulas", tags=["admin-formulas"])
 
 

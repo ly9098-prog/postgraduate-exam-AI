@@ -38,7 +38,7 @@
 
 - [ ] 云服务器已购买（建议 2C4G 以上）
 - [ ] 域名已购买并 DNS 解析到服务器 IP
-- [ ] HTTPS 证书已配置（文件名与 `PRODUCTION_DOMAIN` 一致，并挂载到 nginx `/etc/nginx/ssl/`）
+- [ ] HTTPS 证书已配置，且 `PRODUCTION_CERT_NAME` 与挂载到 nginx `/etc/nginx/ssl/` 的 `.pem` / `.key` 文件名一致
 - [ ] Docker + Docker Compose 已安装
 - [ ] 生产环境 `backend/.env` 文件已在服务器侧配置，且不会由本地同步覆盖
 - [ ] 使用 `.deployignore` 同步代码，不上传本地 `.env`、密钥、数据库、`.claude/`、虚拟环境和缓存

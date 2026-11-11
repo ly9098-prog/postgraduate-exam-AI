@@ -27,9 +27,10 @@ from app.core.admin_redis import (
 from app.core.admin_security import AdminPrincipal, require_permissions
 from app.core.cache import CacheUnavailableError, cache
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.models.ocr_job import OCRJob
 from app.services.admin_audit_service import write_admin_audit
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/redis", tags=["admin-redis"])

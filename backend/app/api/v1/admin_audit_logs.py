@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.core.time_utils import normalize_to_naive_utc
 from app.models.admin import AuditLog
 from app.schemas.admin_audit import AdminAuditLogDetail, AdminAuditLogListItem
 from app.schemas.common import paginated_response
 from app.services.admin_audit_service import get_admin_audit_log, list_admin_audit_logs
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/audit-logs", tags=["admin-audit-logs"])
 
 

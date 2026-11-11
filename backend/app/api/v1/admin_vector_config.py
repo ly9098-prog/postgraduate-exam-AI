@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.models.admin_ai_config import AdminAiConfig
 from app.schemas.admin_vector_config import (
     EmbeddingTestRequest,
@@ -23,7 +24,6 @@ from app.services.vector_config_service import (
     resolve_embedding_model,
     test_embedding_connection,
 )
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}", tags=["admin-vector-config"])
 

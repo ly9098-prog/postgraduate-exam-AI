@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
 
 
 async def build_v2_metrics_snapshot(

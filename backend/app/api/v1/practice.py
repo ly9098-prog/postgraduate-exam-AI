@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.log_context import get_log_context, normalize_trace_id  # noqa: F401
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user, get_optional_current_user
 from app.models.user import User
 from app.schemas.common import paginated_response
@@ -37,7 +38,7 @@ from app.services.practice.request_assembly import PracticeQuestionsRequest
 from app.services.practice.request_filters import PracticeRequestFilterError
 from app.services.practice.request_scope import PracticeScopeNotFoundError
 from app.utils.trace.debug import debug_log, save_debug_snapshot  # noqa: F401
-from app.core.runtime_paths import API_V1_PREFIX
+
 logger = logging.getLogger(__name__)
 
 

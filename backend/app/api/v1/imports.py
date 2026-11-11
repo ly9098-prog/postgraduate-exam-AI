@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import require_app_permission
 from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.features import question_import_writer as svc
@@ -36,7 +37,7 @@ from app.services.import_upload_service import (
 from app.services.streaming_upload_handler import stream_to_temp
 from app.services.task_queue_worker import enqueue_resume_pipeline
 from app.services.upload_validator import get_upload_validator
-from app.core.runtime_paths import API_V1_PREFIX
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix=f"{API_V1_PREFIX}/import")
 

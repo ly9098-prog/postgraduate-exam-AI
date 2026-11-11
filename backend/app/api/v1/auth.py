@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import (
     get_current_user,
     issue_user_token,
@@ -24,7 +25,7 @@ from app.schemas.user import (
     WechatLogin,
 )
 from app.services import account_erasure_service, token_service, user_service
-from app.core.runtime_paths import API_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_V1_PREFIX}")
 MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
 

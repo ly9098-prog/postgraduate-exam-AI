@@ -70,36 +70,37 @@ from app.services.task_queue_keys import (
     _v2_task_hash_key,
 )
 from app.services.task_queue_script_bindings import SCRIPT_BINDINGS
-from app.services.task_queue_v2_fail_contract import (
-    apply_v2_dead_result,
-    apply_v2_retry_result,
-    build_v2_dead_plan,
-    build_v2_retry_plan,
-    resolve_v2_fail_identity,
+from app.services.task_queue_v1_claim_contract import (
+    build_v1_claimed_task,
+    build_v1_retry_claimed_task,
 )
-from app.services.task_queue_v2_fail_redis_contract import (
-    execute_v2_fail_dead,
-    execute_v2_fail_retry,
+from app.services.task_queue_v1_dead_contract import (
+    build_v1_dead_entry,
+    build_v1_dead_purge_plan,
 )
-from app.services.task_queue_v2_transition_redis_contract import (
-    execute_v2_complete,
-    execute_v2_enqueue,
+from app.services.task_queue_v1_fail_redis_contract import (
+    execute_v1_fail_dead,
+    execute_v1_fail_retry,
 )
-from app.services.task_queue_v2_claim_contract import (
-    build_v2_claimed_task,
-    v2_dequeue_unavailable,
+from app.services.task_queue_v1_heartbeat_contract import (
+    apply_v1_heartbeat_result,
+    resolve_v1_heartbeat_identity,
+    v1_heartbeat_expiry,
 )
-from app.services.task_queue_v2_completion_contract import (
-    apply_v2_completed_result,
-    build_v2_completed_payload,
-    v2_complete_unavailable,
+from app.services.task_queue_v1_metrics_contract import build_v1_metrics_snapshot
+from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
+from app.services.task_queue_v1_to_v2_redis_contract import (
+    V1ToV2DrainError,
+    execute_v1_to_v2_drain,
 )
-from app.services.task_queue_v2_heartbeat_contract import (
-    apply_v2_heartbeat_result,  # noqa: F401 — live heartbeat result port
-    resolve_v2_heartbeat_identity,
-    v2_heartbeat_mismatch,  # noqa: F401 — live heartbeat result port
+from app.services.task_queue_v1_transition_contract import (
+    apply_v1_failure_attempt,
+    apply_v1_local_retry,
+    build_v1_fail_dead_payload,
+    prepare_v1_retry_task,
+    resolve_v1_transition_identity,
+    should_v1_retry,
 )
-from app.services.task_queue_v2_heartbeat_execution import execute_v2_heartbeat
 from app.services.task_queue_v2_admin_contract import (
     normalize_v2_admin_result,  # noqa: F401 — live administrative transition port
     should_log_v2_cancel,  # noqa: F401 — live administrative transition port
@@ -111,19 +112,14 @@ from app.services.task_queue_v2_admin_execution import (
     execute_v2_mark_corrupt,
     execute_v2_reclaim,
 )
-from app.services.task_queue_v2_reaper_contract import (
-    apply_v1_reaper_result,
-    apply_v2_reaper_result,  # noqa: F401 — live administrative transition port
-    normalize_v1_reaper_result,
-    normalize_v2_reaper_result,  # noqa: F401 — live administrative transition port
+from app.services.task_queue_v2_claim_contract import (
+    build_v2_claimed_task,
+    v2_dequeue_unavailable,
 )
-from app.services.task_queue_v2_health_contract import (
-    v1_oldest_ready_age,
-    v2_oldest_ready_age,
-)
-from app.services.task_queue_v2_diagnostics_contract import (
-    build_v2_corrupt_entry,
-    build_v2_dead_entry,
+from app.services.task_queue_v2_completion_contract import (
+    apply_v2_completed_result,
+    build_v2_completed_payload,
+    v2_complete_unavailable,
 )
 from app.services.task_queue_v2_dead_purge_contract import build_v2_dead_purge_plan
 from app.services.task_queue_v2_dead_retry_contract import (
@@ -131,13 +127,10 @@ from app.services.task_queue_v2_dead_retry_contract import (
     build_v2_dead_retry_payload,
     parse_v2_dead_retry_payload,
 )
-from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
-from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
-from app.services.task_queue_v1_to_v2_redis_contract import (
-    V1ToV2DrainError,
-    execute_v1_to_v2_drain,
+from app.services.task_queue_v2_diagnostics_contract import (
+    build_v2_corrupt_entry,
+    build_v2_dead_entry,
 )
-from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
 from app.services.task_queue_v2_enqueue_contract import (
     build_v1_enqueue_task,
     build_v2_enqueue_plan,
@@ -148,32 +141,39 @@ from app.services.task_queue_v2_enqueue_contract import (
     v2_enqueue_queue_full,
     v2_enqueue_unavailable,
 )
-from app.services.task_queue_v1_claim_contract import (
-    build_v1_claimed_task,
-    build_v1_retry_claimed_task,
+from app.services.task_queue_v2_fail_contract import (
+    apply_v2_dead_result,
+    apply_v2_retry_result,
+    build_v2_dead_plan,
+    build_v2_retry_plan,
+    resolve_v2_fail_identity,
 )
-from app.services.task_queue_v1_heartbeat_contract import (
-    apply_v1_heartbeat_result,
-    resolve_v1_heartbeat_identity,
-    v1_heartbeat_expiry,
+from app.services.task_queue_v2_fail_redis_contract import (
+    execute_v2_fail_dead,
+    execute_v2_fail_retry,
 )
-from app.services.task_queue_v1_transition_contract import (
-    apply_v1_failure_attempt,
-    apply_v1_local_retry,
-    build_v1_fail_dead_payload,
-    prepare_v1_retry_task,
-    resolve_v1_transition_identity,
-    should_v1_retry,
+from app.services.task_queue_v2_health_contract import (
+    v1_oldest_ready_age,
+    v2_oldest_ready_age,
 )
-from app.services.task_queue_v1_fail_redis_contract import (
-    execute_v1_fail_dead,
-    execute_v1_fail_retry,
+from app.services.task_queue_v2_heartbeat_contract import (
+    apply_v2_heartbeat_result,  # noqa: F401 — live heartbeat result port
+    resolve_v2_heartbeat_identity,
+    v2_heartbeat_mismatch,  # noqa: F401 — live heartbeat result port
 )
-from app.services.task_queue_v1_dead_contract import (
-    build_v1_dead_entry,
-    build_v1_dead_purge_plan,
+from app.services.task_queue_v2_heartbeat_execution import execute_v2_heartbeat
+from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
+from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
+from app.services.task_queue_v2_reaper_contract import (
+    apply_v1_reaper_result,
+    apply_v2_reaper_result,  # noqa: F401 — live administrative transition port
+    normalize_v1_reaper_result,
+    normalize_v2_reaper_result,  # noqa: F401 — live administrative transition port
 )
-from app.services.task_queue_v1_metrics_contract import build_v1_metrics_snapshot
+from app.services.task_queue_v2_transition_redis_contract import (
+    execute_v2_complete,
+    execute_v2_enqueue,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",

@@ -13,9 +13,9 @@ from app.services.task_queue_keys import (
     _V2_IDEMPOTENCY_PREFIX,
     _V2_RETRY_PREFIX,
     _V2_TASK_PREFIX,
-    _v2_retry_key,
     _v2_p_key,
     _v2_q_key,
+    _v2_retry_key,
     _v2_task_hash_key,
 )
 from app.services.task_queue_v2_completion_contract import (

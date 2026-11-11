@@ -9,6 +9,7 @@ from app.core.admin_security import (
     require_permissions,
 )
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.features.sync_merge_service import (
     MAX_QUESTIONS_PER_SYNC,
     MAX_TAGS_PER_SYNC,
@@ -16,7 +17,7 @@ from app.features.sync_merge_service import (
 )
 from app.schemas.sync import SyncPackage, SyncReportResponse
 from app.services.admin_audit_service import write_admin_audit
-from app.core.runtime_paths import API_V1_PREFIX
+
 logger = logging.getLogger("postgraduate-ai.sync")
 
 router = APIRouter(prefix=f"{API_V1_PREFIX}/sync", tags=["sync"])

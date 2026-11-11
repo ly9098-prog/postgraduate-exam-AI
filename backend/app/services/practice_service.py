@@ -60,19 +60,19 @@ from app.services.practice.basic_selection import (
     run_basic_selection,
 )
 from app.services.practice.batch_token import (
+    _PRACTICE_BATCH_TOKEN_VERSION,  # noqa: F401 — historical public import
     PRACTICE_BATCH_CLOCK_SKEW_SEC,  # noqa: F401 — historical public import
     PracticeBatchTokenError,
-    _PRACTICE_BATCH_TOKEN_VERSION,  # noqa: F401 — historical public import
     _decode_practice_batch_token,  # noqa: F401 — historical public import
     create_practice_batch_token,  # noqa: F401 — historical public import
+)
+from app.services.practice.chapter_scope import (
+    bucket_targets as _chapter_bucket_targets,
 )
 from app.services.practice.chapter_scope import (
     build_question_buckets,
     question_knowledge_mapping,
     select_bucket_questions,
-)
-from app.services.practice.chapter_scope import (
-    bucket_targets as _chapter_bucket_targets,
 )
 from app.services.practice.knowledge_scope import (
     load_active_knowledge_point,
@@ -83,15 +83,19 @@ from app.services.practice.knowledge_scope_loaders import (
     load_knowledge_states,
     load_question_knowledge_rows,
 )
+from app.services.practice.legacy_weakness_vector import (
+    LegacyWeaknessRequest,
+    run_legacy_weakness_vector,
+)
+from app.services.practice.leitner_layers import (
+    run_leitner_layers,  # noqa: F401 — historical public import / live selection port
+)
 from app.services.practice.leitner_query import (
     LeitnerQueryRequest,  # noqa: F401 — historical public import / live selection port
     due_condition,  # noqa: F401 — historical public import / live selection port
     due_soon_condition,  # noqa: F401 — historical public import / live selection port
     leitner_query,  # noqa: F401 — historical public import / live selection port
     oldest_first_order,  # noqa: F401 — historical public import / live selection port
-)
-from app.services.practice.leitner_layers import (
-    run_leitner_layers,  # noqa: F401 — historical public import / live selection port
 )
 from app.services.practice.leitner_selection import (
     LeitnerSelectionRequest,
@@ -140,6 +144,11 @@ from app.services.practice.recommendation_pipeline import (
 from app.services.practice.revision_scope_guard import (
     filter_questions_to_revision_scope as _filter_questions_to_revision_scope,
 )
+from app.services.practice.scored_context import (
+    ScoredCandidateContext,
+    load_scored_candidate_context,
+    load_scored_learning_context,
+)
 from app.services.practice.scored_fallback import (
     load_random_fill_questions,
     load_repeat_fill_questions,
@@ -149,11 +158,6 @@ from app.services.practice.scored_fallback_flow import (
     run_scored_fallback,
 )
 from app.services.practice.scored_fallback_merge import merge_fill_questions
-from app.services.practice.scored_context import (
-    ScoredCandidateContext,
-    load_scored_candidate_context,
-    load_scored_learning_context,
-)
 from app.services.practice.scored_policy import (
     ScoredPolicyRequest,
     ScoredSelection,
@@ -173,42 +177,40 @@ from app.services.practice.similar_supplement import (
     load_similar_fill_questions,  # noqa: F401 — historical import / live similar port
     load_similar_vector_questions,  # noqa: F401 — historical import / live similar port
 )
-from app.services.practice.strategy_weight_rerank import apply_strategy_weight_rerank
-from app.services.practice.smart_scored_supplement import (
-    ScoredSupplementRequest,
-    run_scored_supplement,
-)
 from app.services.practice.smart_entry import (
     SmartEntryRequest,
     run_smart_entry,
-)
-from app.services.practice.stats import (
-    accuracy as _practice_accuracy,
-    load_daily_breakdown,
-    load_practice_totals,
-    load_subject_breakdown,
-)
-from app.services.practice.smart_weakness_vector import (
-    SmartWeaknessVectorRequest,
-    run_smart_weakness_vector,
-)
-from app.services.practice.legacy_weakness_vector import (
-    LegacyWeaknessRequest,
-    run_legacy_weakness_vector,
 )
 from app.services.practice.smart_path_supplement import (
     SmartPathRequest,
     run_smart_path,
 )
-from app.services.practice.time_window import excluded_question_subquery
-from app.services.practice.v1_fallback import (
-    V1FallbackRequest,
-    run_v1_fallback,
+from app.services.practice.smart_scored_supplement import (
+    ScoredSupplementRequest,
+    run_scored_supplement,
 )
 from app.services.practice.smart_scoring import (
     _build_smart_recommendation_reason,
     _pick_graph_target_kps,
     calculate_smart_score,
+)
+from app.services.practice.smart_weakness_vector import (
+    SmartWeaknessVectorRequest,
+    run_smart_weakness_vector,
+)
+from app.services.practice.stats import (
+    accuracy as _practice_accuracy,
+)
+from app.services.practice.stats import (
+    load_daily_breakdown,
+    load_practice_totals,
+    load_subject_breakdown,
+)
+from app.services.practice.strategy_weight_rerank import apply_strategy_weight_rerank
+from app.services.practice.time_window import excluded_question_subquery
+from app.services.practice.v1_fallback import (
+    V1FallbackRequest,
+    run_v1_fallback,
 )
 from app.services.question_revision_service import (
     latest_question_revision_scope_condition,
@@ -1188,12 +1190,12 @@ async def _smart_weakness_vector(
     subject_ids: 精确 subject_id 列表，提供时跳过 resolve_subject_ids 递归扩展。
     """
     _ = (request_id, skip_finalize, experiment_id, variant_key)
+    from app.services import mastery_service, vector_retrieval_service
     from app.services.practice.weakness_vector_providers import (
         WeaknessVectorProviderRequest,
         load_fill_questions,
         load_vector_matches,
     )
-    from app.services import mastery_service, vector_retrieval_service
 
     provider_request = _weakness_vector_provider_request(
         db, user_id, exclude_answered, no_repeat_days

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 
-
 BUCKET_RANK = {"weak": 0, "unobserved": 1, "developing": 2, "stable": 3}
 BUCKET_ORDER = ("weak", "unobserved", "developing", "stable")
 

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.schemas.admin_subjects import (
     AdminSubjectCreateRequest,
     AdminSubjectResponse,
@@ -18,7 +19,7 @@ from app.services.admin_subject_service import (
     update_subject,
 )
 from app.services.subject_tree_cache import invalidate_subject_tree_cache
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/subjects", tags=["admin-subjects"])
 
 

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.ai_diagnosis import AiDiagnosis
@@ -22,7 +23,7 @@ from app.schemas.stats import (
 )
 from app.schemas.stats_v2 import DashboardV2Response
 from app.services import stats_service as svc
-from app.core.runtime_paths import API_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_V1_PREFIX}/stats")
 
 

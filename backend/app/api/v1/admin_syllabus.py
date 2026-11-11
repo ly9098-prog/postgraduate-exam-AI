@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.models.syllabus import SyllabusKnowledgePoint, SyllabusVersion
 from app.schemas.syllabus import (
     SyllabusCatalogResponse,
@@ -19,7 +20,7 @@ from app.schemas.syllabus import (
 )
 from app.services import syllabus_service
 from app.services.admin_audit_service import write_admin_audit
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/knowledge/syllabus", tags=["admin-syllabus"])
 
 

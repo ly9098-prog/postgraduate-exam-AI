@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions, require_roles
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.schemas.admin_exam import (
     AdminExamPaperCreateRequest,
     AdminExamPaperDetail,
@@ -13,7 +14,7 @@ from app.schemas.admin_exam import (
     AdminExamPastExamCandidatesResponse,
 )
 from app.services import admin_exam_service
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/exams", tags=["admin-exams"])
 
 

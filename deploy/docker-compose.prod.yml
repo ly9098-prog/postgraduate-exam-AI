@@ -307,6 +307,7 @@ services:
       - "443:443"
     environment:
       PRODUCTION_DOMAIN: ${PRODUCTION_DOMAIN:?必须设置 PRODUCTION_DOMAIN}
+      PRODUCTION_CERT_NAME: ${PRODUCTION_CERT_NAME:?必须设置 PRODUCTION_CERT_NAME}
     volumes:
       - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - nginx_config:/etc/nginx/conf.d

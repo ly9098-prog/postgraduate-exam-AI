@@ -19,6 +19,7 @@ from app.core.admin_security import (
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.core.time_utils import utcnow
 from app.schemas.admin_auth import (
     AdminChangePasswordRequest,
@@ -33,7 +34,6 @@ from app.services.admin_auth_service import (
     change_admin_password,
     get_admin_me_response,
 )
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
 logger = logging.getLogger(__name__)
 

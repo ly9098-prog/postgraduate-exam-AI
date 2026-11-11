@@ -1,6 +1,6 @@
 [Unit]
 Description=22408AI Local OCR Worker — GPU-powered OCR processing
-Documentation=https://github.com/ly9098-prog/postgraduate-ai
+Documentation=https://github.com/ly9098-prog/postgraduate-exam-AI
 After=network-online.target
 Wants=network-online.target
 

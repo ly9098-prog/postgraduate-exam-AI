@@ -845,6 +845,12 @@ jobs:
           WECHAT_APP_SECRET=ci-app-secret
           DEEPSEEK_API_KEY=ci-ds-key
           AI_CONFIG_ENCRYPT_KEY=ci-encrypt-key-not-for-production-use
+          PRODUCTION_DOMAIN=ci.example
+          PRODUCTION_CERT_NAME=ci.example
+          CORS_ORIGINS=["https://ci.example"]
+          ALLOWED_HOSTS=["ci.example"]
+          PUBLIC_BASE_URL=https://ci.example
+          HEALTH_HOST=ci.example
           CIEOF
 
       - name: Build app Docker image
@@ -853,6 +859,9 @@ jobs:
         # exceed 35 minutes when the configured package mirror is slow.
         run: docker compose --progress=plain -f deploy/docker-compose.prod.yml --env-file backend/.env.ci build app
         timeout-minutes: 90
+
+      - name: Validate production compose config
+        run: docker compose --progress=plain -f deploy/docker-compose.prod.yml --env-file backend/.env.ci config --quiet
 
 
   migration-cycle:

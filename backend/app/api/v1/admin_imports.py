@@ -30,6 +30,7 @@ from app.core.admin_redis import IdempotencyClaim, release_idempotent_request
 from app.core.admin_security import AdminPrincipal, require_permissions
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.features import question_publish_service as publish_svc
 from app.features.import_mode import ImportMode
@@ -99,7 +100,7 @@ from app.services.question_csv_import_service import (
     import_questions_csv,
 )
 from app.services.streaming_upload_handler import stream_to_temp, validate_image
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/imports", tags=["admin-imports"])

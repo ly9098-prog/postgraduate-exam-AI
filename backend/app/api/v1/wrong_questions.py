@@ -14,6 +14,7 @@ from sqlalchemy.orm import joinedload  # noqa: F401 -- live route dependency por
 
 from app.core.cache import cache  # noqa: F401 -- live route dependency port
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user
 from app.core.subject_scope import (
     selected_408_subject_ids,  # noqa: F401 -- live route dependency port
@@ -66,7 +67,6 @@ from app.utils.question_content import (
     reconcile_student_stem_fields,  # noqa: F401 -- live route dependency port
     strip_student_segment_metadata,  # noqa: F401 -- live route dependency port
 )
-from app.core.runtime_paths import API_V1_PREFIX
 
 
 def _wrong_book_port(name):

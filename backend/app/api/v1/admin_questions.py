@@ -24,6 +24,7 @@ from app.core.admin_guards import (
 from app.core.admin_redis import IdempotencyClaim, release_idempotent_request
 from app.core.admin_security import AdminPrincipal, require_permissions
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.schemas.admin_questions import (
     AdminQuestionAddOptionsRequest,
     AdminQuestionBatchRequest,
@@ -45,8 +46,8 @@ from app.schemas.common import paginated_response
 from app.schemas.vector import EmbeddingBackfillRequest
 from app.services.admin_question_export_service import build_admin_question_export
 from app.services.admin_question_service import (
-    batch_review_admin_questions,
     batch_delete_admin_questions,
+    batch_review_admin_questions,
     delete_question_asset_if_orphan,
     get_admin_question,
     get_admin_question_detail,
@@ -72,7 +73,6 @@ from app.utils.question_content import (
     extract_image_urls_from_content,
     normalize_segment_type,
 )
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/questions", tags=["admin-questions"])
 

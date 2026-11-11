@@ -455,7 +455,7 @@ bash deploy/scripts/deploy.sh update
 | `deploy/scripts/deploy.sh` | 生产部署脚本 |
 | `deploy/scripts/redis_backup.sh` | Redis RDB 备份 |
 | `deploy/scripts/redis_restore.sh` | Redis AOF-safe 恢复 |
-| `deploy/nginx/nginx.conf` | Nginx 配置 |
+| `deploy/nginx/nginx.conf.template` | Nginx 配置模板 |
 | `scripts/postgres_backup.py` | PostgreSQL 备份脚本 |
 | `deploy/systemd/postgres-backup.timer` | 定时备份 |
 

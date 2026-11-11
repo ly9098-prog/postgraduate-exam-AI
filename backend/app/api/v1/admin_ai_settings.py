@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 from app.schemas.admin_ai_settings import (
     AdminAISettingsPatchRequest,
     AdminAISettingsResponse,
@@ -15,7 +16,6 @@ from app.services.admin_ai_settings_service import (
     get_ai_usage,
     update_ai_settings,
 )
-from app.core.runtime_paths import API_ADMIN_V1_PREFIX
 
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/ai-settings", tags=["admin-ai-settings"])
 

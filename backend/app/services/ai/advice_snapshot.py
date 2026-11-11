@@ -8,8 +8,9 @@ from app.services.knowledge_point_service import load_question_kps
 
 
 async def build_advice_snapshot(db, wrong_list, load_kps=load_question_kps) -> dict:
-    from app.models.question import Question
     from sqlalchemy import select
+
+    from app.models.question import Question
 
     question_ids = [int(w.question_id) for w in wrong_list if w.question_id]
     questions = {}

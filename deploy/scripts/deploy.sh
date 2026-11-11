@@ -65,6 +65,13 @@ do_build_admin() {
   info "admin 构建完成"
 }
 
+do_build_nginx_config() {
+  info "校验生产 Compose 配置..."
+  compose config --quiet
+  info "重建 nginx（模板配置与挂载方式变更需要替换容器）..."
+  compose up -d --no-deps --force-recreate nginx
+}
+
 do_up() {
   info "启动服务..."
   compose up -d
@@ -185,6 +192,7 @@ do_status() {
 do_init() {
   check_prereqs
   do_build
+  do_build_nginx_config
   do_up
   info "等待数据库就绪..."
   sleep 5
@@ -201,6 +209,7 @@ do_init() {
 do_update() {
   check_prereqs
   do_build
+  do_build_nginx_config
   do_update_app
   do_health_check || error "更新后健康检查失败；请查看上方 app 日志，必要时回滚上一版本代码后重新执行 app 更新"
   do_scheduler_health_check || warn "scheduler 健康检查未通过（export 功能可能不可用）"
@@ -211,6 +220,7 @@ do_update_all() {
   check_prereqs
   do_build
   do_build_admin
+  do_build_nginx_config
   do_update_app
   do_update_admin
   do_health_check || error "更新后 app 健康检查失败"

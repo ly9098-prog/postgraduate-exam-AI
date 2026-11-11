@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.knowledge_path import (
@@ -13,7 +14,6 @@ from app.schemas.knowledge_path import (
     KnowledgePathNode,
     KnowledgePathResponse,
 )
-from app.core.runtime_paths import API_V1_PREFIX
 
 logger = logging.getLogger(__name__)
 

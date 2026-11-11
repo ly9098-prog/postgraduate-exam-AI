@@ -3,12 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user, require_app_permission
 from app.models.admin import Subject
 from app.models.user import User
 from app.schemas.tag import TagCreate, TagResponse, TagSubjectGroup
 from app.services import knowledge_point_service as svc
-from app.core.runtime_paths import API_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_V1_PREFIX}/knowledge-points")
 
 

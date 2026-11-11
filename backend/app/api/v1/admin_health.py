@@ -7,6 +7,7 @@ from app.core.admin_security import require_permissions
 from app.core.cache import CacheUnavailableError, cache
 from app.core.database import async_session
 from app.core.runtime_paths import API_ADMIN_V1_PREFIX
+
 router = APIRouter(prefix=f"{API_ADMIN_V1_PREFIX}/health", tags=["admin-health"])
 
 

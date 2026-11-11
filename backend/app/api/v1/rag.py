@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deployment_profile import is_restricted_environment
+from app.core.runtime_paths import API_V1_PREFIX
 from app.core.security import get_current_user
 from app.models.user import User
-from app.core.runtime_paths import API_V1_PREFIX
 from rag.context_builder import build_context
 
 router = APIRouter(prefix=f"{API_V1_PREFIX}/rag")

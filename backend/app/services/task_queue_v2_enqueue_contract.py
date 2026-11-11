@@ -13,10 +13,10 @@ from app.services.practice.answer_projection_contract import (
 )
 from app.services.task_queue_contract import (
     _CURRENT_TASK_SCHEMA_VERSION,
-    _minimum_worker_version_for_task,
-    _normalize_task_schema_version,
     EnqueueResult,
     Task,
+    _minimum_worker_version_for_task,
+    _normalize_task_schema_version,
 )
 
 
