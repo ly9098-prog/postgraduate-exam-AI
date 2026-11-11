@@ -16,7 +16,7 @@ const DEPENDENCIES = {
   'question-adapter-answers': ['question-adapter-dependencies', 'question-adapter-groups'],
   'question-adapter-views': ['question-adapter-dependencies', 'question-adapter-options',
     'question-adapter-groups', 'question-adapter-answers'],
-  'question-adapter-images': ['question-adapter-dependencies'],
+  'question-adapter-images': ['question-adapter-dependencies', 'segment-types'],
 }
 
 function inspect(source, name) {
@@ -32,7 +32,7 @@ function inspect(source, name) {
       const request = node.arguments[0].text
       assert.ok(request.startsWith('./') && !request.slice(2).includes('/'), 'package escape')
       const dependency = request.slice(2)
-      assert.ok(dependency in DEPENDENCIES || ['stem-render', 'answer'].includes(dependency),
+      assert.ok(dependency in DEPENDENCIES || ['stem-render', 'answer', 'segment-types'].includes(dependency),
         'unexpected dependency')
       imports.push(dependency)
     }
