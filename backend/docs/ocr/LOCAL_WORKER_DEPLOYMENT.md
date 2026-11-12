@@ -1,13 +1,13 @@
 # Local OCR Worker Deployment Guide
 
 > Applies to: Local GPU OCR Worker (RTX 3050 / CUDA 12.x)
-> Server target: your-production-domain.example (2C/2G thin production server)
+> Server target: your-production-domain.example. Production only calls a lightweight external OCR HTTPS API.
 > Last updated: 2026-07-17
 
 ## Architecture
 
 ```
-Production Server (2C/2G)           Local GPU Worker (i7 / RTX 3050 4G)
+Production Server                   Local GPU Worker (RTX 3050 4G / 12G RAM)
 ┌──────────────────────┐            ┌──────────────────────────┐
 │ FastAPI + PostgreSQL │  claim ◄── │     Worker Daemon        │
 │                      │  ──► input │        │                 │
@@ -24,6 +24,7 @@ The worker uses **pull mode**: it polls the production server's internal API, cl
 | Item | Requirement | Check |
 |------|-------------|-------|
 | NVIDIA GPU | RTX 3050+ (4GB VRAM) | `nvidia-smi` |
+| Host memory | 12 GB+ recommended | `free -h` |
 | NVIDIA Driver | >= 535 (CUDA 12.x) | `nvidia-smi --query-gpu=driver_version` |
 | Python | 3.10 – 3.12 | `python3 --version` |
 | Disk | 20GB+ free for workspace | `df -h /data` |
@@ -35,19 +36,19 @@ The worker uses **pull mode**: it polls the production server's internal API, cl
 
 ```bash
 cd /opt/22408-ai/backend
-source .venv/bin/activate
+source .venv-ocr-gpu-330/bin/activate
 PYTHONPATH=. python -c "import paddleocr; print(paddleocr.__version__)"
 ```
 
-Worker runs in CPU mode (`.venv` 使用 CPU paddlepaddle)。GPU OCR 环境已废弃删除（WSL2 dxgkrnl 限制）。
+Worker runs in the isolated GPU environment `.venv-ocr-gpu-330`; do not use the backend development `.venv` for OCR inference.
 
 ### 2. Verify OCR runtime
 
 ```bash
-source .venv/bin/activate
+source .venv-ocr-gpu-330/bin/activate
 PYTHONPATH=. python -c "import paddle; print('cpu devices:', paddle.device.cuda.device_count())"
 ```
-Expected: OCR 走 CPU / remote paddlex backend。
+Expected: GPU 环境编译支持 CUDA，且 `cuda_device_count() >= 1`。
 
 ### 3. Register worker credential
 
@@ -55,7 +56,7 @@ On the production server, generate a credential:
 ```bash
 # Start Python REPL on server
 cd /opt/22408-ai/backend
-source .venv/bin/activate
+source .venv-ocr-gpu-330/bin/activate
 PYTHONPATH=. python -c "
 from app.services.worker_credential_service import create_credential, hash_key
 import asyncio
@@ -93,7 +94,7 @@ sudo systemctl start ocr-worker
 
 ```bash
 cd /opt/22408-ai/backend
-source .venv-ocr-gpu/bin/activate
+source .venv-ocr-gpu-330/bin/activate
 
 # Export env vars
 export OCR_WORKER_SERVER_URL=https://your-production-domain.example

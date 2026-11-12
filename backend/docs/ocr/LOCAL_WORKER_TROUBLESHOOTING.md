@@ -5,7 +5,7 @@
 ### 1. Environment not activated
 ```bash
 # Error: ModuleNotFoundError: No module named 'app'
-source .venv/bin/activate
+source .venv-ocr-gpu-330/bin/activate
 PYTHONPATH=. python -m app.ocr_worker.daemon
 ```
 
@@ -46,7 +46,7 @@ curl -s https://your-production-domain.example/api/admin/v1/ocr-jobs?status=leas
 OCR takes a long time per image
 ```
 Solutions:
-1. Worker runs in CPU mode (`.venv` 使用 CPU paddlepaddle)
+1. Worker runs in the isolated `.venv-ocr-gpu-330` environment
 2. Reduce concurrency / queue depth if memory constrained
 3. Restart worker: `sudo systemctl restart ocr-worker`
 

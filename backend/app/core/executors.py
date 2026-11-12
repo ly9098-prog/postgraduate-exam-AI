@@ -35,7 +35,8 @@ def init_executors_for_role(
     Worker role gets PDF, image, file-I/O, and formula executors.
     Scheduler role gets only cleanup-level I/O.
 
-    All capacities are tuned for 2-core / ~1.8 GB memory targets.
+    All capacities are conservative bounded-executor defaults; production web
+    workers are not tied to a fixed server size and OCR uses a remote API.
     """
     from app.core.bounded_executor import BoundedExecutor
 

@@ -230,7 +230,7 @@ class Settings(BaseSettings):
     SLOW_QUERY_MS: int = 500
 
     # Gunicorn
-    GUNICORN_WORKERS: int = 2  # 2-core server
+    GUNICORN_WORKERS: int = 4
     GUNICORN_WORKER_CLASS: str = "uvicorn.workers.UvicornWorker"
     MAX_CONNECTIONS: int = 50
 
@@ -300,7 +300,7 @@ class Settings(BaseSettings):
     COS_ALLOW_LOCAL_FALLBACK: bool = False  # production: must be explicit
 
     # 部署
-    WORKERS: int = 2
+    WORKERS: int = 4
     WORKER_SCRATCH_DIR: str = ""
     WORKER_SHUTDOWN_GRACE_SEC: int = 30
     WORKER_CONCURRENCY: int = 1  # max concurrent heavy tasks per worker process

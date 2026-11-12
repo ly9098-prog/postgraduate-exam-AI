@@ -36,7 +36,7 @@
 
 ## 部署检查
 
-- [ ] 云服务器已购买（建议 2C4G 以上）
+- [ ] 云服务器规格按 Web 并发与数据库连接预算评估；OCR 不在生产运行本地 PaddleOCR
 - [ ] 域名已购买并 DNS 解析到服务器 IP
 - [ ] HTTPS 证书已配置，且 `PRODUCTION_CERT_NAME` 与挂载到 nginx `/etc/nginx/ssl/` 的 `.pem` / `.key` 文件名一致
 - [ ] Docker + Docker Compose 已安装

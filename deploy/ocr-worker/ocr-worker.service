@@ -11,7 +11,7 @@ Group=ocr-worker
 WorkingDirectory=/opt/22408-ai/backend
 
 # GPU environment — isolated from main CPU env
-ExecStart=/opt/22408-ai/backend/.venv-ocr-gpu/bin/python \
+ExecStart=/opt/22408-ai/backend/.venv-ocr-gpu-330/bin/python \
     -m app.ocr_worker.daemon \
     --server https://your-production-domain.example \
     --worker-id local-ocr-01

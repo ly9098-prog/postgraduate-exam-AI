@@ -61,12 +61,12 @@ USER app
 
 EXPOSE 8000
 
-# Use GUNICORN_WORKERS env var (default 2 for memory-constrained servers).
-# Increase to 4 on servers with >=4GB RAM and >=4 CPU cores.
-# With 4 PaddleOCR-capable workers + PaddlePaddle, each instance needs ~200-500MB.
+# Use GUNICORN_WORKERS env var. Production defaults to 4 in compose because
+# local PaddleOCR is not installed in the production image; tune with the DB
+# connection-pool budget in mind.
 CMD gunicorn app.main:app \
     -k uvicorn.workers.UvicornWorker \
-    -w ${GUNICORN_WORKERS:-2} \
+    -w ${GUNICORN_WORKERS:-4} \
     --bind 0.0.0.0:8000 \
     --forwarded-allow-ips=* \
     --access-logfile - \
