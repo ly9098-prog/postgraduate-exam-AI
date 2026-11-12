@@ -19,8 +19,12 @@
   <img src="https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white" alt="Redis" />
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-informational" alt="License" />
+</p>
+
 > [!NOTE]
-> 本仓库当前为私人部署项目，未配置开源许可证。请勿直接复用业务代码、题库资源或运维信息。
+> 本仓库采用 [PolyForm Noncommercial 1.0.0](LICENSE) 许可证。仅允许非商业用途使用；禁止商业部署、商业服务、付费产品集成或商业再分发。题库资源、生产运维配置和部署凭据不在授权范围内。
 
 <a id="目录"></a>
 ## 目录
@@ -38,6 +42,7 @@
 - [开发工具链](#开发工具链)
 - [常见问题](#常见问题)
 - [文档索引](#文档索引)
+- [许可证与版权](#许可证与版权)
 
 ## 项目简介
 
@@ -542,6 +547,14 @@ OCR_EXECUTION_BACKEND=...
 | [`docs/ocr/OPERATIONS.md`](docs/ocr/OPERATIONS.md) | OCR 运维 |
 | [`docs/frontend/ADMIN_UI_RULES.md`](docs/frontend/ADMIN_UI_RULES.md) | Admin UI 规则 |
 | [`docs/development/git-workflow.md`](docs/development/git-workflow.md) | Git 工作流 |
+
+## 许可证与版权
+
+本项目以 [PolyForm Noncommercial 1.0.0](LICENSE) 发布。该许可证允许个人学习、研究、测试和非商业组织使用，但不授予商业部署、商业产品集成、商业服务或商业再分发等用途的权利。
+
+版权所有 © 2026 [ly9098-prog](https://github.com/ly9098-prog)。
+
+复用或再分发时必须保留许可证和版权声明。
 
 <div align="center">
   <sub>MemoGrad · 为考研 408 学习场景构建的智能刷题与题库治理系统</sub>
