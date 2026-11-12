@@ -77,26 +77,9 @@ MemoGrad 是一套完整的考研刷题平台，覆盖微信小程序端、管�
 
 ## 系统架构
 
-```mermaid
-flowchart LR
-    MP[微信小程序<br/>MemoGrad] -->|/api/v1| API[FastAPI API]
-    ADMIN[Next.js<br/>管理后台] -->|/api/admin/v1| API
-
-    API --> DB[(PostgreSQL / SQLite)]
-    API --> REDIS[(Redis)]
-    API --> AI[AI Gateway]
-    API --> OCR[OCR Pipeline]
-    API --> STORE[Local / COS Storage]
-
-    AI --> MODEL[OpenAI-compatible Models]
-    OCR --> LOCAL[Local PaddleOCR]
-    OCR --> REMOTE[PaddleX / VL HTTP]
-
-    WORKER[Worker] --> REDIS
-    WORKER --> DB
-    SCHED[Scheduler] --> DB
-    SCHED --> REDIS
-```
+<p align="center">
+  <img src="assets/architecture.zh.svg" alt="MemoGrad 系统架构图" width="100%" />
+</p>
 
 后端按 `PROCESS_ROLE` 拆分运行角色：
 

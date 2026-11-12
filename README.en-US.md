@@ -63,26 +63,9 @@ MemoGrad is a complete postgraduate-exam study platform that combines a WeChat M
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    MP[WeChat Mini Program] -->|/api/v1| API[FastAPI API]
-    ADMIN[Next.js Admin Console] -->|/api/admin/v1| API
-
-    API --> DB[(PostgreSQL / SQLite)]
-    API --> REDIS[(Redis)]
-    API --> AI[AI Gateway]
-    API --> OCR[OCR Pipeline]
-    API --> STORE[Local / COS Storage]
-
-    AI --> MODEL[OpenAI-compatible Models]
-    OCR --> LOCAL[Local PaddleOCR]
-    OCR --> REMOTE[PaddleX / VL HTTP]
-
-    WORKER[Worker] --> REDIS
-    WORKER --> DB
-    SCHED[Scheduler] --> DB
-    SCHED --> REDIS
-```
+<p align="center">
+  <img src="assets/architecture.en.svg" alt="MemoGrad system architecture" width="100%" />
+</p>
 
 The backend is split by `PROCESS_ROLE`:
 
