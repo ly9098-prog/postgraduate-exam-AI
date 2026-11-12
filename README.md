@@ -9,6 +9,14 @@
 </p>
 
 <p align="center">
+  <a href="./README.md">简体中文</a>
+  <span>·</span>
+  <a href="./README.en-US.md">English</a>
+  <span>·</span>
+  <a href="https://github.com/ly9098-prog/postgraduate-exam-AI/releases">Releases</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/ly9098-prog/postgraduate-exam-AI/actions/workflows/ci.yml"><img src="https://github.com/ly9098-prog/postgraduate-exam-AI/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/ly9098-prog/postgraduate-exam-AI/actions/workflows/reliability.yml"><img src="https://github.com/ly9098-prog/postgraduate-exam-AI/actions/workflows/reliability.yml/badge.svg" alt="Reliability Gate" /></a>
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python" />
@@ -23,8 +31,13 @@
   <img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-informational" alt="License" />
 </p>
 
-> [!NOTE]
-> 本仓库采用 [PolyForm Noncommercial 1.0.0](LICENSE) 许可证。仅允许非商业用途使用；禁止商业部署、商业服务、付费产品集成或商业再分发。题库资源、生产运维配置和部署凭据不在授权范围内。
+<h2 align="center">✨ 核心亮点</h2>
+
+<p align="center">
+  <table>
+    <tr><td align="center">🎯<br/><strong>学习闭环</strong><br/><sub>刷题、错题、复习、报告</sub></td><td align="center">🧠<br/><strong>AI 可控</strong><br/><sub>凭据、限流、健康治理</sub></td><td align="center">📚<br/><strong>题库治理</strong><br/><sub>版本、审核、知识图谱</sub></td><td align="center">🚀<br/><strong>生产可用</strong><br/><sub>Docker、队列、可观测</sub></td></tr>
+  </table>
+</p>
 
 <a id="目录"></a>
 ## 目录
@@ -43,6 +56,16 @@
 - [常见问题](#常见问题)
 - [文档索引](#文档索引)
 - [许可证与版权](#许可证与版权)
+
+## Releases
+
+| 版本 | 日期 | 状态 | 主要范围 |
+| --- | --- | --- | --- |
+| [`v4.1.3`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.1.3) | 2026-11-13 | 当前稳定版 | 部署配置、OCR 边界、路径与资源治理 |
+| [`v4.1.0`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.1.0) | 2026-11-06 | 历史版本 | 游客体验、共享 AI 健康状态、冷启动恢复 |
+| [`v4.0.0`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.0.0) | 2026-11-01 | 历史版本 | 架构收口、安全加固、运行时可靠性 |
+
+查看 [Releases](https://github.com/ly9098-prog/postgraduate-exam-AI/releases) 获取完整说明和镜像标签。
 
 ## 项目简介
 
@@ -548,7 +571,7 @@ OCR_EXECUTION_BACKEND=...
 | [`docs/frontend/ADMIN_UI_RULES.md`](docs/frontend/ADMIN_UI_RULES.md) | Admin UI 规则 |
 | [`docs/development/git-workflow.md`](docs/development/git-workflow.md) | Git 工作流 |
 
-## 许可证与版权
+## 许可证
 
 本项目以 [PolyForm Noncommercial 1.0.0](LICENSE) 发布。该许可证允许个人学习、研究、测试和非商业组织使用，但不授予商业部署、商业产品集成、商业服务或商业再分发等用途的权利。
 
