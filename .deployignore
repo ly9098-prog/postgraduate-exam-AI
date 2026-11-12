@@ -1,6 +1,9 @@
 # Version control and local agent state
 .git/
 .claude/
+.codex/
+.firecrawl/
+.playwright-cli/
 
 # Local environments and dependencies
 .venv/
@@ -84,8 +87,6 @@ prompts/
 /ocr_test/
 /fix/
 /reports/
-/tools/
-/utils/
 
 # backend 开发/本地产物（缓存/脚本/报表/DB备份/GPU wheels/空目录），不上生产
 backend/.backend_cache/
@@ -123,10 +124,7 @@ CLAUDE.md
 /.github/
 /.backend_cache/
 /.staging/
-/docker-compose.yml
 
-# 备份镜像需要此脚本；其余根 scripts 内容仍排除。
-+ /scripts/postgres_backup.py
-/scripts/*
+# 备份镜像需要此脚本；根 scripts 是已跟踪源码，仅排除本地缓存。
+/scripts/__pycache__/
 log.txt
-/tests/
