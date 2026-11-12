@@ -12,8 +12,6 @@
   <a href="./README.md">简体中文</a>
   <span>·</span>
   <a href="./README.en-US.md">English</a>
-  <span>·</span>
-  <a href="https://github.com/ly9098-prog/postgraduate-exam-AI/releases">Releases</a>
 </p>
 
 <p align="center">
@@ -33,11 +31,11 @@
 
 <h2 align="center">✨ 核心亮点</h2>
 
-<p align="center">
+<div align="center">
   <table>
     <tr><td align="center">🎯<br/><strong>学习闭环</strong><br/><sub>刷题、错题、复习、报告</sub></td><td align="center">🧠<br/><strong>AI 可控</strong><br/><sub>凭据、限流、健康治理</sub></td><td align="center">📚<br/><strong>题库治理</strong><br/><sub>版本、审核、知识图谱</sub></td><td align="center">🚀<br/><strong>生产可用</strong><br/><sub>Docker、队列、可观测</sub></td></tr>
   </table>
-</p>
+</div>
 
 <a id="目录"></a>
 ## 目录
@@ -55,17 +53,7 @@
 - [开发工具链](#开发工具链)
 - [常见问题](#常见问题)
 - [文档索引](#文档索引)
-- [许可证与版权](#许可证与版权)
-
-## Releases
-
-| 版本 | 日期 | 状态 | 主要范围 |
-| --- | --- | --- | --- |
-| [`v4.1.3`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.1.3) | 2026-11-13 | 当前稳定版 | 部署配置、OCR 边界、路径与资源治理 |
-| [`v4.1.0`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.1.0) | 2026-11-06 | 历史版本 | 游客体验、共享 AI 健康状态、冷启动恢复 |
-| [`v4.0.0`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.0.0) | 2026-11-01 | 历史版本 | 架构收口、安全加固、运行时可靠性 |
-
-查看 [Releases](https://github.com/ly9098-prog/postgraduate-exam-AI/releases) 获取完整说明和镜像标签。
+- [许可证](#许可证)
 
 ## 项目简介
 

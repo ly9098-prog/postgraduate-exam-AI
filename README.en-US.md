@@ -12,8 +12,6 @@
   <a href="./README.md">简体中文</a>
   <span>·</span>
   <a href="./README.en-US.md">English</a>
-  <span>·</span>
-  <a href="https://github.com/ly9098-prog/postgraduate-exam-AI/releases">Releases</a>
 </p>
 
 <p align="center">
@@ -33,16 +31,15 @@
 
 <h2 align="center">✨ Highlights</h2>
 
-<p align="center">
+<div align="center">
   <table>
     <tr><td align="center">🎯<br/><strong>Learning Loop</strong><br/><sub>Practice, review, reporting</sub></td><td align="center">🧠<br/><strong>AI Governance</strong><br/><sub>Quota, health, limits</sub></td><td align="center">📚<br/><strong>Question Governance</strong><br/><sub>Versions, review, graphs</sub></td><td align="center">🚀<br/><strong>Production Ready</strong><br/><sub>Docker, queues, observability</sub></td></tr>
   </table>
-</p>
+</div>
 
 ## Contents
 
 - [Overview](#overview)
-- [Releases](#releases)
 - [Architecture](#architecture)
 - [Capabilities](#capabilities)
 - [Quick Start](#quick-start)
@@ -63,16 +60,6 @@ MemoGrad is a complete postgraduate-exam study platform that combines a WeChat M
 | Admin Console | In production | Question governance, import review, RBAC, AI/OCR/vector settings, audit logs |
 | Backend API | In production | Public/admin API layers, Redis queue, AI gateway, OCR pipeline |
 | Production Deployment | In production | Docker Compose, Nginx, PostgreSQL, Redis, backup tasks |
-
-## Releases
-
-| Version | Date | Status | Scope |
-| --- | --- | --- | --- |
-| [`v4.1.3`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.1.3) | 2026-11-13 | Current stable | Deployment configuration, OCR boundaries, path and asset governance |
-| [`v4.1.0`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.1.0) | 2026-11-06 | Historical | Guest experience, shared AI health, cold-launch recovery |
-| [`v4.0.0`](https://github.com/ly9098-prog/postgraduate-exam-AI/releases/tag/v4.0.0) | 2026-11-01 | Historical | Architecture hardening, security fixes, runtime reliability |
-
-See all [Releases](https://github.com/ly9098-prog/postgraduate-exam-AI/releases).
 
 ## Architecture
 
