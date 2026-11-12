@@ -266,8 +266,8 @@ NEXT_PUBLIC_ADMIN_API_BASE_URL=http://localhost:8000/api/admin/v1
 | `AI_CONFIG_ENCRYPT_KEY` | 空 | 后台 AI 凭据加密密钥 |
 | `OCR_ENABLED` | `false` | OCR 总开关 |
 | `OCR_EXECUTION_BACKEND` | `paddlex_http` | `disabled` / `local_process` / `paddlex_http` |
-| `OCR_REMOTE_URL` | `http://127.0.0.1:8080/ocr` | 远程 OCR endpoint |
-| `OCR_REMOTE_TOKEN` | 空 | 远程 OCR 鉴权 Token |
+| `OCR_REMOTE_URL` | 空 | 远程 OCR endpoint；本地用 WSL 后端调用 Windows PaddleX GPU 服务 |
+| `OCR_REMOTE_TOKEN` | 空 | 远程 OCR 鉴权 Token；生产必须使用 HTTPS |
 
 AI 模型凭据应通过管理后台配置并持久化；OCR 与数据库连接池的完整变量以 `backend/.env.example` 和 `backend/app/core/config.py` 为准。
 

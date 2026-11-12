@@ -1,13 +1,14 @@
-# Local OCR Worker Deployment Guide
+# Local OCR Worker Deployment Guide (Legacy)
 
-> Applies to: Local GPU OCR Worker (RTX 3050 / CUDA 12.x)
-> Server target: your-production-domain.example. Production only calls a lightweight external OCR HTTPS API.
-> Last updated: 2026-07-17
+> Applies to: legacy internal pull-mode OCR worker, not the current local GPU execution path.
+> Current local GPU architecture: WSL backend → `httpx` → Windows PaddleX GPU service. WSL has no usable CUDA runtime and its local OCR inference is CPU-only.
+> Production only calls a lightweight external OCR HTTPS API.
+> Last updated: 2026-11-12
 
 ## Architecture
 
 ```
-Production Server                   Local GPU Worker (RTX 3050 4G / 12G RAM)
+Production Server                   Legacy Pull Worker (see deprecation notice)
 ┌──────────────────────┐            ┌──────────────────────────┐
 │ FastAPI + PostgreSQL │  claim ◄── │     Worker Daemon        │
 │                      │  ──► input │        │                 │
@@ -17,15 +18,14 @@ Production Server                   Local GPU Worker (RTX 3050 4G / 12G RAM)
 └──────────────────────┘
 ```
 
-The worker uses **pull mode**: it polls the production server's internal API, claims jobs atomically, processes them locally with GPU-accelerated PaddleOCR, and uploads results.
+The worker uses **pull mode**: it polls the production server's internal API, claims jobs atomically, executes its legacy local PaddleOCR subprocess, and uploads results. This is retained as historical compatibility documentation; it must not be used to configure the current WSL local-import GPU workflow.
 
 ## Prerequisites
 
 | Item | Requirement | Check |
 |------|-------------|-------|
-| NVIDIA GPU | RTX 3050+ (4GB VRAM) | `nvidia-smi` |
-| Host memory | 12 GB+ recommended | `free -h` |
-| NVIDIA Driver | >= 535 (CUDA 12.x) | `nvidia-smi --query-gpu=driver_version` |
+| CPU / host memory | Legacy daemon host requirements | `free -h` |
+| Windows side | PaddleX GPU service reachable from WSL | `curl http://<windows-host>:8080/health` |
 | Python | 3.10 – 3.12 | `python3 --version` |
 | Disk | 20GB+ free for workspace | `df -h /data` |
 | Network | HTTPS to production server | `curl https://your-production-domain.example/health` |
@@ -36,19 +36,19 @@ The worker uses **pull mode**: it polls the production server's internal API, cl
 
 ```bash
 cd /opt/22408-ai/backend
-source .venv-ocr-gpu-330/bin/activate
-PYTHONPATH=. python -c "import paddleocr; print(paddleocr.__version__)"
+source .venv/bin/activate
+PYTHONPATH=. python -c "import app.ocr_worker.daemon; print('daemon import ok')"
 ```
 
-Worker runs in the isolated GPU environment `.venv-ocr-gpu-330`; do not use the backend development `.venv` for OCR inference.
+This legacy daemon runs from the backend runtime. Do not use a WSL GPU venv: WSL CUDA is not supported in the current local setup. GPU inference belongs to the Windows PaddleX service.
 
 ### 2. Verify OCR runtime
 
 ```bash
-source .venv-ocr-gpu-330/bin/activate
-PYTHONPATH=. python -c "import paddle; print('cpu devices:', paddle.device.cuda.device_count())"
+source .venv/bin/activate
+PYTHONPATH=. python -c "import paddle; print('cuda devices:', paddle.device.cuda.device_count())"
 ```
-Expected: GPU 环境编译支持 CUDA，且 `cuda_device_count() >= 1`。
+Expected in WSL: `cuda devices: 0`. GPU must be provided by the Windows PaddleX service, not inside WSL.
 
 ### 3. Register worker credential
 
@@ -56,7 +56,7 @@ On the production server, generate a credential:
 ```bash
 # Start Python REPL on server
 cd /opt/22408-ai/backend
-source .venv-ocr-gpu-330/bin/activate
+source .venv/bin/activate
 PYTHONPATH=. python -c "
 from app.services.worker_credential_service import create_credential, hash_key
 import asyncio
@@ -94,7 +94,7 @@ sudo systemctl start ocr-worker
 
 ```bash
 cd /opt/22408-ai/backend
-source .venv-ocr-gpu-330/bin/activate
+source .venv/bin/activate
 
 # Export env vars
 export OCR_WORKER_SERVER_URL=https://your-production-domain.example

@@ -1,11 +1,11 @@
-# Local OCR Worker Troubleshooting Guide
+# Local OCR Worker Troubleshooting Guide (Legacy)
 
 ## Worker Won't Start
 
 ### 1. Environment not activated
 ```bash
 # Error: ModuleNotFoundError: No module named 'app'
-source .venv-ocr-gpu-330/bin/activate
+source .venv/bin/activate
 PYTHONPATH=. python -m app.ocr_worker.daemon
 ```
 
@@ -45,8 +45,8 @@ curl -s https://your-production-domain.example/api/admin/v1/ocr-jobs?status=leas
 ```text
 OCR takes a long time per image
 ```
-Solutions:
-1. Worker runs in the isolated `.venv-ocr-gpu-330` environment
+For the current local GPU workflow, verify the Windows PaddleX service first; do not try to enable CUDA inside WSL. For the legacy daemon:
+1. The legacy daemon runs in the backend `.venv`; it does not enable WSL CUDA
 2. Reduce concurrency / queue depth if memory constrained
 3. Restart worker: `sudo systemctl restart ocr-worker`
 
@@ -56,18 +56,18 @@ Error: Failed to download model
 ```
 Solutions:
 1. Check network: `curl -s -o /dev/null -w "%{http_code}" https://paddleocr.bj.bcebos.com`
-2. Manual download: `python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='ch', use_gpu=True)"`
+2. Manual download: `python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='ch', use_gpu=False)"`
 3. Use pre-downloaded model cache from another machine
 
 ### Process Crash
 ```text
 Executor subprocess died (pid=12345): Signal 11 (SIGSEGV)
 ```
-Actions:
-1. Check GPU memory at time of crash
-2. Check for driver issues: `dmesg | grep -i nvidia`
-3. Restart worker: `sudo systemctl restart ocr-worker`
-4. If recurring, reduce `OCR_WORKER_MAX_TASKS_PER_CHILD`
+This legacy daemon performs CPU-only OCR inside WSL. Actions:
+1. Check host memory and subprocess logs
+2. Restart worker: `sudo systemctl restart ocr-worker`
+3. If recurring, reduce `OCR_WORKER_MAX_TASKS_PER_CHILD`
+4. For GPU service failures, check the Windows PaddleX service separately
 
 ## Upload Issues
 

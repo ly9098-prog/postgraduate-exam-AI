@@ -1,4 +1,4 @@
-# Local OCR Worker Operations Guide
+# Local OCR Worker Operations Guide (Legacy)
 
 ## Daily Operations
 
@@ -113,7 +113,7 @@ PYTHONPATH=. alembic upgrade head
 ### Key Metrics
 | Metric | Source | Warning | Critical |
 |--------|--------|---------|----------|
-| GPU memory | `nvidia-smi` | > 3.2 GB | > 3.6 GB |
+| Windows GPU service | `curl` health/OCR endpoint | service responsive | unreachable |
 | Worker RSS | `systemctl status` | > 1 GB | > 1.5 GB |
 | Job latency | Worker logs | > 5 min/page | > 10 min/page |
 | Heartbeat gap | `last_heartbeat_at` | > 120s | > 300s |

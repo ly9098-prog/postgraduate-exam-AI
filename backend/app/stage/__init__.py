@@ -1,4 +1,4 @@
-"""Stage management for Sprint 4D: Stage 1A (CPU Worker) / Stage 1B (GPU Worker) split."""
+"""Legacy Sprint 4D release-gate state for Stage 1A (CPU worker) / Stage 1B (deprecated WSL GPU worker)."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=22408AI Local OCR Worker — GPU-powered OCR processing
+Description=22408AI Local OCR Worker — deprecated legacy pull-mode daemon
 Documentation=https://github.com/ly9098-prog/postgraduate-exam-AI
 After=network-online.target
 Wants=network-online.target
@@ -10,8 +10,9 @@ User=ocr-worker
 Group=ocr-worker
 WorkingDirectory=/opt/22408-ai/backend
 
-# GPU environment — isolated from main CPU env
-ExecStart=/opt/22408-ai/backend/.venv-ocr-gpu-330/bin/python \
+# Use the backend runtime, not the removed WSL GPU venv.
+# Current local GPU OCR runs as: WSL backend -> httpx -> Windows PaddleX GPU service.
+ExecStart=/opt/22408-ai/backend/.venv/bin/python \
     -m app.ocr_worker.daemon \
     --server https://your-production-domain.example \
     --worker-id local-ocr-01
@@ -37,7 +38,7 @@ StartLimitBurst=5
 # OOM prevention
 OOMScoreAdjust=500
 
-# GPU isolation
+# Runtime isolation
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full

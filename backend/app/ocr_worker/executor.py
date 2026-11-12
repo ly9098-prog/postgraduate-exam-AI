@@ -1,4 +1,7 @@
-"""OCR Worker executor — isolated subprocess that runs PaddleOCR.
+"""Legacy OCR Worker executor — isolated WSL CPU subprocess for PaddleOCR.
+
+Current Windows GPU inference is reached through the PaddleX HTTP client instead.
+
 
 The parent keeps the native OCR process killable, bounds every IPC wait, and
 continuously drains stderr so verbose native libraries cannot deadlock the child.
@@ -297,7 +300,7 @@ def _get_ocr():
     global _ocr
     if _ocr is None:
         from paddleocr import PaddleOCR
-        _ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=True)
+        _ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=False)
     return _ocr
 
 def _process_pages(pages):

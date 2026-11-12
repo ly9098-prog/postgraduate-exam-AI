@@ -1,5 +1,5 @@
 """
-Database-backed OCR job model — control plane for thin production server + local GPU worker.
+Database-backed OCR job model — control plane for thin production server and the legacy local OCR worker.
 
 Design:
 - String primary key (UUID) so IDs are globally unique between server and worker.
