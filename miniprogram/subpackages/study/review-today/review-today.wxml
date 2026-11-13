@@ -310,7 +310,7 @@
 </view>
 </view>
 <view class="modal-overlay" wx:if="{{exitConfirmVisible}}" catchtap="closeExitConfirm" catchtouchmove="noop">
-<view class="decision-sheet" catchtap="noop">
+<view class="decision-sheet exit-confirm-sheet" catchtap="noop">
 <view class="sheet-handle"></view>
 <text class="decision-kicker">PAUSE REVIEW</text>
 <text class="decision-title">退出本组复习？</text>

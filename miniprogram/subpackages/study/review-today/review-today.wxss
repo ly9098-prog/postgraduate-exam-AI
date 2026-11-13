@@ -54,3 +54,13 @@ page, .page, .overview-page, .empty-page { background:#F3FBF8; color:#23483C; }
 .review-context-group { color:#2F8066; }
 .cs-4 { background:#55C89B; }
 .curve-node.active { border-color:#55C89B; box-shadow:0 0 0 10rpx rgba(126,216,181,.12); }
+
+/* Exit confirmation: centred copy and a calmer, roomier action area. */
+.exit-confirm-sheet { padding-top:22rpx; padding-bottom:calc(34rpx + env(safe-area-inset-bottom)); text-align:center; }
+.exit-confirm-sheet .sheet-handle { margin-bottom:24rpx; }
+.exit-confirm-sheet .decision-kicker { color:#3A8C72; }
+.exit-confirm-sheet .decision-title { margin-top:10rpx; }
+.exit-confirm-sheet .decision-desc { max-width:560rpx; margin:14rpx auto 0; }
+.exit-confirm-sheet .decision-actions { margin-top:30rpx; gap:16rpx; }
+.exit-confirm-sheet .decision-primary,
+.exit-confirm-sheet .decision-secondary { min-height:88rpx; border-radius:22rpx; }
