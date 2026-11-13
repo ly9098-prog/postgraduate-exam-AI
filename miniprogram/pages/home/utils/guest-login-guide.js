@@ -2,6 +2,7 @@ const storage = require('../../../utils/storage')
 
 const DISMISSED_KEY = 'preferences.home.loginHintDismissed'
 const LOGIN_GUIDE_VISIBLE_MS = 6000
+const LOGIN_ENTRY_ATTENTION_MS = 10000
 let shownThisLaunch = false
 
 function overlaps(first, second) {
@@ -63,9 +64,10 @@ const guestLoginGuideMethods = {
       this.setData({ ...placement, loginGuideReady: true }, () => {
         if (!this._alive || !this._visible || this._authed || !this.data.showLoginGuide) return
         if (sequence !== this._loginGuideLayoutSeq || this._loginGuideTimer != null) return
+        this._startLoginEntryAttention()
         this._loginGuideTimer = setTimeout(() => {
           this._loginGuideTimer = null
-          if (this._alive && this._visible && !this._authed && this.data.showLoginGuide) this._dismissLoginGuide()
+          if (this._alive && this._visible && !this._authed && this.data.showLoginGuide) this._dismissLoginGuide({ preserveEntry: true })
         }, LOGIN_GUIDE_VISIBLE_MS)
       })
       this._listenLoginGuideKeys()
@@ -82,16 +84,32 @@ const guestLoginGuideMethods = {
     wx.onKeyDown(this._loginGuideKeyListener)
   },
 
-  _dismissLoginGuide() {
-    this._pauseLoginGuide()
-    if (this.data.showLoginGuide) this.setData({ showLoginGuide: false, loginGuideReady: false })
+  _startLoginEntryAttention() {
+    if (this._loginEntryTimer != null) return
+    this.setData({ loginEntryAttention: true })
+    this._loginEntryTimer = setTimeout(() => {
+      this._loginEntryTimer = null
+      if (this._alive && this._visible) this.setData({ loginEntryAttention: false })
+    }, LOGIN_ENTRY_ATTENTION_MS)
   },
 
-  _pauseLoginGuide({ preserveTimer = false } = {}) {
+  _dismissLoginGuide({ preserveEntry = false } = {}) {
+    this._pauseLoginGuide({ preserveEntry })
+    if (this.data.showLoginGuide || this.data.loginEntryAttention) {
+      this.setData({ showLoginGuide: false, loginGuideReady: false,
+        loginEntryAttention: preserveEntry && this.data.loginEntryAttention })
+    }
+  },
+
+  _pauseLoginGuide({ preserveTimer = false, preserveEntry = preserveTimer } = {}) {
     this._loginGuideLayoutSeq = (this._loginGuideLayoutSeq || 0) + 1
     if (!preserveTimer) {
       clearTimeout(this._loginGuideTimer)
       this._loginGuideTimer = null
+    }
+    if (!preserveEntry) {
+      clearTimeout(this._loginEntryTimer)
+      this._loginEntryTimer = null
     }
     if (this._loginGuideKeyListener) wx.offKeyDown(this._loginGuideKeyListener)
     this._loginGuideKeyListener = null
@@ -109,7 +127,7 @@ const guestLoginGuideMethods = {
   },
 
   dismissLoginGuideFromPage() {
-    if (this.data.showLoginGuide) this._dismissLoginGuide()
+    if (this.data.showLoginGuide || this.data.loginEntryAttention) this._dismissLoginGuide()
   },
 
   onResize() {

@@ -14,7 +14,7 @@
           <text class="brand-caption">STUDY DESK</text>
         </view>
       </view>
-      <view class="profile-entry">
+      <view class="profile-entry {{guestMode && loginEntryAttention ? 'profile-entry-guide' : ''}}">
         <view id="home-profile-chip" class="profile-chip" bindtap="openProfileSheet" hover-class="profile-chip-pressed" aria-role="button" aria-label="{{guestMode ? '登录' : '编辑个人资料'}}" aria-expanded="{{guestMode && showLoginGuide}}" aria-controls="home-login-guide">
           <image wx:if="{{user.avatar_url || user.avatarUrl || user.avatar}}" class="profile-avatar profile-avatar-image" src="{{user.avatar_url || user.avatarUrl || user.avatar}}" mode="aspectFill" />
           <view wx:else class="profile-avatar">{{userInitial}}</view>
