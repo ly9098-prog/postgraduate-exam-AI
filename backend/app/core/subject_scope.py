@@ -209,23 +209,19 @@ def is_extra_study_parent(record: Any) -> bool:
 
 
 def is_study_subject_enabled(record: Any) -> bool:
-    """Return whether a subject is available to student-facing study flows.
-
-    The computer-science catalog still honors ``is_active``.  The four
-    explicitly re-enabled subjects are treated as available even on databases
-    where the previous product-scope migration marked them inactive.
-    """
-    if canonical_408_code(_raw_record_code(record)):
-        return _record_active(record)
-    return is_extra_study_subject(record) or is_extra_study_parent(record)
+    """Require an active subject within the supported study catalog."""
+    return _record_active(record) and bool(
+        canonical_408_code(_raw_record_code(record))
+        or is_extra_study_subject(record)
+        or is_extra_study_parent(record)
+    )
 
 
 def select_study_subject_records(records: Iterable[Any]) -> list[Any]:
     """Select the computer-science tree plus 高数/线代/英语/政治.
 
-    Ancestors of the requested math leaves are retained so the UI can preserve
-    its existing tree grouping.  Extra subjects are intentionally selectable
-    even if an earlier migration marked them inactive.
+    Retain active ancestors of math leaves for tree grouping. Disabled or
+    invalid ancestor chains make the entire branch unavailable.
     """
     items = list(records)
     selected_ids = {
@@ -236,16 +232,25 @@ def select_study_subject_records(records: Iterable[Any]) -> list[Any]:
 
     by_id = {rid: record for record in items if (rid := _record_id(record)) is not None}
     for record in items:
-        if not is_extra_study_subject(record):
+        if not is_extra_study_subject(record) or not is_study_subject_enabled(record):
             continue
         rid = _record_id(record)
         if rid is None:
             continue
-        selected_ids.add(rid)
+        branch_ids = {rid}
         parent_id = _record_parent_id(record)
-        while parent_id is not None and parent_id in by_id:
-            selected_ids.add(parent_id)
-            parent_id = _record_parent_id(by_id[parent_id])
+        while parent_id is not None:
+            parent = by_id.get(parent_id)
+            if (
+                parent_id in branch_ids
+                or parent is None
+                or not _record_active(parent)
+            ):
+                break
+            branch_ids.add(parent_id)
+            parent_id = _record_parent_id(parent)
+        else:
+            selected_ids.update(branch_ids)
 
     return [
         record

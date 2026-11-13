@@ -63,3 +63,12 @@ async def test_invalidate_failure_is_non_fatal():
     with patch("app.services.subject_tree_cache.cache") as mock_cache:
         mock_cache.delete = AsyncMock(side_effect=RuntimeError("redis down"))
         assert await subject_tree_cache.invalidate_subject_tree_cache() == 0
+
+
+@pytest.mark.asyncio
+async def test_previous_catalog_cache_is_not_reused():
+    old_key = "practice:subject_tree:student"
+    with patch("app.services.subject_tree_cache.cache") as mock_cache:
+        mock_cache.get = AsyncMock(side_effect=lambda key: [{"subject_id": 2}] if key == old_key else None)
+        assert await subject_tree_cache.get_cached_subject_tree() is None
+        assert mock_cache.get.await_args.args[0] != old_key

@@ -89,6 +89,8 @@ def test_create_update_delete_subject(monkeypatch):
     monkeypatch.setattr(admin_subjects, "create_subject", AsyncMock(return_value=_subject()))
     monkeypatch.setattr(admin_subjects, "update_subject", AsyncMock(return_value=_subject()))
     monkeypatch.setattr(admin_subjects, "delete_subject", AsyncMock())
+    invalidate = AsyncMock()
+    monkeypatch.setattr(admin_subjects, "invalidate_subject_tree_cache", invalidate)
     app.dependency_overrides[get_current_admin] = _allow
     app.dependency_overrides[get_db] = _override_db
     try:
@@ -102,6 +104,7 @@ def test_create_update_delete_subject(monkeypatch):
     assert update_resp.status_code == 200
     assert delete_resp.status_code == 200
     assert delete_resp.json() == {"deleted": True}
+    assert invalidate.await_count == 3
 
 
 def test_subject_errors(monkeypatch):

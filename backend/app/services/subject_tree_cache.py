@@ -25,7 +25,7 @@ SUBJECT_TREE_CACHE_PREFIX = "practice:subject_tree"
 
 
 def _cache_key_shared() -> str:
-    return f"{SUBJECT_TREE_CACHE_PREFIX}:student"
+    return f"{SUBJECT_TREE_CACHE_PREFIX}:student:v2"
 
 
 def _cache_key_user(user_id: int | None) -> str:

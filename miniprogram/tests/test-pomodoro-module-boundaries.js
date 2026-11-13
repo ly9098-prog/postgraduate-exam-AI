@@ -17,8 +17,8 @@ test('scans every governed production module, page adapter and the real page', (
   assert.deepEqual(result.violations, [])
   assert.equal(result.modules, 76)
   assert.equal(result.adapters, 7)
-  assert.equal(result.adapterLines, 1066)
-  assert.equal(result.edges, 48)
+  assert.equal(result.adapterLines, 1063)
+  assert.equal(result.edges, 47)
   assert.equal(result.pageLines, PAGE_MAX_LINES)
 })
 

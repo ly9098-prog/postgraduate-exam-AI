@@ -1,3 +1,9 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+
 def _four_equal_rows():
     return [
         (1, "data_structure", "数据结构", 2500),
@@ -33,8 +39,6 @@ def test_weighted_allocation_conserves_duration_and_supports_single_subject():
 
 
 def test_study_plan_scope_counts_allocations_once_and_filters_subjects():
-    from types import SimpleNamespace
-
     from app.services.study_plan_service import _focus_duration_for_subject_scope
 
     session = SimpleNamespace(
@@ -47,3 +51,16 @@ def test_study_plan_scope_counts_allocations_once_and_filters_subjects():
 
     assert _focus_duration_for_subject_scope(session, {object(): 3601}, {1, 2, 3, 4}) == 3601
     assert _focus_duration_for_subject_scope(session, {object(): 3601}, {1}) == 901
+
+
+@pytest.mark.asyncio
+async def test_new_single_subject_session_rejects_disabled_parent_branch():
+    from app.services.pomodoro_service import _resolve_start_subjects
+
+    parent = SimpleNamespace(id=1, code="math", name="数学", parent_id=None, is_active=False)
+    leaf = SimpleNamespace(id=2, code="advanced_math", name="高数", parent_id=1, is_active=True)
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [parent, leaf]
+    database = SimpleNamespace(get=AsyncMock(return_value=leaf), execute=AsyncMock(return_value=result))
+    with pytest.raises(ValueError, match="科目不可用"):
+        await _resolve_start_subjects(database, 2, "single")

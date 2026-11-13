@@ -159,7 +159,7 @@
           </view>
 
 <!-- START BUTTON -->
-          <button class="btn-start {{guestMode ? 'is-locked' : ''}}" catchtap="startSession" hover-class="{{guestMode ? 'none' : 'btn-hover'}}" disabled="{{guestMode}}" aria-disabled="{{guestMode}}">
+          <button class="btn-start {{guestMode ? 'is-locked' : ''}}" catchtap="startSession" hover-class="{{guestMode ? 'none' : 'btn-hover'}}" disabled="{{guestMode || subjectsLoading || subjectsError || !selectedSubjectId}}" aria-disabled="{{guestMode || subjectsLoading || subjectsError || !selectedSubjectId}}">
             <text class="btn-start-text">开始专注</text>
             <image wx:if="{{guestMode}}" class="btn-start-lock" src="/assets/icons/lock-light.svg" mode="aspectFit" aria-hidden="true" />
           </button>

@@ -1,19 +1,32 @@
 """Pure subject snapshots and integer-second allocation for focus statistics."""
 
-from app.core.subject_scope import EXAM408_CORE_CODES, is_study_subject_enabled
+from app.core.subject_scope import (
+    EXAM408_CORE_CODES,
+    canonical_408_code,
+    is_extra_study_parent,
+    is_extra_study_subject,
+    is_study_subject_enabled,
+)
 
 
 def resolve_subject(session) -> tuple[int | None, str, str]:
     """Return (group_key, code, name) for a session's subject.
 
     Subjects enabled by the product scope render under their real id/name.
-    Unavailable or orphaned subjects merge into one 未分类 group.
+    Legacy extra-subject records keep their existing attribution even when
+    disabled for new sessions. Other unavailable subjects merge into 未分类.
     """
     ref = session.subject_ref
     if (
         session.subject_id is not None
         and ref is not None
-        and is_study_subject_enabled(ref)
+        and (
+            is_study_subject_enabled(ref)
+            or (
+                not canonical_408_code(ref.code)
+                and (is_extra_study_subject(ref) or is_extra_study_parent(ref))
+            )
+        )
     ):
         return session.subject_id, ref.code or "", ref.name or ""
     return None, "", "未分类"

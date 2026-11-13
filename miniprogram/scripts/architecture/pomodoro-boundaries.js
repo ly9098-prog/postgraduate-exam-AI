@@ -87,7 +87,7 @@ const MODULES = {
 // platform globals (wx/setTimeout/console) and closed-over page state, but their
 // dependency surface is frozen here and the api client must be injected by the page.
 const PAGE_ADAPTER_MODULES = {
-  'pomodoro-session-page-adapter.js': ['../../../utils/storage', './pomodoro-page-support', './subject-cache', './subject-options', './subject-scope', './timer-math'],
+  'pomodoro-session-page-adapter.js': ['../../../utils/storage', './pomodoro-page-support', './subject-options', './subject-scope', './timer-math'],
   'pomodoro-session-control-page-adapter.js': ['../../../utils/storage', './pomodoro-page-support', './timer-math'],
   'pomodoro-confirm-page-adapter.js': ['./timer-math'],
   'pomodoro-celebration-page-adapter.js': ['../../../utils/storage', './celebration-dismiss', './completion-celebration', './pomodoro-page-support'],

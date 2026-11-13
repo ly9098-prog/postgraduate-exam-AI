@@ -50,6 +50,10 @@ async function prepareStart(startSeq, options) {
   if (unresolved === 'restored' || unresolved === 'cancelled') return null
 
   if (!(await flushPendingStart(startSeq, options))) return null
+  if (page.data.subjectsLoading) {
+    options.showToast({ title: '科目加载中，请稍候', icon: 'none' })
+    return null
+  }
   if (!page.data.selectedSubjectId || !page.data.selectedSubject) {
     options.showToast({ title: '请选择学习科目', icon: 'none' })
     return null
