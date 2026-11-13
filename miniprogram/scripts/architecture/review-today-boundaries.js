@@ -6,11 +6,12 @@ const ROOT = path.resolve(__dirname, '../../..')
 const ts = createRequire(path.join(ROOT, 'admin-frontend/package.json'))('typescript')
 
 const PAGE_PATH = 'miniprogram/subpackages/study/review-today/review-today.js'
-const PAGE_MAX_LINES = 642
+const PAGE_MAX_LINES = 635
 const SUPPORT_PATH = 'miniprogram/subpackages/study/review-today/utils/review-runner-support.js'
 const MODULE_DIR = 'miniprogram/subpackages/study/review-today/utils/'
 const MODULES = {
   'review-runner-support.js': [],
+  'submit-confirm-page-adapter.js': [],
   'review-draft-page-adapter.js': [
     './review-runner-support',
     '../../../../utils/china-time',
@@ -41,6 +42,7 @@ const MODULES = {
     './start-batch-controller',
     './nav-back-controller',
     './self-heal-controller',
+    './submit-confirm-page-adapter',
   ],
   'review-submit-page-adapter.js': [
     './review-active-state',
@@ -52,6 +54,7 @@ const MODULES = {
     './submit-request-controller',
     './submit-result-controller',
     './result-dock-controller',
+    './submit-confirm-page-adapter',
   ],
   'review-progress-page-adapter.js': [
     './review-active-state',
@@ -65,11 +68,12 @@ const MODULES = {
 }
 const MODULE_BUDGETS = {
   'review-runner-support.js': 70,
+  'submit-confirm-page-adapter.js': 19,
   'review-draft-page-adapter.js': 29,
   'review-answer-page-adapter.js': 67,
   'review-overview-page-adapter.js': 84,
-  'review-session-page-adapter.js': 84,
-  'review-submit-page-adapter.js': 104,
+  'review-session-page-adapter.js': 93,
+  'review-submit-page-adapter.js': 106,
   'review-progress-page-adapter.js': 126,
 }
 const FUNCTION_BUDGET = 50

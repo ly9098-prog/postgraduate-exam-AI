@@ -10,6 +10,7 @@ const { createGroupSubmitRequestController } = require('./submit-request-control
 const { createGroupSubmitResultController } = require('./submit-result-controller')
 const { createResultDockController } = require('./result-dock-controller')
 const { createReviewStateWriter } = require('./review-active-state')
+const { createSubmitConfirmPort } = require('./submit-confirm-page-adapter')
 
 function buildGroupSubmitFlowPageCapabilities(page, deps) {
   return {
@@ -31,17 +32,18 @@ function buildGroupSubmitFlowPageCapabilities(page, deps) {
 }
 
 function buildGroupSubmitEntryPageCapabilities(page, deps) {
+  const submitConfirm = createSubmitConfirmPort(page)
   return {
       getData: () => page.data,
       getSession: () => page._reviewSession,
-      isConfirmPending: () => page._submitConfirmPending,
+      isConfirmPending: submitConfirm.isPending,
       isMasterUndoInFlight: () => page._masterUndoInFlight,
       isPageAlive: () => page._alive,
       computeAnsweredCount: (questions, answers) => adapter.computeAnsweredCount(questions, answers, KF),
       confirmController: page._groupSubmitConfirmController || (
         page._groupSubmitConfirmController = createGroupSubmitConfirmController({
-          getConfirm: () => page.selectComponent('#submitConfirm'),
-          setPending: value => { page._submitConfirmPending = value },
+          getConfirm: () => submitConfirm,
+          setPending: submitConfirm.setPending,
           isPageAlive: () => page._alive,
           getPhase: () => page.data.phase,
           findUnansweredIndex: () => page.data.groupQuestions.findIndex(q => !adapter.isQuestionAnswered(q, page._reviewSession.answers, KF)),

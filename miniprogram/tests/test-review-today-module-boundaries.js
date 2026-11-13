@@ -22,9 +22,9 @@ test('scans every governed review-today adapter and the real page', () => {
   assert.deepEqual(result.violations, [])
   assert.equal(result.pageLines, PAGE_MAX_LINES)
   assert.equal(result.controllers, 24)
-  assert.equal(Object.keys(MODULES).length, 7)
+  assert.equal(Object.keys(MODULES).length, 8)
   assert.ok(result.moduleLines <= 600, `adapter lines grew to ${result.moduleLines}`)
-  assert.equal(result.requires, 39)
+  assert.equal(result.requires, 41)
 })
 
 test('page must lazily delegate all 24 controllers', () => {

@@ -6,6 +6,7 @@ const { test } = require('node:test')
 
 const miniRoot = path.resolve(__dirname, '..')
 const componentFile = path.join(miniRoot, 'components/root-back-guard/index.js')
+const flush = () => new Promise(resolve => setImmediate(resolve))
 
 function fixture({ pages = [{}], enabled = true, delegate = false } = {}) {
   let definition
@@ -41,6 +42,17 @@ test('system-back guard is enabled only on a single-page stack', () => {
     assert.equal(component.data.visible, pages.length === 1)
   }
   assert.equal(fixture({ enabled: false }).component.data.visible, false)
+})
+
+test('delegated guards also protect pushed pages', () => {
+  assert.equal(fixture({ pages: [{}, {}], delegate: true }).component.data.visible, true)
+  assert.equal(fixture({ pages: [], delegate: true }).component.data.visible, false)
+  assert.equal(fixture({ pages: [{}, {}] }).component.data.visible, false)
+
+  const toggled = fixture({ pages: [{}, {}], delegate: true })
+  toggled.component.properties.delegate = false
+  toggled.definition.observers.delegate.call(toggled.component, false)
+  assert.equal(toggled.component.data.visible, false)
 })
 
 test('root system back relaunches home once and reports failure with a retryable guard', () => {
@@ -89,36 +101,49 @@ test('a deferred confirmation rearm cannot reactivate a hidden or detached page'
   }
 })
 
-test('delegated root back protects repeated review confirmation, cancellation and confirmed exit', () => {
+test('delegated root back uses the shared exit prompt for repeated, cancelled and confirmed exits', async () => {
   const { createNavBackController } = require('../subpackages/study/review-today/utils/nav-back-controller')
   const harness = fixture({ delegate: true })
   let cleared = 0
-  let confirmVisible = false
+  let prompts = 0
+  let resolvePrompt
+  let pending = false
   const controller = createNavBackController({
     getPhase: () => 'reviewing',
-    setData: patch => { confirmVisible = patch.exitConfirmVisible },
     clearMasterUndo() {},
     clearReviewTimer() {},
     clearReviewActivity: () => { cleared++ },
     getCurrentPages: () => [{}],
     reLaunch: harness.platform.reLaunch,
+    isExitConfirmPending: () => pending,
+    setExitConfirmPending: value => { pending = value },
+    isSubmittingGroup: () => false,
+    logWarn: () => {},
+    showConfirm: () => {
+      prompts++
+      return new Promise(resolve => { resolvePrompt = resolve })
+    },
   })
   harness.component.triggerEvent = () => controller.onNavBack()
   harness.component.onAfterLeave()
-  assert.equal(confirmVisible, true)
+  await flush()
+  assert.equal(prompts, 1)
   assert.equal(harness.component.data.visible, true)
   harness.component.onAfterLeave()
-  assert.equal(confirmVisible, true)
-  assert.equal(harness.component.data.visible, true)
+  await flush()
+  assert.equal(prompts, 1)
   assert.equal(cleared, 0)
   assert.deepEqual(harness.calls, [])
-  controller.closeExitConfirm()
-  assert.equal(confirmVisible, false)
-  assert.equal(harness.component.data.visible, true)
+  resolvePrompt(false)
+  await flush()
+  assert.equal(pending, false)
+  assert.equal(cleared, 0)
+  assert.deepEqual(harness.calls, [])
   harness.component.onAfterLeave()
-  controller.confirmExitReview()
-  harness.definition.pageLifetimes.hide.call(harness.component)
-  harness.component.onAfterLeave()
+  await flush()
+  assert.equal(prompts, 2)
+  resolvePrompt(true)
+  await flush()
   assert.equal(cleared, 1)
   assert.equal(harness.calls.length, 1)
   assert.equal(harness.calls[0][1].url, '/pages/home/home')
@@ -139,6 +164,8 @@ test('restored and terminal pages wire the root guard', () => {
   }
   const review = fs.readFileSync(path.join(miniRoot, `${routes[0]}.wxml`), 'utf8')
   assert.doesNotMatch(review, /enabled="\{\{!exitConfirmVisible\}\}"/)
+  assert.doesNotMatch(review, /exitConfirmVisible/)
+  assert.match(review, /<submit-confirm\b[^>]*id="submitConfirm"/)
   assert.match(review, /delegate="\{\{phase === 'reviewing'\}\}"/)
   assert.match(review, /bind:back="onNavBack"/)
 })

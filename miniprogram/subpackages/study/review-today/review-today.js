@@ -187,7 +187,6 @@ _groupSkipped: 0,
 groupAccuracyPercent: 0,
 showGroupDetails: false,
 resultDockVisible: true,
-exitConfirmVisible: false,
 masterUndoVisible: false,
 masterUndoText: '',
 _dateStr: '',
@@ -559,12 +558,6 @@ goWrongBook() { wx.navigateTo({ url: `/subpackages/study/wrong-book/wrong-book${
 goPractice() { wx.navigateTo({ url: `/subpackages/study/practice/practice${this._guestMode ? '?guest=1' : ''}` }) },
 onNavBack() {
 this._navBackController().onNavBack()
-},
-closeExitConfirm() {
-this._navBackController().closeExitConfirm()
-},
-confirmExitReview() {
-this._navBackController().confirmExitReview()
 },
 toggleGroupDetails() {
 this._showResultDockAndRefreshTimer()

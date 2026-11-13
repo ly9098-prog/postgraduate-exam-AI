@@ -11,6 +11,9 @@ Component({
       if (enabled) this._handling = false
       this._syncGuard()
     },
+    delegate() {
+      this._syncGuard()
+    },
   },
 
   lifetimes: {
@@ -38,8 +41,13 @@ Component({
 
   methods: {
     _syncGuard() {
+      const pages = getCurrentPages()
+      // Delegated guards hand the back gesture to the page, so they must also
+      // protect pushed pages; the root-only default keeps _returnHome safe.
+      const inScope = pages.length > 0 &&
+        (this.properties.delegate || pages.length === 1)
       const visible = !!(this._alive && this._active && !this._handling &&
-        this.properties.enabled && getCurrentPages().length === 1)
+        this.properties.enabled && inScope)
       if (this._alive && this.data.visible !== visible) this.setData({ visible })
     },
 

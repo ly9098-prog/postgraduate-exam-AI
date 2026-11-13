@@ -309,18 +309,6 @@
 </view>
 </view>
 </view>
-<view class="modal-overlay" wx:if="{{exitConfirmVisible}}" catchtap="closeExitConfirm" catchtouchmove="noop">
-<view class="decision-sheet exit-confirm-sheet" catchtap="noop">
-<view class="sheet-handle"></view>
-<text class="decision-kicker">PAUSE REVIEW</text>
-<text class="decision-title">退出本组复习？</text>
-<text class="decision-desc">本组尚未提交的答案不会计入复习结果，已经标记为掌握的题目不会受到影响。</text>
-<view class="decision-actions">
-<button class="decision-secondary" bindtap="confirmExitReview">确认退出</button>
-<button class="decision-primary" bindtap="closeExitConfirm">继续复习</button>
-</view>
-</view>
-</view>
 <view class="undo-toast {{masterUndoVisible ? 'show' : ''}}">
 <text class="undo-toast-text">{{masterUndoText}}</text>
 <view class="undo-divider"></view>

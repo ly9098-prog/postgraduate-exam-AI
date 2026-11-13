@@ -8,6 +8,7 @@ const { createStartBatchController } = require('./start-batch-controller')
 const { createNavBackController } = require('./nav-back-controller')
 const { createReviewSelfHealController } = require('./self-heal-controller')
 const { createReviewStateWriter, createReviewActivityClearer } = require('./review-active-state')
+const { createSubmitConfirmPort } = require('./submit-confirm-page-adapter')
 
 function buildReviewSessionPageCapabilities(page, deps) {
   return {
@@ -52,15 +53,20 @@ function buildStartBatchPageCapabilities(page, deps) {
 }
 
 function buildNavBackPageCapabilities(page, deps) {
+  const submitConfirm = createSubmitConfirmPort(page)
   return {
       getPhase: () => page.data.phase,
-      setData: patch => page.setData(patch),
+      isSubmittingGroup: () => page.data.submittingGroup,
       clearMasterUndo: () => page._clearMasterUndo(),
       clearReviewTimer: () => page._clearReviewTimer(),
       clearReviewActivity: createReviewActivityClearer(),
       getCurrentPages: () => getCurrentPages(),
       navigateBack: () => wx.navigateBack(),
       reLaunch: options => wx.reLaunch(options),
+      isExitConfirmPending: submitConfirm.isPending,
+      setExitConfirmPending: submitConfirm.setPending,
+      showConfirm: submitConfirm.show,
+      logWarn: (...args) => console.warn(...args),
   }
 }
 

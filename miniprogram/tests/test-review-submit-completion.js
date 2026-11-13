@@ -85,11 +85,11 @@ async function run() {
   assert.strictEqual(p.dialogs.length, 1, 'prevent double dialog/submission')
   resolve(false)
   await pending
-  assert.strictEqual(p._submitConfirmPending, false)
+  assert.strictEqual(p._confirmDialogPending, false)
   p = page()
   p.selectComponent = () => ({ show: async () => { throw new Error('closed') } })
   await p.submitGroup()
-  assert.strictEqual(p._submitConfirmPending, false)
+  assert.strictEqual(p._confirmDialogPending, false)
   p = page()
   p.data.groupQuestions = []
   await p.submitGroup()
