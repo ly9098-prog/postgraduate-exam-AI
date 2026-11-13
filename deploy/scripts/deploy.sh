@@ -54,8 +54,8 @@ app
 }
 
 do_build() {
-  info "构建 app 镜像（保留 Docker layer cache）..."
-  compose build app scheduler
+  info "构建 app/worker 镜像（保留 Docker layer cache）..."
+  compose build app scheduler worker
   info "构建完成"
 }
 
@@ -95,6 +95,9 @@ do_update_app() {
   info "替换 scheduler 服务..."
   compose up -d --no-deps scheduler 2>/dev/null || warn "scheduler 服务不存在或启动失败（export 功能不可用）"
   info "scheduler 服务已替换"
+  info "替换 worker 服务..."
+  compose up -d --no-deps worker 2>/dev/null || warn "worker 服务不存在或启动失败（异步任务功能不可用）"
+  info "worker 服务已替换"
   # App/scheduler 容器重建后容器 IP 会变化，nginx 缓存的旧 upstream IP 会导致 /api 502
   do_nginx_reload
 }
