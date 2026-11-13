@@ -382,6 +382,7 @@ jobs:
           node --test miniprogram/tests/test-page-budgets.js
           node --test miniprogram/tests/test-learning-controller-budgets.js
           node --test miniprogram/tests/test-home-mastery-fallback.js
+          node --test miniprogram/tests/test-home-login-guide.js
           node --test \
             miniprogram/tests/test-quiz-runner-observer.js \
             miniprogram/tests/test-quiz-runner-answer-projection.js \

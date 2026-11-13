@@ -5,11 +5,12 @@ const {
   growthPageMethods,
 } = require('./utils/growth-page-controller')
 const { homeCanvasMethods } = require('./utils/home-canvas')
+const { guestLoginGuideMethods } = require('./utils/guest-login-guide')
 Page({
   ...growthPageMethods,
   ...homeCanvasMethods,
+  ...guestLoginGuideMethods,
   _growthApi: null,
-
   data: {
     guestMode: true,
     user: {},
@@ -93,7 +94,7 @@ Page({
 
   onLoad() {
     this._alive = true
-    this.setData({ guestMode: !auth.isLoggedIn() })
+    this.setData({ guestMode: !auth.isLoggedIn(), showLoginGuide: false })
     this.measureNavigation()
     this.detectRuntime()
   },
@@ -106,6 +107,7 @@ Page({
     // 资料弹层打开期间绝不做 setData / 用户同步，避免在原生开放能力完成回调前
     // 重建 button/input 节点，导致头像回调丢失或 nickname 快捷填入条被卸载。
     if (this.data.showProfileSheet) return
+    this._dismissLoginGuide()
     const showSeq = ++this._showSeq
     await this._validateHomeSession()
     if (!this._alive || !this._visible || showSeq !== this._showSeq) return
@@ -140,6 +142,7 @@ Page({
     if (!this._authed) Object.assign(basePatch, this._guestBasePatch())
     else basePatch.guestMode = false
     this.setData(basePatch)
+    this._syncLoginGuide()
   },
 
   async _syncHomeUser(showSeq) {
@@ -182,6 +185,7 @@ Page({
   },
 
   async openProfileSheet() {
+    this._dismissLoginGuide()
     if (!this._authed) {
       this.openLoginFromHome()
       return
@@ -565,7 +569,7 @@ Page({
     })
   },
 
-  measureNavigation() {
+  measureNavigation(callback) {
     let statusBarHeight = 20
     let windowWidth = 375
     try {
@@ -592,7 +596,7 @@ Page({
       navContentHeight,
       navHeight,
       navRightPadding,
-    })
+    }, callback)
   },
 
   startPrimaryTask() {
@@ -770,6 +774,7 @@ Page({
 
   onHide() {
     this._visible = false
+    this._pauseLoginGuide()
     this._showSeq++
     this._growthSeq++
     this._clearAnimTimer()
@@ -782,6 +787,7 @@ Page({
   onUnload() {
     this._alive = false
     this._visible = false
+    this._pauseLoginGuide()
     this._showSeq++
     this._growthSeq++
     this._profileSaveSeq++
