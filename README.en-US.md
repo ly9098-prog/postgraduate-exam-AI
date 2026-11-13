@@ -64,7 +64,7 @@ MemoGrad is a complete postgraduate-exam study platform that combines a WeChat M
 ## Architecture
 
 <p align="center">
-  <img src="assets/architecture.en.svg" alt="MemoGrad system architecture" width="100%" />
+  <img src="assets/architecture.en.svg?v=20261113" alt="MemoGrad system architecture" width="100%" />
 </p>
 
 The backend is split by `PROCESS_ROLE`:

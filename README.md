@@ -78,7 +78,7 @@ MemoGrad 是一套完整的考研刷题平台，覆盖微信小程序端、管�
 ## 系统架构
 
 <p align="center">
-  <img src="assets/architecture.zh.svg" alt="MemoGrad 系统架构图" width="100%" />
+  <img src="assets/architecture.zh.svg?v=20261113" alt="MemoGrad 系统架构图" width="100%" />
 </p>
 
 后端按 `PROCESS_ROLE` 拆分运行角色：
