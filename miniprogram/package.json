@@ -4,6 +4,6 @@
   "description": "考研智能刷题小程序",
   "private": true,
   "devDependencies": {
-    "acorn": "8.16.0"
+    "acorn": "8.19.0"
   }
 }
