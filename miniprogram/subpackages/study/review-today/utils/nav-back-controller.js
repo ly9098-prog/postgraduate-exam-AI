@@ -38,9 +38,11 @@ function createNavBackController(options) {
 }
 
 function navigateBack(options) {
-  const pages = options.getCurrentPages()
-  if (pages.length > 1) options.navigateBack()
-  else options.reLaunch({ url: '/pages/home/home' })
+  options.closeBackGuard(() => {
+    const pages = options.getCurrentPages()
+    if (pages.length > 1) options.navigateBack()
+    else options.reLaunch({ url: '/pages/home/home' })
+  })
 }
 
 module.exports = {

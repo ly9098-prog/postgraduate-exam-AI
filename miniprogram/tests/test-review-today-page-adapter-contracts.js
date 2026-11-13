@@ -60,7 +60,7 @@ const EXPECTED_PORTS = {
   ReviewTimer: ['clearInterval', 'createRequestId', 'formatElapsed', 'getSession', 'getTimerId', 'isPageAlive', 'monotonicNow', 'serverNow', 'setData', 'setInterval', 'setTimerId'],
   ReviewSession: ['getSession', 'setData'],
   StartBatch: ['buildOptionList', 'checkRenderInvariant', 'checkSetDataSize', 'computeAnsweredCount', 'enrichBlankOptionGroups', 'enrichQuestion', 'getBatchSize', 'getBlankOptionGroups', 'getCurrentFlowSeq', 'getData', 'getSession', 'getTodayRemainingCount', 'getTotalBatchCount', 'isContinuing', 'isFlowCurrent', 'isPageAlive', 'isStarting', 'loadOverview', 'logError', 'nextFlowSeq', 'normalizeQuestion', 'postNextBatch', 'recordRenderTrace', 'restoreDraft', 'setData', 'showToast', 'startReviewTimer', 'syncAnsweredFlags', 'updateRunnerFields'],
-  NavBack: ['clearMasterUndo', 'clearReviewActivity', 'clearReviewTimer', 'getCurrentPages', 'getPhase', 'isExitConfirmPending', 'isSubmittingGroup', 'logWarn', 'navigateBack', 'reLaunch', 'setExitConfirmPending', 'showConfirm'],
+  NavBack: ['clearMasterUndo', 'clearReviewActivity', 'clearReviewTimer', 'closeBackGuard', 'getCurrentPages', 'getPhase', 'isExitConfirmPending', 'isSubmittingGroup', 'logWarn', 'navigateBack', 'reLaunch', 'setExitConfirmPending', 'showConfirm'],
   ReviewSelfHeal: ['enrichQuestion', 'getCurrentIndex', 'getCurrentQuestion', 'getGroupQuestions', 'setData', 'setSafeModeActive', 'showQuestion'],
   GroupSubmitFlow: ['applyResult', 'begin', 'buildTimingSession', 'confirm', 'enrichForResult', 'failureNeedsRefresh', 'getGroupQuestions', 'getRequestId', 'isPageAlive', 'isQuestionAnswered', 'logError', 'request', 'setSubmitting', 'showResultFailureToast'],
   GroupSubmitEntry: ['clearMasterUndo', 'computeAnsweredCount', 'confirmController', 'getData', 'getSession', 'isConfirmPending', 'isMasterUndoInFlight', 'isPageAlive', 'setSubmitting', 'showToast', 'syncReviewSessionDay'],
@@ -233,6 +233,10 @@ test('nav-back exit confirm uses the shared dialog selector and degrades to a to
   navBack.setExitConfirmPending(true)
   assert.equal(navBack.isExitConfirmPending(), true)
   navBack.setExitConfirmPending(false)
+  const released = []
+  navBack.closeBackGuard(() => released.push('go'))
+  assert.deepEqual(selectors, ['#submitConfirm', '#rootBackGuard'])
+  assert.deepEqual(released, ['go'])
 
   const { page: missingPage } = recordingPage()
   const toasts = []
@@ -242,6 +246,9 @@ test('nav-back exit confirm uses the shared dialog selector and degrades to a to
     const missing = buildNavBackPageCapabilities(missingPage, deps())
     assert.equal(await missing.showConfirm({}), false)
     assert.equal(toasts.length, 1)
+    const missingReleased = []
+    missing.closeBackGuard(() => missingReleased.push('go'))
+    assert.deepEqual(missingReleased, ['go'])
   } finally {
     delete global.wx
   }

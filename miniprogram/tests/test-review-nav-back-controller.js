@@ -29,6 +29,7 @@ function createHarness(overrides = {}) {
     isExitConfirmPending: () => state.pending,
     setExitConfirmPending: value => { state.pending = value },
     isSubmittingGroup: () => state.submitting,
+    closeBackGuard: callback => callback(),
     logWarn: (...args) => { state.warnings.push(args) },
     showConfirm: options => {
       state.prompts.push(options)
@@ -143,4 +144,19 @@ test('a failing confirm dialog is logged and never navigates', async () => {
   assert.equal(state.pending, false)
   assert.equal(state.navigatedBack, false)
   assert.equal(state.activityCleared, false)
+})
+
+test('confirmed exit navigates only after the back guard closes', async () => {
+  const order = []
+  let releaseGuard
+  const { controller, state } = createHarness({
+    closeBackGuard: callback => { order.push('guard'); releaseGuard = callback },
+    navigateBack: () => order.push('navigate'),
+  })
+  state.phase = 'reviewing'
+  await controller.onNavBack()
+
+  assert.deepEqual(order, ['guard'])
+  releaseGuard()
+  assert.deepEqual(order, ['guard', 'navigate'])
 })

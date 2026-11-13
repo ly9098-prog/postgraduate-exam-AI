@@ -66,6 +66,11 @@ function buildNavBackPageCapabilities(page, deps) {
       isExitConfirmPending: submitConfirm.isPending,
       setExitConfirmPending: submitConfirm.setPending,
       showConfirm: submitConfirm.show,
+      closeBackGuard: callback => {
+        const guard = page.selectComponent('#rootBackGuard')
+        if (guard && typeof guard.navigateOut === 'function') guard.navigateOut(callback)
+        else callback()
+      },
       logWarn: (...args) => console.warn(...args),
   }
 }

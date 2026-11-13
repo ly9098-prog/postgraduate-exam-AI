@@ -101,6 +101,23 @@ test('a deferred confirmation rearm cannot reactivate a hidden or detached page'
   }
 })
 
+test('navigateOut closes the guard before releasing navigation', () => {
+  const harness = fixture()
+  const order = []
+  harness.component.navigateOut(() => order.push('navigate'))
+  assert.equal(harness.component.data.visible, false)
+  assert.deepEqual(order, [])
+  harness.definition.pageLifetimes.show.call(harness.component)
+  assert.equal(harness.component.data.visible, false)
+  harness.component.onAfterLeave()
+  assert.deepEqual(order, ['navigate'])
+  assert.equal(harness.calls.length, 0)
+
+  const hidden = fixture({ pages: [{}, {}] })
+  hidden.component.navigateOut(() => order.push('hidden'))
+  assert.deepEqual(order, ['navigate', 'hidden'])
+})
+
 test('delegated root back uses the shared exit prompt for repeated, cancelled and confirmed exits', async () => {
   const { createNavBackController } = require('../subpackages/study/review-today/utils/nav-back-controller')
   const harness = fixture({ delegate: true })
@@ -118,6 +135,7 @@ test('delegated root back uses the shared exit prompt for repeated, cancelled an
     isExitConfirmPending: () => pending,
     setExitConfirmPending: value => { pending = value },
     isSubmittingGroup: () => false,
+    closeBackGuard: callback => callback(),
     logWarn: () => {},
     showConfirm: () => {
       prompts++
@@ -165,6 +183,7 @@ test('restored and terminal pages wire the root guard', () => {
   const review = fs.readFileSync(path.join(miniRoot, `${routes[0]}.wxml`), 'utf8')
   assert.doesNotMatch(review, /enabled="\{\{!exitConfirmVisible\}\}"/)
   assert.doesNotMatch(review, /exitConfirmVisible/)
+  assert.match(review, /<root-back-guard\b[^>]*id="rootBackGuard"/)
   assert.match(review, /<submit-confirm\b[^>]*id="submitConfirm"/)
   assert.match(review, /delegate="\{\{phase === 'reviewing'\}\}"/)
   assert.match(review, /bind:back="onNavBack"/)

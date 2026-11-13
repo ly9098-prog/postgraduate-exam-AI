@@ -72,7 +72,7 @@ const MODULE_BUDGETS = {
   'review-draft-page-adapter.js': 29,
   'review-answer-page-adapter.js': 67,
   'review-overview-page-adapter.js': 84,
-  'review-session-page-adapter.js': 93,
+  'review-session-page-adapter.js': 95,
   'review-submit-page-adapter.js': 106,
   'review-progress-page-adapter.js': 126,
 }

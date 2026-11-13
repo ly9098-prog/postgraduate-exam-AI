@@ -1,5 +1,6 @@
 <page-meta page-style="{{phase === 'overview' || phase === 'empty' || phase === 'reviewing' ? 'height: 100vh; overflow: hidden;' : ''}}" />
 <root-back-guard
+  id="rootBackGuard"
   delegate="{{phase === 'reviewing'}}"
   bind:back="onNavBack"
 />

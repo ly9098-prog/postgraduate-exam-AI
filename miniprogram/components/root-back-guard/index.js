@@ -41,6 +41,7 @@ Component({
 
   methods: {
     _syncGuard() {
+      if (this._outbound) return
       const pages = getCurrentPages()
       // Delegated guards hand the back gesture to the page, so they must also
       // protect pushed pages; the root-only default keeps _returnHome safe.
@@ -51,7 +52,27 @@ Component({
       if (this._alive && this.data.visible !== visible) this.setData({ visible })
     },
 
+    // Close the container before navigating: an open page-container intercepts
+    // back/reLaunch and re-fires afterleave as a back gesture.
+    navigateOut(callback) {
+      if (typeof callback !== 'function' || this._outbound) return
+      if (!this._alive || !this.data.visible) {
+        callback()
+        return
+      }
+      this._outbound = callback
+      this._handling = true
+      this.setData({ visible: false })
+    },
+
     onAfterLeave() {
+      if (this._outbound) {
+        const outbound = this._outbound
+        this._outbound = null
+        this._handling = false
+        outbound()
+        return
+      }
       if (!this._alive || !this._active || !this.properties.enabled ||
         !this.data.visible || this._handling) return
       this._handling = true
