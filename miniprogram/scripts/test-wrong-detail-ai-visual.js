@@ -25,6 +25,8 @@ assert(js.includes('return aiState._resolvePreferredAnalysis(wq, _hasStoredAnaly
 assert(wxml.includes('<template name="ai-loading-sections">'), 'regeneration skeleton template is present')
 assert(wxml.includes('ai-regenerating-skeleton'), 'regeneration renders skeleton sections')
 assert(wxml.includes('wx:if="{{aiRegenerating}}"'), 'regeneration state swaps sections for the skeleton')
+assert(wxml.includes("{{index === 0 ? 'is-first' : ''}}"), 'first skeleton section is marked explicitly')
+assert(wxss.includes('.ai-regenerating-skeleton .ai-skeleton-section.is-first{border-top: none;}'), 'regeneration skeleton must not stack a second separator under the result header')
 assert(!wxml.includes('ai-regenerating-banner'), 'duplicate regeneration banner is removed')
 assert(wxml.includes('正在重新生成，先保留当前解析'), 'regeneration status stays exposed to assistive technology')
 

@@ -1,6 +1,6 @@
 <page-meta page-style="{{diagnosisSheetVisible || teacherSheetVisible ? 'overflow: hidden;' : ''}}"></page-meta>
 <template name="ai-loading-sections">
-<view class="ai-skeleton-section" wx:for="{{sections}}" wx:key="*this">
+<view class="ai-skeleton-section {{index === 0 ? 'is-first' : ''}}" wx:for="{{sections}}" wx:key="*this">
 <view class="skeleton-title-row"><view class="skeleton-index"></view><view class="skeleton-title"></view></view>
 <view class="skeleton-line long"></view>
 <view class="skeleton-line medium"></view>
