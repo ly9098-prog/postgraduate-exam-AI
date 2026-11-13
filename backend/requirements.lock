@@ -2,31 +2,32 @@ aiosqlite==0.20.0 \
     --hash=sha256:36a1deaca0cac40ebe32aac9977a6e2bbc7f5189f23f4a54d5908986729e5bd6 \
     --hash=sha256:6d35c8c256637f4672f843c31021464090805bf925385ac39473fb16eaaca3d7
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 alembic==1.18.4 \
     --hash=sha256:a5ed4adcf6d8a4cb575f3d759f071b03cd6e5c7618eb796cb52497be25bfe19a \
     --hash=sha256:cb6e1fd84b6174ab8dbb2329f86d631ba9559dd78df550b57804d607672cedbc
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 annotated-doc==0.0.5 \
     --hash=sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101 \
     --hash=sha256:c7e58ce09192557605d8bbd92836d7e1d520ac9580096042c0bfd197efacf1bb
     # via
-    #   -c /tmp/prod_constraints.txt
-    #   typer
+    #   -c /tmp/prod_constraints_next.txt
+    #   fastapi
 annotated-types==0.8.0 \
     --hash=sha256:13b2beaad985e05e2d6407ee4c4f35590b11f8d693a258a561055cac8f64cab7 \
     --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pydantic
 anyio==4.15.1 \
     --hash=sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101 \
     --hash=sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
+    #   fastapi
     #   httpx
     #   starlette
     #   watchfiles
@@ -34,13 +35,13 @@ apscheduler==3.10.4 \
     --hash=sha256:e6df071b27d9be898e486bc7940a7be50b4af2e9da7c08f0744a96d4bd4cef4a \
     --hash=sha256:fb91e8a768632a4756a585f79ec834e0e27aad5860bac7eaa523d9ccefd87661
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 async-timeout==5.0.1 \
     --hash=sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c \
     --hash=sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   asyncpg
     #   redis
 asyncpg==0.29.0 \
@@ -86,7 +87,7 @@ asyncpg==0.29.0 \
     --hash=sha256:f9ea3f24eb4c49a615573724d88a48bd1b7821c890c2effe04f05382ed9e8810 \
     --hash=sha256:ff8e8109cd6a46ff852a5e6bab8b0a047d7ea42fcb7ca5ae6eaae97d8eacf397
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 bcrypt==5.0.0 \
     --hash=sha256:046ad6db88edb3c5ece4369af997938fb1c19d6a699b9c1b27b0db432faae4c4 \
@@ -153,14 +154,14 @@ bcrypt==5.0.0 \
     --hash=sha256:f8429e1c410b4073944f03bd778a9e066e7fad723564a52ff91841d278dfc822 \
     --hash=sha256:fc746432b951e92b58317af8e0ca746efe93e66555f1b40888865ef5bf56446b
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
     #   pwdlib
 certifi==2026.10.19 \
     --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
     --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   httpcore
     #   httpx
     #   requests
@@ -267,7 +268,7 @@ cffi==2.1.1 \
     --hash=sha256:fb92203a88b3d3053034db775110081c49d28be6551923805e039924093761e4 \
     --hash=sha256:fcd22650c908d7b7da162bbfaab594a1227a15d1643a98c68b122ac642fa2264
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   cryptography
 charset-normalizer==3.5.2 \
     --hash=sha256:01077390b03f7988f11d700a2194e69b119741a86b1a638b1db88891e3eced8e \
@@ -443,20 +444,19 @@ charset-normalizer==3.5.2 \
     --hash=sha256:fd1fbe0f116b6e55da77aca2c6ddcddcfac2186cbf78bdebf40fc156efca389d \
     --hash=sha256:fe9753dfee015c570d73df76f899f18444d41388bffcde097deba51c4fadbb9f
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   requests
 click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
     --hash=sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34
     # via
-    #   -c /tmp/prod_constraints.txt
-    #   rich-toolkit
+    #   -c /tmp/prod_constraints_next.txt
     #   uvicorn
 coloredlogs==15.0.1 \
     --hash=sha256:612ee75c546f53e92e70049c9dbfcc18c935a2b9a53b66085ce9ef6a6e5c0934 \
     --hash=sha256:7c991aa71a4577af2f82600d8f8f3a89f936baeaf9b50a9c197da014e5bf16b0
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 contourpy==1.3.3 \
     --hash=sha256:023b44101dfe49d7d53932be418477dba359649246075c996866106da069af69 \
@@ -532,19 +532,19 @@ contourpy==1.3.3 \
     --hash=sha256:fd914713266421b7536de2bfa8181aa8c699432b6763a0ea64195ebe28bff6a9 \
     --hash=sha256:fde6c716d51c04b1c25d0b90364d0be954624a0ee9d60e23e850e8d48353d07a
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   matplotlib
 cos-python-sdk-v5==1.9.44 \
     --hash=sha256:2ab403f3b64efdbb9a1984ad3e4381bd7f0755d1064148aeb25269bd757b49ab \
     --hash=sha256:584a97ecd5e9b15b04a1e511e6dd0ea4eca00ee87fe50aa9a3c91ce716149bcb \
     --hash=sha256:c4dba5b61583b55c29dd0268805a21590bd144d719d2de3b2d7ecd3ec67091ac
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 crcmod==1.7 \
     --hash=sha256:dc7051a0db5f2bd48665a990d3ec1cc305a466a77358ca4492826f41f283601e
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   cos-python-sdk-v5
 cryptography==50.0.2 \
     --hash=sha256:0ddc924c04591c2811ca024d62ecad4f7f6f08af8939c211438f48a16bd23602 \
@@ -607,54 +607,34 @@ cryptography==50.0.2 \
     --hash=sha256:fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb \
     --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 cycler==0.12.1 \
     --hash=sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30 \
     --hash=sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   matplotlib
 defusedxml==0.7.1 \
     --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
     --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   fpdf2
-dnspython==2.9.0 \
-    --hash=sha256:9a4aedb833c3c1b49214d04d44d3032ab7a9135f7c1d29a549b4ff78fd82fda9 \
-    --hash=sha256:b44dc6b18f07a8b1c56676a19fbfdb5209415b046a9cece286baafa87ff3f7f1
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   email-validator
-email-validator==2.3.0 \
-    --hash=sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4 \
-    --hash=sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   fastapi
 et-xmlfile==2.0.0 \
     --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa \
     --hash=sha256:dab3f4764309081ce75662649be815c4c9081e88f0837825f90fd28317d4da54
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   openpyxl
-fastapi==0.111.0 \
-    --hash=sha256:97ecbf994be0bcbdadedf88c3150252bed7b2087075ac99735403b1b76cc8fc0 \
-    --hash=sha256:b9db9dd147c91cb8b769f7183535773d8741dd46f9dc6676cd82eab510228cd7
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   -r requirements.txt
-fastapi-cli==0.0.32 \
-    --hash=sha256:38024d2345275e1b37ce8848727a580d84901b570e96b3256d9d36a9a5039424 \
-    --hash=sha256:8dcc286fa32f01bbd3f65dd09cfd5a2540ed5f2230b77db7fd30978d6165f3c4
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   fastapi
+fastapi==0.162.5 \
+    --hash=sha256:1ca37f64f61c99cebd38636e67525fb721c5e8c1169f07f2a35d73b0a63265d4 \
+    --hash=sha256:5303c67415fde762889ca337db79d27b755b8bd09cef314fa7a4340bb30bfd2b
+    # via -r requirements.txt
 flatbuffers==25.12.19 \
     --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   onnxruntime
 fonttools==4.67.0 \
     --hash=sha256:0781fe22583529e1e98bb8a3a33040632e202a4c427ed7e65412c41a21b8ebcb \
@@ -716,14 +696,14 @@ fonttools==4.67.0 \
     --hash=sha256:fcb9743140419410161acfe7ec205fb0a8a703acfccb85b586becb5a97c047c9 \
     --hash=sha256:fd79e36c2968e9fc3e1b082f2ba7dc63ae88a161a3d8ceaa0746b906455f3617
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   fpdf2
     #   matplotlib
 fpdf2==2.8.9 \
     --hash=sha256:5b0b3786f5236a2b3cc83c1fee567df17ddd314f8c4e13d820d8f09b617ab4f0 \
     --hash=sha256:6e1d94af6d6311950a23dec7fb5fc84b000203eb59aee8e76c1e701b12a14976
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 greenlet==3.5.6 \
     --hash=sha256:0616b8f878098c5681fd8f0dc92d887551717402342a70f0abcbfea5f5ad8a44 \
@@ -806,19 +786,19 @@ greenlet==3.5.6 \
     --hash=sha256:fe3170a69fe039b18ad18171e66faa9a75f6fe9d78f968fd9b54e09fbd714d81 \
     --hash=sha256:fea4427d1ffdb3b523d7daa6712038428a4c16c450b9777bdd1221cfee0eab49
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   sqlalchemy
 gunicorn==22.0.0 \
     --hash=sha256:350679f91b24062c86e386e198a15438d53a7a8207235a78ba1b53df4c4378d9 \
     --hash=sha256:4a0b436239ff76fb33f11c07a16482c521a7e09c1ce3cc293c2330afe01bec63
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 h11==0.16.0 \
     --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   httpcore
     #   uvicorn
 hiredis==3.5.0 \
@@ -950,13 +930,13 @@ hiredis==3.5.0 \
     --hash=sha256:fca8f8974588f3563decb8812df201f08cd2ac1d4bb84fca295ff820cfbf0524 \
     --hash=sha256:fcc7542689996df026486d75a29080e102c6b7131c064e22b762949f44d5e4c2
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   redis
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   httpx
 httptools==0.9.0 \
     --hash=sha256:02bc5b3dcb6394b9d825fd62a7bfa0b2943063a3c89abc4492ad45e334a20eb5 \
@@ -1078,42 +1058,34 @@ httptools==0.9.0 \
     --hash=sha256:f9ccc9884241efceb4547a92955d128574c864681f11b7ea3ecbde295fafbe8b \
     --hash=sha256:fc1a4f9d18d32a6e0a0a0a382986a60a2126f5144dd08715be7adb8df18e8a46
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   uvicorn
 httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
-    #   fastapi
 humanfriendly==10.0 \
     --hash=sha256:1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477 \
     --hash=sha256:6b0b831ce8f15f7300721aa49829fc4e83921a9a301cc7f606be6686a2288ddc
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   coloredlogs
 idna==3.20 \
     --hash=sha256:a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44 \
     --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   anyio
-    #   email-validator
     #   httpx
     #   requests
 iniconfig==2.3.1 \
     --hash=sha256:67f4b9c50da0dedf52af349e7749a80a9057a5031199791b906c3bb3ae878960 \
     --hash=sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pytest
-jinja2==3.1.6 \
-    --hash=sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d \
-    --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   fastapi
 kiwisolver==1.5.1 \
     --hash=sha256:007a5553dfc4f4e8d184f588a0200e2cd4b63a59cc8796df3c39909e679dc7a0 \
     --hash=sha256:0324cd2567259b7a095f6cf18a52b0ffc6f3de9e69528ff1bc0e7a37bd43ff1a \
@@ -1257,7 +1229,7 @@ kiwisolver==1.5.1 \
     --hash=sha256:fc271a6f0a2126958f4090e5507b9da5848927dae331f8f763bd4aa642b3d2cd \
     --hash=sha256:febcce10f2bcdbb80b4ea919238a6a4ac13dbc4c7cadbe8d5d75c3682f8b5404
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   matplotlib
 lxml==6.1.3 \
     --hash=sha256:032a0a97eed428bd143c75a11118238546424ceb2fa311cca5f073aa44658dc4 \
@@ -1437,20 +1409,14 @@ lxml==6.1.3 \
     --hash=sha256:febd35ef45f603c2d74b74655efdbf45e14f55fc0aef4ac82b663ca829b283e0 \
     --hash=sha256:ff88a92cafde90888511242d1c54afcc1a8adbb6dc0a88fa7f87e29e92400d4a
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   python-docx
 mako==1.4.3 \
     --hash=sha256:723296007c870bfd6b3f0c3230dba7198096e5269297ebf5e4eff9e7ffa39d4f \
     --hash=sha256:cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   alembic
-markdown-it-py==4.2.0 \
-    --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
-    --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   rich
 markupsafe==3.0.4 \
     --hash=sha256:007e1ffd9bf65bb6ee96df7b258fc632a4868dd5566037986c64781f35a36e98 \
     --hash=sha256:02fa4acbc6a3fc5c693c34d4dd8c1130b7fe99cc915181b0ddd6f72aeb296002 \
@@ -1604,8 +1570,7 @@ markupsafe==3.0.4 \
     --hash=sha256:fd9f8797427910198f95bced71ddfed61130d7e349213bfb8466c9c99e2c46a8 \
     --hash=sha256:fdb4ca07ab75ffadab4a8b135ad59cdbb3156b99310f3d565370da74a15d6bd3
     # via
-    #   -c /tmp/prod_constraints.txt
-    #   jinja2
+    #   -c /tmp/prod_constraints_next.txt
     #   mako
 matplotlib==3.11.2 \
     --hash=sha256:01dc8eaaab5a9fce9ff615eca82345728f289e4715b186ee10c6d85272fc26bb \
@@ -1662,25 +1627,19 @@ matplotlib==3.11.2 \
     --hash=sha256:f2ac30cf5eb5dff1b584627ae0b0e1186551a4f69ae3c75073911da497a29170 \
     --hash=sha256:fea03cf56568cc1cba08b470be6a0559e71c3a5b688d54b7179bb35ba23d0821
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
-mdurl==0.1.2 \
-    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
-    --hash=sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   markdown-it-py
 mpmath==1.3.0 \
     --hash=sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f \
     --hash=sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   sympy
 networkx==3.6.1 \
     --hash=sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509 \
     --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pymupdf
 numpy==1.26.4 \
     --hash=sha256:03a8c78d01d9781b28a6989f6fa1bb2c4f2d51201cf99d3dd875df6fbd96b23b \
@@ -1720,7 +1679,7 @@ numpy==1.26.4 \
     --hash=sha256:f870204a840a60da0b12273ef34f7051e98c3b5961b61b0c2c1be6dfd64fbcd3 \
     --hash=sha256:ffa75af20b44f8dba823498024771d5ac50620e6915abac414251bd971b4529f
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
     #   contourpy
     #   matplotlib
@@ -1752,82 +1711,23 @@ onnxruntime==1.31.0 \
     --hash=sha256:e85c1632c0a8cf488bd8f1039f5320877b864c8f9ebd4122fb8bb909f83b7096 \
     --hash=sha256:e93d7c5fad20afa697ac16f376fd0306ed180f9a376e86106cc0b7d84f53ef87
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pymupdf
 openpyxl==3.1.5 \
     --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2 \
     --hash=sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
-orjson==3.13.0 \
-    --hash=sha256:0526a3456db67b264c6d661b5f090077f326b6cd074d0ef53a72763595dec5d7 \
-    --hash=sha256:08bf722f923d2100bc5e5a5dcf72c656db557049c1bea26582fdd5dd9d5395a1 \
-    --hash=sha256:1807c2fa49d393c7ee95fd1ef1b39cbb24aa3ccd81f30b84503ba59407666960 \
-    --hash=sha256:1d84820b2ec4ac975cba482214032de5b0dbdd17046170c98e642ef9c4a4ee4b \
-    --hash=sha256:2715c4808d1571029ed18fd07a82140bf3ba7def0dc89f8d015c416e3649bf87 \
-    --hash=sha256:3ef75ed7e81dae34a3649f82df52cd85f9ac839a7d6ec78ab355b33b3b27ef7f \
-    --hash=sha256:4329c19b8a25693f60a77b867c9d2a3ab637b20e36f5b7bea7f5acb492b44b15 \
-    --hash=sha256:45e34deb3437509f4ec9888dd9ee5dc426cfe21be10f1eb4ea3a9e4d33034f9e \
-    --hash=sha256:4e5c8175e1574dcbe446ee654275d353c1d78bbd9a0dc9f209bf35c9df72d171 \
-    --hash=sha256:4ee06e53b998c71ce3eb93b86222912fdd9dcced685ac64d4525d36fac338ea4 \
-    --hash=sha256:4f66eac85b072092e9941c3111882afd7527bf926cbc717038fa3654b582002b \
-    --hash=sha256:50a5202ba388b3850ba24437951727d3aa6d79a21964a30ae8dc6a059a5fd34c \
-    --hash=sha256:51d11525bc3ca736fa97ce4e4c7da9999cc00bf261522bede43b4e7531bd7965 \
-    --hash=sha256:554948becd1110123ef9f6a6e1310fd92b2d07d2cbac6dbf65df3de75702e736 \
-    --hash=sha256:58a9619d88f8818d9ab6b39d70d203789457ba13c1ed5d274f33ce9ae7e81a36 \
-    --hash=sha256:5ef4d4157392a0439b74f7e49e5636b4ea43d9616bd0884effc0195fffcaa2d5 \
-    --hash=sha256:637dbca1fccffe83780e806fbc0f17427c0c59bf822528eb0acc8f0aa9f19acb \
-    --hash=sha256:64e8f345048d988c8b68d3882e5d41028fca1219a9939b32e4a77be34c8ae8e3 \
-    --hash=sha256:65c4e0e106ccc7265b488385659117a6805c37d042f737558ecd68aa0c67ad8f \
-    --hash=sha256:6adcaa85d79977659a448b4123a88eb33511a11ed2db243535ad7ea88a6668e0 \
-    --hash=sha256:6c8bfe728b81b0fd58a3c7f3f9c5a113f87f2992c9948e0f28707aafd737c0bc \
-    --hash=sha256:6d0684895b119ad167fb4ec05113639dc7f728022deec4756a710e838ed92e7a \
-    --hash=sha256:6ff2a2c67f35202f7d823753d38ad371a9b7fc297567cdfff4420e763cb9f6f8 \
-    --hash=sha256:7804dd1d6161da0e53b284c2aebf20f23e78eaac617300803e1467d1828d987f \
-    --hash=sha256:78a12d4f8d740cc9ae197f5223682e5e960ba61b4fb2ce5a6a3bb54e83fde28e \
-    --hash=sha256:7991921c5da527a963b6d4cffd0e4ea89c7e71d4be0c8be1bfe6edb223ce7d96 \
-    --hash=sha256:7b3bc6b81835ce65f4729ae401607583d41139c6de95bc7453f450f1391d3e7b \
-    --hash=sha256:83705c12b4afde10c62a5dd3fe6fdb21b7900bd0dcd5af1c85612ae94d0ee590 \
-    --hash=sha256:84d87e322e1674408f85adea63f11aa19201eba082755aec20ebc217f493bbd2 \
-    --hash=sha256:8594956a75223f657e1e68c568c0eeb3dd145f02cd6b78a47fd9a8095dbc4eae \
-    --hash=sha256:89bcf2d4bc6c9a7e1763c8cf534f38712e66b76a0fefda7fb7785462f0d635e4 \
-    --hash=sha256:89efecad02515df7f318d0613b5dfd6d2a1acd323a2b8294712789a715945525 \
-    --hash=sha256:8c2ac5c09b017c484df1b4c68b2cf250b4e8ba08204cb58e7cd6cbbc71a9c902 \
-    --hash=sha256:91d933e668ff0ffe164d7c2daec36beba6d1ce7fadb71538fbe142a71f8a1e6e \
-    --hash=sha256:93c70a5e22bbbbdeafc7b273441e8452a196041d67fd4d9a9c450c66370a8486 \
-    --hash=sha256:948bad47f2e2e43527f14248364a0e5dee26dd3184691010ec4a1ebeb0fd6771 \
-    --hash=sha256:9825b954155b345c4759f24e5f8d652b9aec2261bb5d4e1abe06bba0a1200535 \
-    --hash=sha256:a0377d6962fa431c93ecd78fdea771bb62ec545b24ee0c5d4e32acf2260af259 \
-    --hash=sha256:a79cdc4934fe81f593072c94e13da3095e9d41c2deef8f6ff2901794ca1c5042 \
-    --hash=sha256:a7bfc7db961c7d96cb75889dc6a1e4ae1e91d87ee61da564f582bd742b8dfeef \
-    --hash=sha256:ac81530647c3423107cf61c3481e91f57134e9ddfb6ef83f5150ccbdcbc3a3ee \
-    --hash=sha256:ae1d895cf7bbfd50ef34bb63bb727b14514f259f3e3f8dd010783bd38e864c6e \
-    --hash=sha256:b081f0e7b600ff24513dec4ca75507fa05e904607847e386e8310d5b7b96b6c7 \
-    --hash=sha256:b571236d8393edcd3236e07423f762bfcf571f852aad667a3bce9e7b755e0790 \
-    --hash=sha256:b74c30e56346aad067937d766846ee74c231d1d18aad3f324e9b9261de3b2d5e \
-    --hash=sha256:bceadfd314bd238f584fc229a4bbaf0e573597e7a026dec5429fbf29fd66c641 \
-    --hash=sha256:c5e3ccaac3106e8fa6e2f2f6962449d7c757d7b067e41b395a19d6f0d6cec892 \
-    --hash=sha256:c749ab3ac30b5ab1ffb7677f8b92eacfdfdc5260210baa398f845bc3714c05d8 \
-    --hash=sha256:cbed5f4c4b88d94bcc36115f4c3bb3aa25da1563a5c3328aa3acebce2b083040 \
-    --hash=sha256:d1de5eb04485110c5da4c657e49168995d55e076b1ce60f1a042e254f4186c4f \
-    --hash=sha256:dd61e64802d51d1e4f16531c64536354fc3bc67932dc0cff254044f72bf0f187 \
-    --hash=sha256:dd9d9a101bd8dbfad112170f009cd155e52bb8c936468821a0d03cbb96c0e426 \
-    --hash=sha256:ded33b972cffdaf4ca0ac917338ab61d2bb10d68987dbcae641c313fbfdbf499 \
-    --hash=sha256:e8e05549f3b30f9d8a8e28c5aba11cc2a4b90b90961ec685ca58444b0815fc09 \
-    --hash=sha256:e9b61676116f755126b90e740a9cff36b91562f47ec330056cc88cc3b9f02f4b \
-    --hash=sha256:efa160215c4630836d3b1250af4c7a305acd8239e0d75aff986b8088c2fcacb6 \
-    --hash=sha256:f5c05a8fee59309f537590a1ff12d3c1009c485e96a50a9ac60dd085c09d0fc0 \
-    --hash=sha256:fb8644dc6d705e1269ed2842bf4dbe2b4e50d670de503bf79d5cef3a5148a4c7 \
-    --hash=sha256:fbbad6b9b1da43f25c1f5b20cd5a268e028a2fc95d5a8d1ade6059973bc71584
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   fastapi
+opentelemetry-api==1.45.2 \
+    --hash=sha256:2cbd737377e710ee740d261c94e93fa0f08e6d037c18f17513cc0a2d94479a34 \
+    --hash=sha256:d7b0008e21e5fd61cbe7a7f34ca3b6905a78ab677d9bc395e299359c75cda6b4
+    # via fastapi
 packaging==26.3 \
     --hash=sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   gunicorn
     #   matplotlib
     #   onnxruntime
@@ -1836,7 +1736,7 @@ pgvector==0.5.1 \
     --hash=sha256:94998a54b801b1075d623b8fa677fcb8210a7977b88f8e2203ab115c155af2e4 \
     --hash=sha256:ec5bcd5ffaefe6ecb2dcc9564ca921d284564b969183bc837a144604773af8ea
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 pillow==13.0.0 \
     --hash=sha256:02464da86f561f410e13b061ec37c3068a9cb557a095494157742d07b3c24a27 \
@@ -1923,7 +1823,7 @@ pillow==13.0.0 \
     --hash=sha256:ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b \
     --hash=sha256:ffea6b2986a797c84b6d1d27d4f43e0b83c73fc16281a930891cd237cf0d08fe
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
     #   fpdf2
     #   matplotlib
@@ -1931,7 +1831,7 @@ pluggy==1.7.0 \
     --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec \
     --hash=sha256:d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pytest
 protobuf==7.36.2 \
     --hash=sha256:497d0463ff3316681da6c0b9e8d06cb465d61abce00b613ab42226175644d1bb \
@@ -1943,7 +1843,7 @@ protobuf==7.36.2 \
     --hash=sha256:e11e1f0180583a2af89db6a2ecd9e8dc40aa6d2988ca175bfd0e6d12ea72d74e \
     --hash=sha256:f4fee11ec330d238b34a05c9b675f693c20415d1c5bd7d5320cc2f8a798eb9cf
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   onnxruntime
 psutil==7.2.2 \
     --hash=sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372 \
@@ -1968,19 +1868,19 @@ psutil==7.2.2 \
     --hash=sha256:eed63d3b4d62449571547b60578c5b2c4bcccc5387148db46e0c2313dad0ee00 \
     --hash=sha256:fd04ef36b4a6d599bbdb225dd1d3f51e00105f6d48a28f006da7f9822f2606d8
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pymupdf
 pwdlib==0.3.0 \
     --hash=sha256:6ca30f9642a1467d4f5d0a4d18619de1c77f17dfccb42dd200b144127d3c83fc \
     --hash=sha256:f86c15c138858c09f3bba0a10984d4f9178158c55deaa72eac0210849b1a140d
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 pycparser==3.11 \
     --hash=sha256:51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80 \
     --hash=sha256:d875f09c3507d00e1aba0eecc6dcadc1352f30fff09dc6bff2f1c2935e97c2bc
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   cffi
 pycryptodome==4.1.0 \
     --hash=sha256:174fd47875450f632788d6356f10e5ca71bb7b1f4fded9753e62ab2b930d37e5 \
@@ -2011,13 +1911,13 @@ pycryptodome==4.1.0 \
     --hash=sha256:f7bb8fcbfd72c840a17b67543b984018ead3247f7054bb729e24a8dda436eb35 \
     --hash=sha256:f7c39bbb1c0907a36e1baea1ee14ef5cc1eaadaea936017c3a125037581aa086
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   cos-python-sdk-v5
 pydantic==2.14.1 \
     --hash=sha256:9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454 \
     --hash=sha256:94f478203dd03404682a1ada216965651dd74b1d2d5ffd62e00e0837caab5c26
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   fastapi
     #   pydantic-settings
 pydantic-core==2.50.1 \
@@ -2159,27 +2059,24 @@ pydantic-core==2.50.1 \
     --hash=sha256:f77ac30b19221cd9bd3fcfa3d4614eff93140d0572ab730cded17b64adca05f3 \
     --hash=sha256:fe90228920fd8ff2be62622b6bb8a2b11acd65046d50c6b130614b5879605a20
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pydantic
 pydantic-settings==2.3.0 \
     --hash=sha256:26eeed27370a9c5e3f64e4a7d6602573cbedf05ed940f1d5b11c3f178427af7a \
     --hash=sha256:78db28855a71503cfe47f39500a1dece523c640afd5280edb5c5c9c9cfa534c9
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
     --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pytest
-    #   rich
-pyjwt==2.8.0 \
-    --hash=sha256:57e28d156e3d5c10088e0c68abb90bfac3df82b40a71bd0daa20c65ccd5c23de \
-    --hash=sha256:59127c392cc44c2da5bb3192169a91f429924e17aff6534d70fdc02ab3e04320
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   -r requirements.txt
+pyjwt==2.15.1 \
+    --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
+    --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
+    # via -r requirements.txt
 pymupdf==2.0 \
     --hash=sha256:707594e8de4946445489ca3274943911a505a5cb665adf8751a4edfc4c0fff58 \
     --hash=sha256:7733136f626fffe98677daa53c906eb45f2eb486a6450dbcfd652cbbd760f1e2 \
@@ -2187,67 +2084,64 @@ pymupdf==2.0 \
     --hash=sha256:f59f009b1586d56882739189cd3a4f0240efbfae28ebf268a3763ed9a2006270 \
     --hash=sha256:f92e8a7ae92c7b1cbffcbe8764166ab1234e0a37b07549f5951e7739241d34f0
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 pymupdf-layout==2.0 \
     --hash=sha256:03ac486c796839eae5c46e910364ad524fb1e83c7dc34553e8e704939d0236a7
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pymupdf
 pymupdf4llm==2.0 \
     --hash=sha256:43d4b4a2d0bf8b9b4d7f21a48875ef0016018dbad6677ef6b01ef2b0f6e392dd
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pymupdf
 pyparsing==3.3.3 \
     --hash=sha256:928ae7e20211f3b6f3915a72f06a0cfd29ab9d24279dd6346b6b1a7146397d36 \
     --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   matplotlib
 pytest==9.1.1 \
     --hash=sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313 \
     --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pytest-asyncio
 pytest-asyncio==1.3.0 \
     --hash=sha256:611e26147c7f77640e6d0a92a38ed17c3e9848063698d5c93d5aa7aa11cebff5 \
     --hash=sha256:d7f52f36d231b80ee124cd216ffb19369aa168fc10095013c6b014a34d3ee9e5
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   matplotlib
 python-docx==1.2.0 \
     --hash=sha256:3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7 \
     --hash=sha256:7bc9d7b7d8a69c9c02ca09216118c86552704edc23bac179283f2e38f86220ce
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 python-dotenv==1.2.4 \
     --hash=sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc \
     --hash=sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pydantic-settings
     #   uvicorn
-python-multipart==0.0.20 \
-    --hash=sha256:8a62d3a8335e06589fe01f2a3e178cdcc632f3fbe0d492ad9ee0ec35aab1f104 \
-    --hash=sha256:8dd0cab45b8e23064ae09147625994d090fa46f5b0d1e13af944c331a7fa9d13
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   -r requirements.txt
-    #   fastapi
+python-multipart==0.0.33 \
+    --hash=sha256:8f16c07b36add9da6b2ee87d3efcaf0a45a6de9c3d0a5dd94e9ccf7675a7bc45 \
+    --hash=sha256:b8112424a6abd162ec08d390565dd113ad699f2fe6fef3c987b8bbcbfe9e390d
+    # via -r requirements.txt
 pytz==2026.5 \
     --hash=sha256:e658af3757f9e26a9d25dd2aff38335acd92bc9104f890a894b2c1ba28311b03 \
     --hash=sha256:fa23724b9c486543b9ff54a327ee7569ac83ade54bb9afd0fc18676620401c86
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   apscheduler
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
@@ -2324,51 +2218,32 @@ pyyaml==6.0.3 \
     --hash=sha256:fa160448684b4e94d80416c0fa4aac48967a969efe22931448d853ada8baf926 \
     --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pymupdf
     #   uvicorn
 redis==5.0.1 \
     --hash=sha256:0dab495cd5753069d3bc650a0dde8a8f9edde16fc5691b689a566eda58100d0f \
     --hash=sha256:ed4802971884ae19d640775ba3b03aa2e7bd5e8fb8dfaed2decce4d0fc48391f
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
     --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   cos-python-sdk-v5
-rich==15.0.0 \
-    --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
-    --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   rich-toolkit
-    #   typer
-rich-toolkit==0.20.6 \
-    --hash=sha256:04768f19438df877c6279e6e668ab0d88b5fff5c7ef3ac302838d97f7b03472e \
-    --hash=sha256:465453ba6f94f99401f59f79fb562827ba5f6b4d4759015d40019f5c67750262
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   fastapi-cli
 sentry-sdk==2.72.0 \
     --hash=sha256:0d2ffbc28ee2e63cbaf3d015e93b448cffcc3ef3be03a44704ad36ade72faa95 \
     --hash=sha256:3e13ace4ffd0b3cc78288236edfc4e4bd90eb12a396cc5845fa10a58ff289f50
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
-shellingham==1.5.4 \
-    --hash=sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686 \
-    --hash=sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   typer
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   apscheduler
     #   cos-python-sdk-v5
     #   python-dateutil
@@ -2423,199 +2298,70 @@ sqlalchemy==2.0.30 \
     --hash=sha256:f7703c2010355dd28f53deb644a05fc30f796bd8598b43f0ba678878780b6e4c \
     --hash=sha256:fa561138a64f949f3e889eb9ab8c58e1504ab351d6cf55259dc4c248eaa19da6
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
     #   alembic
-starlette==0.37.2 \
-    --hash=sha256:6fe59f29268538e5d0d182f2791a479a0c64638e6935d1c6989e63fb2699c6ee \
-    --hash=sha256:9af890290133b79fc3db55474ade20f6220a364a0402e0b556e7cd5e1e093823
+starlette==1.10.0 \
+    --hash=sha256:478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4 \
+    --hash=sha256:b8399098d4c1e3522734f7235dc79b1fc967f96cf139c81e0fa30479e0685f9b
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -r requirements.txt
     #   fastapi
 sympy==1.14.0 \
     --hash=sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517 \
     --hash=sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
 tabulate==0.10.0 \
     --hash=sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d \
     --hash=sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   pymupdf
-typer==0.27.3 \
-    --hash=sha256:d0396f770a560ab1b0a8504e13b5f254b728cedb05c61cf0359e944e50ce8901 \
-    --hash=sha256:e50022f28b82a86313e54501317a1db64bf8f8d036ff8cfe5ca7e47675454aff
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   fastapi-cli
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   aiosqlite
     #   alembic
     #   anyio
     #   fastapi
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
     #   pytest-asyncio
     #   python-docx
-    #   rich-toolkit
     #   sqlalchemy
+    #   starlette
     #   typing-inspection
 typing-inspection==0.4.4 \
     --hash=sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47 \
     --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
+    #   fastapi
     #   pydantic
 tzlocal==5.4.4 \
     --hash=sha256:8dbb8660838688a7b6ba4fed31d18dedf842afb4d47ca050d6d891c2c15f3be4 \
     --hash=sha256:aae09f0126a8a86fa736be266eb4a471380d26a0de3bc14844e7821fee3e2a15
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   apscheduler
-ujson==6.0.0 \
-    --hash=sha256:02148bd4706f42b063bb95f6cc309e16554fb4c250db4683688c0a3eb83048ad \
-    --hash=sha256:03a385e523f67dec6d4dad0970f20a080cad045b56d9a3564d07807090a9c106 \
-    --hash=sha256:0a4edbeb091b195031a0e96fab005150340e383c095cac6b5c2b7dc8f55040b5 \
-    --hash=sha256:0aa247eb50a52bb2190871ca8c2e0a96f8190bfdb1ebd68c70d1bf422f640b73 \
-    --hash=sha256:0d6e29b91a0934ed9d22ee48aa91518523cd2ce1c6caee2810b439fb371b8439 \
-    --hash=sha256:0dd8981828f6b515ba5e9f2473f433aa59bebe4784182b48695b71af52033b4f \
-    --hash=sha256:0e94f0b95459caa6cb5e333baf6763bf1e7a96ea5e4f1ea7fbb0ad88e81a88ab \
-    --hash=sha256:0eeef12ef46e129278b50ca4c66c6b35c318f2fd09346bacddf218ed378cc0bb \
-    --hash=sha256:0f3eff1f93d9d1f0bd5eee35883b9c71ad9befcfcd0ddc7cd5862c69fba21cf6 \
-    --hash=sha256:102ddbb1677540f0cae80cc36f5db9663a626c7b3bf872ed10f10fe72343a3c9 \
-    --hash=sha256:1080587042cb19f9cfb08f289498d866ac5f93393b21006321dea331dbf62375 \
-    --hash=sha256:108a9f3a635913d38a856e05007afc9b243929938939cd11576a3f5484925145 \
-    --hash=sha256:15aa57f6d0dafccd20f282f46f6a8d721d46c73fd9474f5ba996e9adc48d3177 \
-    --hash=sha256:1cda9f81e58120675dbaba7b254849ee59698e5dee83c4383a3c1a96ca92a679 \
-    --hash=sha256:20eff4f1ea3b970b998bf111036404eb18e976d4919783f793e539370b8627cb \
-    --hash=sha256:212191672712e5c40219d568c495a8a0bec526934eb87f16f30da78d962fe5ca \
-    --hash=sha256:2145005321a4b175486dd890946b036bb8730e4e8e17744f5abce23ea014e024 \
-    --hash=sha256:222389a616f6407eb40e1efa80a35c1ba468903e50a305faf425c26e3c32bdb9 \
-    --hash=sha256:22eafdd4f8ee6fe2db0737285c75b15f7486dc53c07b09a4b3699c92c407c3e5 \
-    --hash=sha256:28ac884b58c62eacdb6ac67284475b3f19b8160dbacb723956e67a0c11e45014 \
-    --hash=sha256:2a09d4ea9ee60c023220195b229ce2688479dbdcf51630acdd54ee75b27c0c00 \
-    --hash=sha256:2c5a1b422ebe9919a39c183543dff29edce76bac90080af5ceed51aeb6b60d0d \
-    --hash=sha256:2dbe0b6d417b458164ccf1f59e081d6bd65c1fb2f626e0daeb6fb88c436f9643 \
-    --hash=sha256:2e36269e715c8deea036d263557042e2598e79d52110233c1a623ed9e7c1cf0a \
-    --hash=sha256:2f3c0a77235d7ffcce5c54b872fa25de4f14e6ffc159c62ad93b0a9ca98a1d20 \
-    --hash=sha256:34c0403b485d8ddd86bd29d879cc9f72223579b57188b0a2bc07a8b06f8cfbdf \
-    --hash=sha256:3b6494d29f7103a97d930cbd25f23fdc4d77e145a931e743660d697a200fd831 \
-    --hash=sha256:3bd770b553bebc408b49d6fdb46efb1dc568368d949ac7813a07fcccaea044ae \
-    --hash=sha256:3d56d408ccfb9b0e5c2b4ea687396df30ca42ebe2aedac88362069620ce65402 \
-    --hash=sha256:455e6ae6c925eca6358110e665a31e5bbcf0a93dfe9822a26b954c9351de2c3f \
-    --hash=sha256:4579b8c96824f65888d4a615463c2dc2b7db6c6f0c7f83ece2a58714fd1a8123 \
-    --hash=sha256:4a69419253e9367281db03355eb55b5231eef5ff338bb816eb5926ee788faf48 \
-    --hash=sha256:5376a8c14d0eaf80789bdb10e21ae12582cdf526eb921a47f57053ef08c63f8c \
-    --hash=sha256:54ab6b66fa6f67dfa8234e109df132074e155af3b299ad83aab13ba4b6db9b3f \
-    --hash=sha256:5919fe3109a08f8bd682a2ad1cec5cdeff7c1f563b812aba26e86b8b0ab05558 \
-    --hash=sha256:593acfa0f36ada24e89c07147441fe364081fa1631db73ee55f40893c196e0b9 \
-    --hash=sha256:5b3afbe992e2d1b8c1e4e7a0da2c77da23f29545e5ba695a4a9241702234f20e \
-    --hash=sha256:619b2152aa77c57a535e3e7eaf88ec8e25beac6d380378b2ade10362cce50f75 \
-    --hash=sha256:63b56e3fcccc339e2c1332e75adc779bd145964e1a47a39a229fa01b2e25618a \
-    --hash=sha256:63eefaa34abbe14167493710619b840d3fc167ba86e5fbe0c4a5eb01686aa3a0 \
-    --hash=sha256:65bbea52c251b568268b61f9377bee867addc81c9b4c24da277b051ce16f6151 \
-    --hash=sha256:65e0e0c21ead4d0087c9c65a82eb2446c4bd51d36388d41035ce773517e7a3bf \
-    --hash=sha256:666a91606eeb47c997927ff294f3a9f8f930a02d0d2293ec7b19da5ed688f7ec \
-    --hash=sha256:6759d1a9f8aa45dbe2fb3e49ef181e8e6dacca89c595c5ec007ab2b839235117 \
-    --hash=sha256:683501475e3dfa935574bfd2b3d26f7393b4a880a745aeab63cc3d013027bba0 \
-    --hash=sha256:68d623416ad997666bd8ea899b15554462b6250e803f4ce084c7dfd06a775314 \
-    --hash=sha256:7168df25a051fd2a60f8d123b2123b60ead7c1f22cdd467ab7c2bba0fad0aec1 \
-    --hash=sha256:7253ae5cac107d2940226a113165738630a98c19cdeaec1e6d6d6c3a7c307b95 \
-    --hash=sha256:7a1472649bc9ef3b9ce3ab279e9e812368bfac25210b7ec96bd544767c019577 \
-    --hash=sha256:7de7692f330c1ceaf6335ad8039d2fe9344d30ecb415e86ee719e9d5585b2077 \
-    --hash=sha256:7e747c535d4ca9afdde31e034484a1020717fb18fa8a8faa789171abeb2ad1ff \
-    --hash=sha256:801ff407fda799f4ff98d960342128b065a14113eaccfc116b50092342636861 \
-    --hash=sha256:80e23393feb707582e0ad495c397a4477b646d08094d2df64f7316f9fafd8aae \
-    --hash=sha256:8141cade37dabc5f090eb5e6a267eabb6b193078becdc82aaf10433196715c33 \
-    --hash=sha256:83194e213d9df2f2aed1edb821689f99c0f7789bdee173125fda510282f61070 \
-    --hash=sha256:83ed82fe4a17fd30796e65edeb46409f49e2794a33c0b6649d5194347f2412f0 \
-    --hash=sha256:8604968307105c3229ce0170e70bf3f172cf96f73c978b1afbc3d0ec8bdfcf86 \
-    --hash=sha256:868856ea75794d952c773c506bb638e2a692bc5a8095cefebdcd98f43c79e772 \
-    --hash=sha256:88b237680c705fd37bacbaaa335106fecb234a47e1df0737d949b8e32c7eb5f9 \
-    --hash=sha256:89b1962c30dc29ba99e522c4f2e39173961b6098328cfbcdad3f9f1c308dae89 \
-    --hash=sha256:8af54166141d5c8ebeebc044c3569ef10edfcdf6fd8ecb487a2bf33c776ebc8f \
-    --hash=sha256:8cd9f7203c0b2aaed66809edf7e66aa3ab0fe3402e87b69a43b9dfd8d33125ab \
-    --hash=sha256:8d56340493496d50ccc41b460610c1ce6a197aac710733b5f36910e8c9f3ba6d \
-    --hash=sha256:90f766c5f8e55de2fe65e4241e3e2e46ed7528e7931255a7ed0dfcb5ce622b15 \
-    --hash=sha256:921408c159b01d39d70e90252b8ab17f16594fc91f229e6f881642fb0ed24ae7 \
-    --hash=sha256:928d83b72808dc73a5df530b7fc27101052be1baf013a5dd75a1535de6cf107e \
-    --hash=sha256:970f9ff27d12e089fa342379f52ea3f4aff6fbe8690aca9a1645c14aee5d08fb \
-    --hash=sha256:97caee7e4c3e20dff9e6adca0b7443c3cf9d7546ed5d0750954c5bb5456bad86 \
-    --hash=sha256:987e191700873419cc23d94d4212e57a85df24eebbe9a33785907b0c99a5a57a \
-    --hash=sha256:9b59ead8dd9a96399cc38994d19720443a3cc626b730cbb4f414fb768b3e2816 \
-    --hash=sha256:9d522e95bffac7338178757a7931b81639b9e0f2a3ee6e8c7ffdf867f2bfed36 \
-    --hash=sha256:9ef1920b423effe2837351d19a2278d7a516404a07200cca30b881077a2d7877 \
-    --hash=sha256:a054959ec07f2fd63b6e8a63019a6879262c4f1983a100545c5a0206eefe993e \
-    --hash=sha256:a2e699d5f290f81829f42638f8bc6582e3e73452d8607edf749ad3e1843946fa \
-    --hash=sha256:a38a21efd05384fb82d35bed81fac0ff6056ea39c3dee3c293885ce910879dd0 \
-    --hash=sha256:a41209acca3ade45d27ed665a20f8d174d5bb10c3bf0881802f5215e3269fadb \
-    --hash=sha256:aa03ac78c7806c6a391c037e0a63552e11532210b719bc062cddc00671a7577f \
-    --hash=sha256:ab7b316bba31be494635dcc5db87e429f2478073d15d2c54925c32fd9e1947f4 \
-    --hash=sha256:ad11c9153c775087d261634410da7cfaac2743d79bc9ab573177d9e3398f00c6 \
-    --hash=sha256:ad8bdad17cfc64aefb049e53687ff8730a72e2c3d99edcb36001683122597846 \
-    --hash=sha256:add6b3827cbd6ce068ad70b1b890d44271801386a726e2bafe5bced784466642 \
-    --hash=sha256:aea27aa0927b0423a0cfb167bd505c2dc59d1df65c66372204e43ba94fc964a8 \
-    --hash=sha256:af85ae40c71d422fad944aa8666d59374e4fa92f77899fce34b984037db41420 \
-    --hash=sha256:b2ab962524adb39dbad565fd259e15a1c26b8944fa978c24ed6dea5ab1eeefd0 \
-    --hash=sha256:b305657e2ddc29a50b333053e7c7f431a8c24c92b7dcbbf7a420f2330152b486 \
-    --hash=sha256:b3967550c8952bc516c79c40726a54313aceeb3162a8d5cc655362ab83d0957c \
-    --hash=sha256:b8bd6743ad58fe6067ea1677d5df4674bd7de143b038bcd4129c3a6ced483ae8 \
-    --hash=sha256:b8d019e935e4f8d6493690036161e62fae033891b71f20d238342ae266fec852 \
-    --hash=sha256:bbe0374e18beadac588f47e10cd14cf8b06395dc982062b643c5e3690355bfe3 \
-    --hash=sha256:bc6df52a60b521c7b7d69de0c14856397d3cce1e39aa22cfe439c350d6f52524 \
-    --hash=sha256:bde35c0d6b5a204990f43e4ab43b6e3e4d5a1de773246e11d518945e3ba789ed \
-    --hash=sha256:c2c670cd7aaad2a3bff450addb32b26aa831f82a8b6c2c875ec19bb282a6c45d \
-    --hash=sha256:c3e26771a0759d213e60c885012e1f75ad84897f3d6b56b65092fbc93615bc24 \
-    --hash=sha256:c51915961a51e37403fd94114e293d580dd916ddd1961b229217a87193d2454e \
-    --hash=sha256:c5d13a4ccf3fc9a00fb4e8cae818ad7ecf33f210d8098fecbfc087ff43573544 \
-    --hash=sha256:c626f68524a19f50d9a9babc17f9c379d1b2a9f2a3da5ac3c40a205cc736259f \
-    --hash=sha256:cca83e86a300db6c72847bc7acc259bf86481063aea408b07c8a96d649797b7f \
-    --hash=sha256:cd835565b660ca125f5895105981d691c708c15367b88a69fa4d92ddbe24504a \
-    --hash=sha256:cea0a63173e4ae98cd960f484096233da76a62550ac10c53312a69ad9f3545b1 \
-    --hash=sha256:d2e29a0dd1d33e49623d4c69bfa7e6d3d5c7530cf42bebe612cff965acffd1a9 \
-    --hash=sha256:d4a731cc7cd513bf4c4016a24a060fb1aa8475e8682e1f8b1bfb836f8d3f50f0 \
-    --hash=sha256:d7945560fc6ce687ea83aa0bc375aa8a1101d9eee1fcbd085c5e0a5b6c6ac8ad \
-    --hash=sha256:dae3765f731779faa947715485f6794bc5984802be4584478a3e9e5143dd62e1 \
-    --hash=sha256:dc8510c8b5b8373e0789ca05ebffc0aaab6e8a8f86d67956c91bc37f43d4f989 \
-    --hash=sha256:dd55ca435d6c3c7e4cb6d8a0a98a133d4fd1b67d9abf90449442d9f5a728a9ff \
-    --hash=sha256:dfceda99f3105e9e6fce8dfd157f80894ad20247dc9ffce368c8b7883e7a2aac \
-    --hash=sha256:e0652b2110fc374c766cdfca4fad61f9d13a0ad60c5b335ef3fed509374557bc \
-    --hash=sha256:e1fa46cb8ddbfba2adf8277b8225e2ebf5bae435e2251c730c17bc0020f63c5e \
-    --hash=sha256:e6926204905e1a2f278bacf92ff2fe31343bcc7fb9ff08fdd42be66b3a217ef0 \
-    --hash=sha256:e9359bfd0efd12593f0db40ccb2d1497284401da207f1d6a1783718313201b21 \
-    --hash=sha256:e9f1625d047d011804a3dde0b8c5099ca2230224ca6b17f13a97b5531799c3aa \
-    --hash=sha256:ec570979304a529a8be1bf9ea28889742a2ff5de9af1c6734584dfe1645da3e6 \
-    --hash=sha256:ee87d8c4a4ebbef1c7cb2cf251a1d77726ef06a1597ed04d3dce92709b8fe0f1 \
-    --hash=sha256:f9d26982045b28db1937ac60682a9940fdb72f9cab3421a5d56c03f2207c99e9 \
-    --hash=sha256:fb37ec7d7542e2f23fd7ca8fd034c8db7221c5e86d6a6a3a170711f993eecf15 \
-    --hash=sha256:fbae9b1a4d70e2283d71a0b66db2a91eb1a2cefaf370e47eff3a79f8ece7148d \
-    --hash=sha256:fc115cca04dbdfd98a67ec89ba5ffd8a87f3201171af54980cfd550997611c41 \
-    --hash=sha256:fd26d4b182b7138fc948cda55fe2e91b70d987731e169e628f42ba22cc6e3cce \
-    --hash=sha256:ff3b33d8c8dbbe32936d2056296324371a07ed0b29177e2eb8ec46569436817f
-    # via
-    #   -c /tmp/prod_constraints.txt
-    #   fastapi
 urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   requests
     #   sentry-sdk
 uvicorn==0.29.0 \
     --hash=sha256:2c2aac7ff4f4365c206fd773a39bf4ebd1047c238f8b8268ad996829323473de \
     --hash=sha256:6a69214c0b6a087462412670b3ef21224fa48cae0e452b5883e8e8bdfdd11dd0
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   -r requirements.txt
-    #   fastapi
-    #   fastapi-cli
 uvloop==0.23.0 \
     --hash=sha256:0305871ac712f54b62af73f943dbf21ae3ce80a44bc0f0151424484affa85645 \
     --hash=sha256:090865d8ce7a03986755a3ce711b7dd0d4b44eb14ab74368b717f3fad1180208 \
@@ -2679,7 +2425,7 @@ uvloop==0.23.0 \
     --hash=sha256:fefea5cf8cdda9053b962ca8a90216fb0b1d40907dcb6819382b42e483e6e9f6 \
     --hash=sha256:ff7144d8167e513fe39fbb46bffb4f6f192dfb1f4b0b4e9102e1fd4f212e4747
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   uvicorn
 watchfiles==1.3.0 \
     --hash=sha256:000b9688fc8133037a8b075c8ebf98f32844ff8964dda61e85c1db547dafc441 \
@@ -2716,7 +2462,7 @@ watchfiles==1.3.0 \
     --hash=sha256:ec3cd4bb181a7b6329134204c2277c7144ab5f62cce9c5335d6f901ee7ce8d6a \
     --hash=sha256:f0c9865240e065a2247f4b5248528ae3d01e0e8ae071462c250c884dc16e3ee3
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   uvicorn
 websockets==17.3 \
     --hash=sha256:018fab26140ce221c3853454a608e4e7004f4f10641cb97819dcd5b917bb2e99 \
@@ -2874,11 +2620,11 @@ websockets==17.3 \
     --hash=sha256:fdd00937f15f5f93c8e53d8060a8c4c010431ab595a9b5b50ddd569a04603944 \
     --hash=sha256:fe7a168d805c8a7bf1c2de55b7ab2bc958586bfd88d0e87235a92cac66b590a7
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   uvicorn
 xmltodict==1.0.4 \
     --hash=sha256:6d94c9f834dd9e44514162799d344d815a3a4faec913717a9ecbfa5be1bb8e61 \
     --hash=sha256:a4a00d300b0e1c59fc2bfccb53d7b2e88c32f200df138a0dd2229f842497026a
     # via
-    #   -c /tmp/prod_constraints.txt
+    #   -c /tmp/prod_constraints_next.txt
     #   cos-python-sdk-v5

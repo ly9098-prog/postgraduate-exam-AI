@@ -472,7 +472,8 @@ class TestFavorites:
     def test_list_favorites_unauthenticated(self):
         app.dependency_overrides.clear()
         resp = client.get("/api/v1/formulas/favorites/list")
-        assert resp.status_code == 403
+        # FastAPI's HTTPBearer rejects missing credentials with 401.
+        assert resp.status_code == 401
 
 
 # ── Random Tests ──

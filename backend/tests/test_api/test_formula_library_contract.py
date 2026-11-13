@@ -149,7 +149,8 @@ async def test_anonymous_favorite_http_reads_with_populated_public_content(
         assert catalog.status_code == 200
         assert catalog.json() == {"items": []}
         protected = await client.get("/api/v1/formulas/favorites/list")
-        assert protected.status_code == 403
+        # FastAPI's HTTPBearer rejects missing credentials with 401.
+        assert protected.status_code == 401
 
 
 @pytest.mark.parametrize(

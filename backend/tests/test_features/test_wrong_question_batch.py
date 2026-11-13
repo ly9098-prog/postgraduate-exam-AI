@@ -498,7 +498,7 @@ class TestBatchAPI:
             "action": "add_to_review",
             "ids": [1],
         })
-        assert resp.status_code == 403  # Missing auth header
+        assert resp.status_code == 401  # Missing auth header (HTTPBearer)
 
 
 # ── Master / Unmaster ──
