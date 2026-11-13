@@ -313,11 +313,11 @@ def _random_sample_query(query, total_count: int, need: int, id_col=None):
 
 
 async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
-    """返回当前产品可练习的 408 科目树。
+    """返回当前启用的学习科目树（408、高数、线代、英语、政治）。
 
     ``subjects.id`` 是唯一业务 ID；运行时仅接受规范化后的 canonical code。
-    若 408 根科目缺失、重复或被停用，公共入口直接关闭，不再按名称/旧编码
-    进行兼容回退。
+    408 根科目缺失、重复或被停用时隐藏对应分支；所有学习科目均遵守
+    Admin 启停状态，不通过名称或旧迁移状态绕过开关。
 
     科目树变化只来自 Admin 科目写接口，因此这里使用 24h 共享缓存；
     Admin 写路径会调用 ``invalidate_subject_tree_cache()`` 立即失效。
@@ -520,14 +520,14 @@ async def resolve_practice_subject_scope(
     if subj is None or not is_study_subject_enabled(subj):
         return False, []
 
-    # 获取当前学生端可用科目以构建树。额外开放的四个科目即使曾被旧迁移
-    # 标记为 inactive，也应在学生端继续可练习。
     all_result = await db.execute(
         select(Subject).order_by(
             Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()
         )
     )
     all_subjects = select_study_subject_records(all_result.scalars().all())
+    if subj.id not in {subject.id for subject in all_subjects}:
+        return False, []
 
     children_by_parent = _children_by_parent(all_subjects)
     has_enabled_children = len(children_by_parent.get(subj.id, [])) > 0

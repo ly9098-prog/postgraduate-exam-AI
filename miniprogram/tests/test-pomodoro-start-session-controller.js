@@ -29,6 +29,7 @@ function createHarness(overrides = {}) {
         ? overrides.selectedSubject
         : { id: 4, name: '数据结构' },
       subjectsError: overrides.subjectsError || '',
+      subjectsLoading: Boolean(overrides.subjectsLoading),
       selectedPreset: overrides.selectedPreset || 'standard',
       allocationMode: 'single',
       fromChapterId: '',
@@ -239,6 +240,16 @@ test('missing subject or subject-loading failure prevents the ceremony', async (
   await failed.controller.start()
   assert.deepEqual(failed.calls.phases, [])
   assert.deepEqual(failed.calls.toasts, [{ title: '科目加载异常，请重试', icon: 'none' }])
+})
+
+test('subject loading blocks both countdown and free starts with an old selected subject', async () => {
+  for (const selectedPreset of ['standard', 'free']) {
+    const { controller, calls } = createHarness({ subjectsLoading: true, selectedPreset })
+    await controller.start()
+    assert.deepEqual(calls.posts, [])
+    assert.deepEqual(calls.phases, [])
+    assert.deepEqual(calls.toasts, [{ title: '科目加载中，请稍候', icon: 'none' }])
+  }
 })
 
 test('a hidden page aborts after the ceremony wait without posting', async () => {

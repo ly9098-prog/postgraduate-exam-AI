@@ -452,6 +452,8 @@ async def _resolve_start_subjects(
         raise ValueError(f"科目不可用: {subj.name}")
     all_subjects = list((await db.execute(select(Subject))).scalars().all())
     enabled_ids = {item.id for item in select_study_subject_records(all_subjects)}
+    if subject_id not in enabled_ids:
+        raise ValueError(f"科目不可用: {subj.name}")
     if allocation_mode == EQUAL_408_MODE:
         allocation_subjects = _equal_408_subjects(subj, all_subjects, enabled_ids)
     else:

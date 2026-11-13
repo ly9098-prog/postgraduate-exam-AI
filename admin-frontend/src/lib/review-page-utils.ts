@@ -39,12 +39,6 @@ export function statusTone(status: string): "success" | "danger" | "warning" | "
   return "primary";
 }
 
-export function duplicateStatusTone(status: string | null | undefined): "warning" | "success" | "neutral" {
-  if (status === "possible_duplicate") return "warning";
-  if (status === "normal") return "success";
-  return "neutral";
-}
-
 /**
  * Determine whether the review drawer's save action should be blocked by
  * visual/table/runtime issues that require manual attention.
@@ -81,52 +75,4 @@ export function buildVisualBlockReasons(
   if (unresolvedTableCount > 0) reasons.push(`${unresolvedTableCount} 个结构化表格尚未人工核验`);
   reasons.push(...runtimeIssues);
   return reasons;
-}
-
-/**
- * Select the rollback baseline version from a desc-ordered version list.
- *
- * The versions endpoint returns items ordered by `version DESC`. The first
- * item is the current edited revision; the *previous* revision (the baseline
- * to diff against and the rollback target) is the second item. Fetching only
- * one version (page_size=1) was a bug that compared the current content to
- * itself.
- */
-export function selectRollbackBaselineVersion(
-  versions: { version: number }[] | undefined,
-): number | undefined {
-  return versions?.[1]?.version;
-}
-
-/**
- * Toggle a question id in the batch selection set, capped at `maxSelection`.
- *
- * The backend caps batch ids at 50; the client must enforce the same limit to
- * avoid silently dropping ids or sending more than the backend accepts.
- */
-export function toggleBatchSelection(
-  current: number[],
-  questionId: number,
-  checked: boolean,
-  maxSelection = 50,
-): number[] {
-  if (!checked) {
-    return current.filter((id) => id !== questionId);
-  }
-  if (current.length >= maxSelection) return current;
-  return [...current, questionId];
-}
-
-/**
- * Remove selected ids that are no longer visible in the current question list.
- * Returns the same array reference if nothing changed to avoid needless re-renders.
- */
-export function pruneStaleSelections(
-  current: number[],
-  visibleItems: { id: number }[],
-): number[] {
-  if (visibleItems.length === 0) return current;
-  const visibleIds = new Set(visibleItems.map((q) => q.id));
-  const pruned = current.filter((id) => visibleIds.has(id));
-  return pruned.length === current.length ? current : pruned;
 }

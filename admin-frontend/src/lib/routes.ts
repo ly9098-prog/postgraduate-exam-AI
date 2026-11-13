@@ -136,7 +136,7 @@ const questionsRoute: AdminRoute = {
 
 const questionReviewRoute: AdminRoute = {
   href: "/review",
-  label: "重审工作台",
+  label: "审核工作台",
   description: "已入库题目重审与回滚",
   permission: "question:review",
   icon: ClipboardCheck,

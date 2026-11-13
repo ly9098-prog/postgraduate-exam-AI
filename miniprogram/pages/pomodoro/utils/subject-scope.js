@@ -97,7 +97,7 @@ function filterStudyNode(item) {
   const isExtra = isExtraStudySubject(item)
   const isParent = isExtraParent(item)
   const isComputer = is408Subject(item)
-  if (item.is_active === false && !isExtra && !isParent) return null
+  if (item.is_active === false) return null
 
   const children = (Array.isArray(item.children) ? item.children : [])
     .map(filterStudyNode)

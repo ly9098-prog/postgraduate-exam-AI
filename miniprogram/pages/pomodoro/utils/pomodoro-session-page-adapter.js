@@ -3,7 +3,6 @@
 
 const { FREE_TIMER_MAX_MS, PHASE, POMODORO_PAUSE_TOGGLE_COOLDOWN_MS, parseServerTime } = require('./pomodoro-page-support')
 const { pomodoroTaskTypes } = require('../../../utils/storage')
-const { readSubjectCache, writeSubjectCache } = require('./subject-cache')
 const { buildSubjectChoices } = require('./subject-options')
 const { filter408SubjectTree } = require('./subject-scope')
 const { formatElapsedSec } = require('./timer-math')
@@ -11,12 +10,10 @@ function buildSubjectLoadPageCapabilities(page, deps) {
   const { api } = deps
   const fetchSubjects = () => page.data.guestMode ? api.get('/practice/subjects', {}, { auth: 'none' }) : api.get('/practice/subjects')
   return {
-    readSubjectCache: () => page.data.guestMode ? null : readSubjectCache(),
     fetchSubjects,
     filterSubjectTree: filter408SubjectTree,
     buildSubjectChoices,
-    writeSubjectCache: subjects => page.data.guestMode ? null : writeSubjectCache(subjects),
-    applySubjects: flat => page._applySubjects(flat),
+    applySubjects: (...args) => page._applySubjects(...args),
     setSubjectsState: patch => page.setData(patch),
     logError: (message, error) => console.error(message, error),
   }

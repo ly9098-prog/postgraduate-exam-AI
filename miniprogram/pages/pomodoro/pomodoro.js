@@ -559,7 +559,7 @@ Page({
     return this._getSubjectLoadController().load()
   },
 
-  _applySubjects(flat) {
+  _applySubjects(flat, options = {}) {
     const { patches, leaves } = buildApplySubjectsPlan(flat, this.data)
     for (const patch of patches) {
       this.setData(patch)
@@ -567,7 +567,7 @@ Page({
     if (patches.length > 1) {
       this._updateComputedFields()
     }
-    this._migrateRunningStateCache(leaves)
+    if (options.migrateRunningState !== false) this._migrateRunningStateCache(leaves)
   },
 
   _lookupSubjectIdByCode(code) {

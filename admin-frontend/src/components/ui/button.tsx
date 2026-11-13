@@ -1,7 +1,13 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
+type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "danger"
+  | "dangerOutline"
+  | "success"
+  | "ghost";
 type ButtonSize = "sm" | "md";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -17,6 +23,10 @@ const variants: Record<ButtonVariant, string> = {
     "border-[var(--color-border)] bg-white/90 text-[var(--color-text-primary)] shadow-[0_3px_10px_rgba(31,49,61,0.025)] hover:-translate-y-px hover:border-[rgba(74,111,138,0.38)] hover:bg-[var(--color-primary-light)]",
   danger:
     "border-[var(--color-danger)] bg-[var(--color-danger)] text-white hover:-translate-y-px hover:bg-[#ad6262]",
+  dangerOutline:
+    "border-[var(--color-danger)]/70 bg-white/90 text-[var(--color-danger)] hover:-translate-y-px hover:border-[var(--color-danger)] hover:bg-[var(--color-danger-light)]",
+  success:
+    "border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)] hover:-translate-y-px hover:bg-[var(--color-success)] hover:text-white",
   ghost:
     "border-transparent bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]",
 };

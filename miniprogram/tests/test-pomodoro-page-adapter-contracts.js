@@ -204,8 +204,8 @@ test('guest pomodoro uses the complete public catalog rather than the question p
   const subjects = await ports.fetchSubjects()
   assert.deepEqual(calls, [['/practice/subjects', {}, { auth: 'none' }]])
   assert.deepEqual(ports.filterSubjectTree(subjects)[0].children.map(node => node.subject_id), [5, 6])
-  assert.equal(ports.readSubjectCache(), null)
-  assert.equal(ports.writeSubjectCache(subjects), null)
+  assert.equal(ports.readSubjectCache, undefined)
+  assert.equal(ports.writeSubjectCache, undefined)
 })
 
 test('session adapters use injected API and keep delegating ports to the page', () => {
@@ -218,7 +218,7 @@ test('session adapters use injected API and keep delegating ports to the page', 
     buildStartTimerPageCapabilities(page, { api }),
     buildStartBreakPageCapabilities(page, { api }),
   ]
-  for (const ports of capabilities) assert.ok(Object.keys(ports).length >= 7)
+  for (const ports of capabilities) assert.ok(Object.keys(ports).length >= 6)
 
   const subjectLoad = capabilities[0]
   subjectLoad.fetchSubjects()
