@@ -16,6 +16,19 @@ type DrawerProps = {
 };
 
 /**
+ * True when this drawer is the top-most modal surface. A confirm dialog opened
+ * from inside the drawer must own Escape/focus until it closes.
+ */
+function isTopModalSurface(drawer: HTMLElement | null): boolean {
+  if (!drawer) return true;
+  const modals = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+  );
+  const topModal = modals.at(-1);
+  return !topModal || topModal.contains(drawer);
+}
+
+/**
  * Slide-in drawer from the right edge via portal.
  *
  * - Animates in/out with CSS transitions (opacity + translateX).
@@ -36,10 +49,12 @@ export function Drawer({
   const drawerRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // Mount/unmount with delay for exit animation
+  // Mount/unmount with delay for exit animation. The mount flag cannot be
+  // derived from `open` because the DOM must stay mounted while sliding out.
   useEffect(() => {
     if (open) {
       previousFocusRef.current = document.activeElement as HTMLElement;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMounted(true);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setVisible(true));
@@ -66,7 +81,7 @@ export function Drawer({
 
   // Escape key
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape" && isTopModalSurface(drawerRef.current)) onClose();
   }, [onClose]);
 
   useEffect(() => {
@@ -82,9 +97,9 @@ export function Drawer({
     if (!visible || !drawerRef.current) return;
     const drawer = drawerRef.current;
     const handleFocusTrap = (e: FocusEvent) => {
-      if (!drawer.contains(e.target as Node)) {
-        drawer.focus();
-      }
+      if (drawer.contains(e.target as Node)) return;
+      if (!isTopModalSurface(drawer)) return;
+      drawer.focus();
     };
     document.addEventListener("focusin", handleFocusTrap);
     return () => document.removeEventListener("focusin", handleFocusTrap);

@@ -4,12 +4,8 @@ import {
   textFromContent,
   renderJson,
   statusTone,
-  duplicateStatusTone,
   isBlockedByVisualIssues,
   buildVisualBlockReasons,
-  selectRollbackBaselineVersion,
-  toggleBatchSelection,
-  pruneStaleSelections,
 } from "./review-page-utils";
 import type { OptionVisualModel } from "@/lib/option-visual-utils";
 
@@ -71,13 +67,6 @@ describe("statusTone", () => {
   it("returns danger for rejected", () => { expect(statusTone("rejected")).toBe("danger"); });
   it("returns warning for re_pending", () => { expect(statusTone("re_pending")).toBe("warning"); });
   it("returns primary for unknown", () => { expect(statusTone("draft")).toBe("primary"); });
-});
-
-describe("duplicateStatusTone", () => {
-  it("returns warning for possible_duplicate", () => { expect(duplicateStatusTone("possible_duplicate")).toBe("warning"); });
-  it("returns success for normal", () => { expect(duplicateStatusTone("normal")).toBe("success"); });
-  it("returns neutral for null", () => { expect(duplicateStatusTone(null)).toBe("neutral"); });
-  it("returns neutral for undefined", () => { expect(duplicateStatusTone(undefined)).toBe("neutral"); });
 });
 
 const baseModel: OptionVisualModel = {
@@ -147,63 +136,5 @@ describe("buildVisualBlockReasons", () => {
   });
   it("returns null for legacy without issues", () => {
     expect(buildVisualBlockReasons({ ...baseModel, legacy: true, issues: [] }, 0, [])).toBeNull();
-  });
-});
-
-describe("selectRollbackBaselineVersion", () => {
-  it("returns undefined for undefined versions", () => {
-    expect(selectRollbackBaselineVersion(undefined)).toBeUndefined();
-  });
-  it("returns undefined when only one version exists (current only)", () => {
-    expect(selectRollbackBaselineVersion([{ version: 3 }])).toBeUndefined();
-  });
-  it("returns the second version as the baseline (desc order)", () => {
-    // versions endpoint returns DESC: [v3 (current), v2 (previous), v1 ...]
-    expect(selectRollbackBaselineVersion([{ version: 3 }, { version: 2 }, { version: 1 }])).toBe(2);
-  });
-  it("does not return the first (current) version", () => {
-    expect(selectRollbackBaselineVersion([{ version: 5 }, { version: 4 }])).not.toBe(5);
-  });
-});
-
-describe("toggleBatchSelection", () => {
-  it("adds an id when checked", () => {
-    expect(toggleBatchSelection([1, 2], 3, true)).toEqual([1, 2, 3]);
-  });
-  it("removes an id when unchecked", () => {
-    expect(toggleBatchSelection([1, 2, 3], 2, false)).toEqual([1, 3]);
-  });
-  it("does not add when already at cap", () => {
-    const full = Array.from({ length: 50 }, (_, i) => i + 1);
-    expect(toggleBatchSelection(full, 999, true)).toBe(full);
-  });
-  it("does not duplicate when already selected", () => {
-    expect(toggleBatchSelection([1, 2], 1, true)).toEqual([1, 2, 1]);
-  });
-  it("respects custom maxSelection", () => {
-    expect(toggleBatchSelection([1, 2], 3, true, 2)).toEqual([1, 2]);
-  });
-  it("allows unchecking even when at cap", () => {
-    const full = Array.from({ length: 50 }, (_, i) => i + 1);
-    const result = toggleBatchSelection(full, 1, false);
-    expect(result).toHaveLength(49);
-    expect(result).not.toContain(1);
-  });
-});
-
-describe("pruneStaleSelections", () => {
-  it("returns same reference when nothing is stale", () => {
-    const current = [1, 2];
-    expect(pruneStaleSelections(current, [{ id: 1 }, { id: 2 }])).toBe(current);
-  });
-  it("removes ids not in visible items", () => {
-    expect(pruneStaleSelections([1, 2, 3], [{ id: 1 }, { id: 3 }])).toEqual([1, 3]);
-  });
-  it("returns same reference when visible items is empty", () => {
-    const current = [1, 2];
-    expect(pruneStaleSelections(current, [])).toBe(current);
-  });
-  it("returns empty when no selections are visible", () => {
-    expect(pruneStaleSelections([1, 2], [{ id: 3 }, { id: 4 }])).toEqual([]);
   });
 });

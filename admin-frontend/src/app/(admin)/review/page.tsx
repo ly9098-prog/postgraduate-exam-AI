@@ -1,84 +1,99 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Eye, Search, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
-import { QuestionContentRenderer } from "@/components/question-content-renderer";
+import { MessageToast } from "@/components/ui/message-toast";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { hasPermission } from "@/lib/permissions/permissions";
-import { unresolvedTableCount, textFromContent, renderJson, statusTone, duplicateStatusTone, selectRollbackBaselineVersion, toggleBatchSelection, pruneStaleSelections } from "@/lib/review-page-utils";
-import type { AdminQuestion, AdminQuestionBatchRequest, AdminQuestionDetail, AdminQuestionImportSummary, AdminQuestionRollbackRequest, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
+import { unresolvedTableCount } from "@/lib/review-page-utils";
+import { flattenSubjects } from "@/lib/subject-tree-utils";
+import type {
+  AdminQuestion,
+  AdminQuestionDetail,
+  AdminSubjectNode,
+  BatchResult,
+  PaginatedResponse,
+  QuestionVersion,
+  QuestionVersionDetail,
+} from "@/lib/api/types";
+import { ReviewBatchResult } from "./components/review-batch-result";
+import { ReviewBatchSelectionBar } from "./components/review-batch-selection-bar";
+import { ReviewDetailDrawer } from "./components/review-detail-drawer";
+import { ReviewPagination } from "./components/review-pagination";
+import { ReviewQuestionList } from "./components/review-question-list";
+import { ReviewToolbar } from "./components/review-toolbar";
+import {
+  REVIEW_REASON_MAX_LENGTH,
+  buildReviewQuery,
+  createReviewIdempotencyKey,
+  formatBatchReviewMessage,
+  normalizeBatchResult,
+  pruneReviewSelection,
+  reviewReasonError,
+  reviewRequiresReason,
+  toggleAllReviewSelection,
+  toggleReviewSelection,
+  type NormalizedBatchResult,
+  type ReviewTab,
+} from "./review-queue-state";
+import { useDebouncedValue } from "./use-debounced-value";
 
 type ConfirmState =
   | { action: "approve"; id: number }
   | { action: "reject"; id: number }
   | { action: "rollback"; id: number; version: number }
-  | null;
+  | { action: "batch-approve" }
+  | { action: "batch-reject" };
 
-function renderDuplicateInfo(importRecord: AdminQuestionImportSummary | null | undefined) {
-  if (!importRecord) return null;
-  const status = importRecord.duplicate_status || "normal";
-  const isSuspicious = status === "possible_duplicate";
-  return (
-    <section className="blueprint-panel relative overflow-hidden rounded-3xl border border-[rgba(196,154,107,0.42)] bg-[var(--color-warning-light)] shadow-[var(--shadow-crisp)]">
-      <span className="absolute left-0 top-0 h-full w-1 bg-[var(--color-warning)]" aria-hidden="true" />
-      <div className="relative z-10">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(196,154,107,0.28)] bg-white/55 px-4 py-3 backdrop-blur-sm">
-          <div className="min-w-0">
-            <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-[var(--color-text-hint)]">Duplicate scan</p>
-            <p className="mt-1 font-display text-lg font-bold text-[var(--ink)]">重复检测</p>
-          </div>
-          <StatusBadge tone={duplicateStatusTone(status)}>{status}</StatusBadge>
-        </div>
-        <div className="space-y-3 px-4 py-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-[rgba(91,123,154,0.18)] bg-[rgba(255,253,248,0.72)] p-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-hint)]">题目 hash</p>
-              <p className="mt-1 break-all font-mono text-xs text-[var(--ink)]">{importRecord.question_hash || "—"}</p>
-            </div>
-            <div className="rounded-2xl border border-[rgba(91,123,154,0.18)] bg-[rgba(255,253,248,0.72)] p-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-hint)]">重复正式题</p>
-              <p className="mt-1 font-mono text-xs text-[var(--ink)]">{importRecord.duplicate_of_question_id ? `#${importRecord.duplicate_of_question_id}` : "—"}</p>
-            </div>
-            <div className="rounded-2xl border border-[rgba(91,123,154,0.18)] bg-[rgba(255,253,248,0.72)] p-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-hint)]">重复导入项</p>
-              <p className="mt-1 font-mono text-xs text-[var(--ink)]">{importRecord.duplicate_of_import_id ? `#${importRecord.duplicate_of_import_id}` : "—"}</p>
-            </div>
-          </div>
-          <p className="rounded-2xl border border-[rgba(91,123,154,0.14)] bg-white/55 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-            {isSuspicious ? "需要人工核对来源关系" : "未发现重复关联"}
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
+type MessageState = { text: string; tone: "success" | "danger" };
 
-function renderDiff(label: string, current: unknown, previous: unknown) {
-  const cur = renderJson(current);
-  const prev = renderJson(previous);
-  const changed = cur !== prev;
-  return (
-    <section key={label} className="space-y-1">
-      <p className="font-semibold text-[var(--ink)]">{label}</p>
-      {changed ? (
-        <div className="space-y-1 rounded-2xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-3">
-          <p className="text-xs font-semibold text-[var(--color-warning)]">变更前</p>
-          <pre className="whitespace-pre-wrap text-xs text-[var(--color-text-secondary)] line-through">{prev}</pre>
-          <p className="text-xs font-semibold text-[var(--color-success)]">变更后</p>
-          <pre className="whitespace-pre-wrap text-xs text-[var(--color-success)]">{cur}</pre>
-        </div>
-      ) : (
-        <pre className="whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{cur}</pre>
-      )}
-    </section>
-  );
+function confirmDialogCopy(state: ConfirmState | null, selectedCount: number) {
+  if (!state) return { title: "", description: "", confirmText: "确认", danger: false };
+  switch (state.action) {
+    case "approve":
+      return {
+        title: `通过题目 #${state.id}？`,
+        description:
+          "通过后题目会重新启用并进入正式题库，该操作会写入审计日志。",
+        confirmText: "通过",
+        danger: false,
+      };
+    case "reject":
+      return {
+        title: `拒绝题目 #${state.id}？`,
+        description:
+          "拒绝后题目会停用。请填写原因，原因会写入审计日志，便于后续追溯。",
+        confirmText: "拒绝",
+        danger: true,
+      };
+    case "rollback":
+      return {
+        title: `回滚到 v${state.version}？`,
+        description: `将用 v${state.version} 的内容覆盖当前题目，并恢复为审核通过；回滚本身会生成新版本。`,
+        confirmText: "回滚",
+        danger: true,
+      };
+    case "batch-approve":
+      return {
+        title: `批量通过 ${selectedCount} 道题？`,
+        description:
+          "通过后这些题目会重新启用。操作会逐题记录审计日志，并返回成功与失败明细。",
+        confirmText: "批量通过",
+        danger: false,
+      };
+    case "batch-reject":
+      return {
+        title: `批量拒绝 ${selectedCount} 道题？`,
+        description:
+          "拒绝后这些题目会停用。请填写统一原因，原因会写入审计日志。",
+        confirmText: "批量拒绝",
+        danger: true,
+      };
+  }
 }
 
 export default function ReviewPage() {
@@ -87,20 +102,42 @@ export default function ReviewPage() {
   const canReview = hasPermission(permissions, "question:review");
   const canRollback = canReview && hasPermission(permissions, "question:write");
   const canBatchReview = hasPermission(permissions, "question:batch_review");
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [keyword, setKeyword] = useState("");
-  const [tab, setTab] = useState<"re_pending" | "rejected">("re_pending");
+
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [keywordInput, setKeywordInput] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [tab, setTab] = useState<ReviewTab>("re_pending");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [previewId, setPreviewId] = useState<number | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [confirmState, setConfirmState] = useState<ConfirmState>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [baselineVersion, setBaselineVersion] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [message, setMessage] = useState<MessageState | null>(null);
+  const [batchResult, setBatchResult] = useState<{
+    decision: "approved" | "rejected";
+    result: NormalizedBatchResult;
+  } | null>(null);
+  const batchIdempotencyKeysRef = useRef(new Map<string, string>());
+  const keyword = useDebouncedValue(keywordInput, 300);
+
+  const queryParams = useMemo(
+    () => buildReviewQuery({ tab, keyword, subjectId, page, pageSize }),
+    [tab, keyword, subjectId, page, pageSize],
+  );
 
   const questions = useQuery({
-    queryKey: ["review-questions", tab, keyword],
+    queryKey: ["review-questions", queryParams],
     queryFn: () =>
-      apiRequest<PaginatedResponse<AdminQuestion>>(
-        `/questions${toQuery({ page: 1, page_size: 50, review_status: tab, keyword })}`,
-      ),
+      apiRequest<PaginatedResponse<AdminQuestion>>(`/questions${toQuery(queryParams)}`),
+    placeholderData: (previousData) => previousData,
+    retry: false,
+  });
+
+  const subjects = useQuery({
+    queryKey: ["review-subject-options"],
+    queryFn: () => apiRequest<AdminSubjectNode[]>("/questions/subject-options"),
+    staleTime: 5 * 60_000,
     retry: false,
   });
 
@@ -111,340 +148,475 @@ export default function ReviewPage() {
     retry: false,
   });
 
-  const previewVersions = useQuery({
+  const versions = useQuery({
     queryKey: ["review-preview", previewId, "versions"],
-    queryFn: () => apiRequest<PaginatedResponse<{ version: number }>>(`/questions/${previewId}/versions${toQuery({ page: 1, page_size: 2 })}`),
-    enabled: previewId !== null && tab === "re_pending",
+    queryFn: () =>
+      apiRequest<PaginatedResponse<QuestionVersion>>(
+        `/questions/${previewId}/versions${toQuery({ page: 1, page_size: 20 })}`,
+      ),
+    enabled: previewId !== null,
     retry: false,
   });
 
-  const previewVersionDetail = useQuery({
-    queryKey: ["review-preview", previewId, "version-detail"],
-    queryFn: () => apiRequest<QuestionVersionDetail>(`/questions/${previewId}/versions/${previewVersions.data?.items?.[1]?.version}`),
-    enabled: previewId !== null && tab === "re_pending" && Boolean(previewVersions.data?.items?.[1]?.version),
+  const versionItems = versions.data?.items ?? [];
+  const effectiveBaseline = baselineVersion ?? versionItems[1]?.version;
+
+  const baselineDetail = useQuery({
+    queryKey: ["review-preview", previewId, "version-detail", effectiveBaseline],
+    queryFn: () =>
+      apiRequest<QuestionVersionDetail>(
+        `/questions/${previewId}/versions/${effectiveBaseline}`,
+      ),
+    enabled: previewId !== null && typeof effectiveBaseline === "number",
     retry: false,
   });
 
-  const items = useMemo(() => questions.data?.items ?? [], [questions.data]);
+  const items = useMemo(() => questions.data?.items ?? [], [questions.data?.items]);
+  const totalPages = Math.max(1, questions.data?.total_pages ?? 1);
 
-  // Derive valid selections: filter out ids that are no longer visible in the
-  // current question list (e.g. after status change or keyword filter). This
-  // avoids stale selections without a setState-in-effect. The backend caps
-  // batch ids at 50; the checkbox onChange enforces the same cap on the client.
+  useEffect(() => {
+    // A filter change can shrink total_pages below the current page. Clamp it
+    // so the pagination footer never advertises a page that no longer exists.
+    if (page > totalPages) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
   const validSelectedIds = useMemo(
-    () => pruneStaleSelections(selectedIds, items),
+    () => pruneReviewSelection(selectedIds, items),
     [selectedIds, items],
   );
+  const allChecked =
+    items.length > 0 && items.every((item) => validSelectedIds.has(item.id));
+
+  const subjectOptions = useMemo(
+    () =>
+      flattenSubjects(subjects.data ?? [])
+        .filter((subject) => subject.is_active && subject.level > 1)
+        .map((subject) => ({
+          value: String(subject.id),
+          label: subject.name,
+          suffix: subject.code,
+        })),
+    [subjects.data],
+  );
+
+  const hasActiveFilters = Boolean(keywordInput.trim() || subjectId);
+
+  const closePreview = useCallback(() => {
+    setPreviewId(null);
+    setBaselineVersion(null);
+  }, []);
+
+  const openPreview = useCallback((id: number) => {
+    setPreviewId(id);
+    setBaselineVersion(null);
+  }, []);
+
+  const clearMessage = useCallback(() => setMessage(null), []);
+
+  /**
+   * Batch review requires an idempotency key. Reuse the key for an identical
+   * retry (same decision, ids and reason) so a lost response cannot double
+   * apply the batch; rotate it when the request fingerprint changes.
+   */
+  const batchIdempotencyKeyFor = (operation: string): string => {
+    const keys = batchIdempotencyKeysRef.current;
+    const existing = keys.get(operation);
+    if (existing) return existing;
+    const key = createReviewIdempotencyKey();
+    keys.set(operation, key);
+    return key;
+  };
+
+  const openConfirm = (state: ConfirmState) => {
+    setReason(state.action === "rollback" ? "恢复历史版本" : "");
+    setConfirmState(state);
+  };
+
+  const closeConfirm = () => {
+    setConfirmState(null);
+    setReason("");
+  };
+
+  const handleTabChange = (next: ReviewTab) => {
+    if (next === tab) return;
+    setTab(next);
+    setPage(1);
+    setSelectedIds(new Set());
+    setBatchResult(null);
+    closePreview();
+  };
+
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+    setPage(1);
+  };
+
+  const handleSubjectChange = (value: string) => {
+    setSubjectId(value);
+    setSelectedIds(new Set());
+    setPage(1);
+  };
+
+  const handleResetFilters = () => {
+    setKeywordInput("");
+    setSubjectId("");
+    setSelectedIds(new Set());
+    setPage(1);
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    const next = Number(value);
+    if (!Number.isFinite(next) || next <= 0) return;
+    setPageSize(next);
+    setSelectedIds(new Set());
+    setPage(1);
+  };
 
   const reviewMutation = useMutation({
-    mutationFn: async (state: Exclude<ConfirmState, null>) => {
+    mutationFn: async (
+      state: Extract<ConfirmState, { action: "approve" | "reject" }>,
+    ) => {
       if (state.action === "approve") {
-        const target = preview.data?.id === state.id
-          ? preview.data
-          : await apiRequest<AdminQuestionDetail>(`/questions/${state.id}`);
+        const target =
+          preview.data?.id === state.id
+            ? preview.data
+            : await apiRequest<AdminQuestionDetail>(`/questions/${state.id}`);
         const tableCount = unresolvedTableCount(target.content);
         if (tableCount > 0) {
-          throw new Error(`无法通过：仍有 ${tableCount} 个结构化表格需要在题库编辑页完成核验。`);
+          throw new Error(
+            `无法通过：仍有 ${tableCount} 个结构化表格需要在题库编辑页完成核验。`,
+          );
         }
-        return apiRequest<AdminQuestion>(`/questions/${state.id}/approve`, { method: "POST" });
+        return apiRequest<AdminQuestion>(`/questions/${state.id}/approve`, {
+          method: "POST",
+          exposeErrorDetail: true,
+        });
       }
       return apiRequest<AdminQuestion>(`/questions/${state.id}/reject`, {
         method: "POST",
-        body: JSON.stringify({ reason: rejectReason }),
+        exposeErrorDetail: true,
+        body: JSON.stringify({ reason: reason.trim() }),
       });
     },
     onSuccess: (result, variables) => {
       const label = variables.action === "approve" ? "已通过" : "已拒绝";
-      setMessage(`操作成功，题目 #${result.id} ${label}。`);
-      setConfirmState(null);
-      setRejectReason("");
+      setMessage({ text: `题目 #${result.id} ${label}。`, tone: "success" });
+      closeConfirm();
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(result.id);
+        return next;
+      });
+      if (previewId === result.id) closePreview();
       queryClient.invalidateQueries({ queryKey: ["review-questions"] });
-      if (previewId === result.id) {
-        queryClient.invalidateQueries({ queryKey: ["review-preview", previewId] });
-      }
+      queryClient.removeQueries({ queryKey: ["review-preview", result.id] });
     },
     onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "操作失败，请稍后重试。");
+      setMessage({
+        text: error instanceof Error ? error.message : "操作失败，请稍后重试。",
+        tone: "danger",
+      });
     },
   });
 
-  const batchReviewMutation = useMutation({
-    mutationFn: async (decision: "approved" | "rejected") =>
-      apiRequest<AdminQuestion[]>(`/questions/batch-${decision === "approved" ? "approve" : "reject"}`, {
-        method: "POST",
-        body: JSON.stringify({
-          ids: validSelectedIds,
-          ...(decision === "rejected" && rejectReason.trim()
-            ? { reason: rejectReason.trim() }
-            : {}),
-        } satisfies AdminQuestionBatchRequest),
-      }),
-    onSuccess: (_result, decision) => {
-      setMessage(`批量${decision === "approved" ? "通过" : "拒绝"}已提交。`);
-      setSelectedIds([]);
-      setRejectReason("");
+  const batchMutation = useMutation({
+    mutationFn: async (decision: "approved" | "rejected") => {
+      if (validSelectedIds.size === 0) throw new Error("请先选择题目。");
+      const ids = Array.from(validSelectedIds).sort((a, b) => a - b);
+      const trimmedReason = reason.trim();
+      const idempotencyKey = batchIdempotencyKeyFor(
+        `${decision}:${ids.join(",")}:${trimmedReason}`,
+      );
+      return apiRequest<BatchResult>(
+        `/questions/batch-${decision === "approved" ? "approve" : "reject"}`,
+        {
+          method: "POST",
+          exposeErrorDetail: true,
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify({
+            ids,
+            ...(decision === "rejected" && trimmedReason
+              ? { reason: trimmedReason }
+              : {}),
+          }),
+        },
+      );
+    },
+    onSuccess: (result, decision) => {
+      batchIdempotencyKeysRef.current.clear();
+      const normalized = normalizeBatchResult(result);
+      setBatchResult({ decision, result: normalized });
+      setMessage({
+        text: formatBatchReviewMessage(decision, normalized),
+        tone: normalized.failedItems.length > 0 ? "danger" : "success",
+      });
+      closeConfirm();
+      setSelectedIds(new Set());
+      if (previewId !== null && normalized.successIds.includes(previewId)) {
+        closePreview();
+      }
       queryClient.invalidateQueries({ queryKey: ["review-questions"] });
     },
     onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "批量审核失败，请稍后重试。");
+      setMessage({
+        text:
+          error instanceof Error ? error.message : "批量审核失败，请稍后重试。",
+        tone: "danger",
+      });
     },
   });
 
   const rollbackMutation = useMutation({
-    mutationFn: async (state: Extract<ConfirmState, null | { action: "rollback" }>) => {
-      if (!state) throw new Error("缺少回滚目标");
-      return apiRequest<AdminQuestion>(`/questions/${state.id}/rollback`, {
+    mutationFn: async (
+      state: Extract<ConfirmState, { action: "rollback" }>,
+    ) =>
+      apiRequest<AdminQuestion>(`/questions/${state.id}/rollback`, {
         method: "POST",
+        exposeErrorDetail: true,
         body: JSON.stringify({
           version: state.version,
-          reason: rejectReason || "恢复历史版本",
-        } satisfies AdminQuestionRollbackRequest),
+          reason: reason.trim() || "恢复历史版本",
+        }),
+      }),
+    onSuccess: (result, variables) => {
+      setMessage({
+        text: `题目 #${result.id} 已回滚到 v${variables.version} 并恢复审核通过。`,
+        tone: "success",
       });
-    },
-    onSuccess: (result) => {
-      setMessage(`操作成功，题目 #${result.id} 已回滚并恢复审核通过。`);
-      setConfirmState(null);
-      setRejectReason("");
+      closeConfirm();
+      if (previewId === result.id) closePreview();
       queryClient.invalidateQueries({ queryKey: ["review-questions"] });
-      if (previewId === result.id) {
-        queryClient.invalidateQueries({ queryKey: ["review-preview", previewId] });
-      }
+      queryClient.removeQueries({ queryKey: ["review-preview", result.id] });
     },
     onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "回滚失败，请稍后重试。");
+      setMessage({
+        text: error instanceof Error ? error.message : "回滚失败，请稍后重试。",
+        tone: "danger",
+      });
     },
   });
 
-  const pendingQuestion: AdminQuestionDetail | undefined = preview.data;
-  const pendingQuestionTableReviewCount = unresolvedTableCount(pendingQuestion?.content);
-  const previousVersion = previewVersionDetail.data;
-  const baselineVersion = selectRollbackBaselineVersion(previewVersions.data?.items);
-  const diffUnreliable = tab === "re_pending" && (
-    previewVersions.isError ||
-    previewVersionDetail.isError ||
-    (!previewVersions.isLoading && !baselineVersion) ||
-    (Boolean(baselineVersion) && !previewVersionDetail.isLoading && !previousVersion)
-  );
+  const reasonError = confirmState
+    ? reviewReasonError(confirmState.action, reason)
+    : null;
+  const confirmPending =
+    reviewMutation.isPending ||
+    batchMutation.isPending ||
+    rollbackMutation.isPending;
+  const dialogCopy = confirmDialogCopy(confirmState, validSelectedIds.size);
+  const reasonAction = confirmState?.action;
+  const showReasonInput = reasonAction ? reviewRequiresReason(reasonAction) : false;
+  const reasonLabel =
+    reasonAction === "rollback" ? "回滚原因" : "拒绝原因";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--color-text-hint)]">Review</p>
-        <h2 className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">审核工作台</h2>
-      </div>
-
-      <Card>
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div
+      className={`space-y-4 ${
+        canBatchReview && validSelectedIds.size > 0 ? "pb-28" : "pb-10"
+      }`}
+    >
+      <Card className="overflow-visible border border-[var(--color-border)] bg-white/90 shadow-[var(--shadow-card)]">
+        <CardHeader className="space-y-4 pb-4">
           <div>
-            <h3 className="font-display text-2xl font-bold text-[var(--ink)]">待审题目</h3>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">支持快速审核、diff 预览、驳回说明，提交后自动刷新列表。</p>
+            <h2 className="font-display text-2xl font-bold text-[var(--ink)]">
+              审核工作台
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-[var(--color-text-secondary)]">
+              处理已入库题目的重审、驳回恢复与版本回滚。首次导入审核请前往{" "}
+              <Link
+                href="/imports/review"
+                className="font-semibold text-[var(--color-primary-dark)] underline decoration-[var(--color-primary)]/35 underline-offset-2 transition hover:decoration-[var(--color-primary)]"
+              >
+                待审核题目
+              </Link>
+              。
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant={tab === "re_pending" ? "primary" : "secondary"} onClick={() => { setTab("re_pending"); setPreviewId(null); setSelectedIds([]); }}>
-              <AlertTriangle className="h-4 w-4" />
-              re_pending
-            </Button>
-            <Button variant={tab === "rejected" ? "primary" : "secondary"} onClick={() => { setTab("rejected"); setPreviewId(null); setSelectedIds([]); }}>
-              <XCircle className="h-4 w-4" />
-              rejected
-            </Button>
-          </div>
+
+          <ReviewToolbar
+            tab={tab}
+            onTabChange={handleTabChange}
+            keyword={keywordInput}
+            onKeywordChange={handleKeywordChange}
+            subjectId={subjectId}
+            subjectOptions={subjectOptions}
+            onSubjectChange={handleSubjectChange}
+            total={questions.data?.total}
+            isFetching={questions.isFetching}
+            hasActiveFilters={hasActiveFilters}
+            onResetFilters={handleResetFilters}
+            onRefresh={() => {
+              void questions.refetch();
+            }}
+          />
         </CardHeader>
+
         <CardContent className="space-y-4">
-          {message ? (
-            <p className="rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">{message}</p>
-          ) : null}
-          <label className="relative block max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
-            <Input
-              className="pl-9"
-              placeholder="搜索题干 / 科目"
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
+          {batchResult ? (
+            <ReviewBatchResult
+              decision={batchResult.decision}
+              result={batchResult.result}
+              onDismiss={() => setBatchResult(null)}
             />
-          </label>
-          {canBatchReview && items.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="secondary"
-                disabled={validSelectedIds.length === 0 || batchReviewMutation.isPending}
-                onClick={() => batchReviewMutation.mutate("approved")}
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                批量通过 {validSelectedIds.length ? `(${validSelectedIds.length})` : ""}
-              </Button>
-              <Button
-                variant="danger"
-                disabled={validSelectedIds.length === 0 || batchReviewMutation.isPending}
-                onClick={() => batchReviewMutation.mutate("rejected")}
-              >
-                <XCircle className="h-4 w-4" />
-                批量拒绝 {validSelectedIds.length ? `(${validSelectedIds.length})` : ""}
-              </Button>
-            </div>
           ) : null}
-          <div className="grid gap-4 xl:grid-cols-2">
-            {items.map((question) => (
-              <article key={question.id} className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-5">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    {canBatchReview ? (
-                      <input
-                        type="checkbox"
-                        checked={validSelectedIds.includes(question.id)}
-                        onChange={(event) => {
-                          setSelectedIds((current) =>
-                            toggleBatchSelection(current, question.id, event.target.checked),
-                          );
-                        }}
-                      />
-                    ) : null}
-                    <StatusBadge tone={statusTone(question.review_status)}>{question.review_status}</StatusBadge>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" onClick={() => setPreviewId(question.id)}>
-                      <Eye className="h-4 w-4" />
-                      预览
-                    </Button>
-                    {canReview ? (
-                      <>
-                        <Button
-                          variant="secondary"
-                          disabled={unresolvedTableCount(question.content) > 0}
-                          onClick={() => setConfirmState({ action: "approve", id: question.id })}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          通过
-                        </Button>
-                        <Button variant="danger" onClick={() => setConfirmState({ action: "reject", id: question.id })}>
-                          <XCircle className="h-4 w-4" />
-                          拒绝
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-                <h4 className="mt-4 whitespace-pre-wrap text-sm font-semibold text-[var(--ink)]">
-                  {textFromContent(question.content) || `题目 #${question.id}`}
-                </h4>
-                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-                  {question.subject_name || question.subject_code || "未分类"} · 难度 {question.difficulty} · {question.question_type || "未标注题型"}
-                </p>
-                {unresolvedTableCount(question.content) > 0 ? (
-                  <div className="mt-2"><StatusBadge tone="warning">表格待核验</StatusBadge></div>
-                ) : null}
-                {tab === "re_pending" ? (
-                  <div className="mt-2"><StatusBadge tone="warning">re_pending</StatusBadge></div>
-                ) : null}
-              </article>
-            ))}
-          </div>
-          {!questions.isLoading && items.length === 0 ? (
-            <p className="py-10 text-center text-sm text-[var(--color-text-hint)]">暂无待审题目</p>
-          ) : null}
-          {questions.isError ? <p className="text-sm text-[var(--color-danger)]">题库接口当前不可用，若 router 未挂载则属于后端阻塞。</p> : null}
+
+          <ReviewQuestionList
+            items={items}
+            tab={tab}
+            isLoading={questions.isLoading}
+            isFetching={questions.isFetching}
+            isError={questions.isError}
+            error={questions.error}
+            hasActiveFilters={hasActiveFilters}
+            selectedIds={validSelectedIds}
+            allChecked={allChecked}
+            canBatchReview={canBatchReview}
+            canReview={canReview}
+            onToggleAll={() =>
+              setSelectedIds((current) =>
+                toggleAllReviewSelection(
+                  current,
+                  items.map((item) => item.id),
+                ),
+              )
+            }
+            onToggleOne={(id) =>
+              setSelectedIds((current) => toggleReviewSelection(current, id))
+            }
+            onOpenPreview={openPreview}
+            onApprove={(id) => openConfirm({ action: "approve", id })}
+            onReject={(id) => openConfirm({ action: "reject", id })}
+            onResetFilters={handleResetFilters}
+            onRetry={() => {
+              void questions.refetch();
+            }}
+          />
+
+          <ReviewPagination
+            total={questions.data?.total ?? 0}
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            isFetching={questions.isFetching}
+            onPageChange={(nextPage) => {
+              setSelectedIds(new Set());
+              setPage(nextPage);
+            }}
+            onPageSizeChange={handlePageSizeChange}
+          />
         </CardContent>
       </Card>
 
-      {previewId !== null && pendingQuestion ? (
-        <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.28)]" onClick={() => setPreviewId(null)}>
-          <aside className="h-full w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-[var(--shadow-floating)]" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between gap-4">
-              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">题目详情与 Diff</h3>
-              <div className="flex gap-2">
-                {canReview ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      disabled={pendingQuestionTableReviewCount > 0}
-                      onClick={() => setConfirmState({ action: "approve", id: previewId })}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      通过
-                    </Button>
-                    <Button variant="danger" onClick={() => setConfirmState({ action: "reject", id: previewId })}>
-                      <XCircle className="h-4 w-4" />
-                      拒绝
-                    </Button>
-                  </>
-                ) : null}
-                {canRollback && previousVersion ? (
-                  <Button
-                    variant="secondary"
-                    onClick={() => setConfirmState({
-                      action: "rollback",
-                      id: previewId,
-                      version: previousVersion.version,
-                    })}
-                  >
-                    回滚到 v{previousVersion.version}
-                  </Button>
-                ) : null}
-                <Button variant="ghost" onClick={() => setPreviewId(null)}>关闭</Button>
-              </div>
-            </div>
-            <div className="mt-6 space-y-4 text-sm">
-              {renderDuplicateInfo(pendingQuestion.import_record)}
-              {tab === "re_pending" ? (
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                  <p className="font-semibold text-[var(--ink)]">
-                    对比基线：当前题目 vs {previousVersion ? `v${previousVersion.version} 历史快照` : "历史快照"}
-                  </p>
-                  {diffUnreliable ? <p className="mt-2 text-sm font-semibold text-[var(--color-warning)]">无法获取历史版本，diff 不可靠</p> : null}
-                </div>
-              ) : null}
-              {pendingQuestionTableReviewCount > 0 ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                  当前题目仍有 {pendingQuestionTableReviewCount} 个结构化表格需要人工核验，暂不能审核通过。
-                </div>
-              ) : null}
-              <section className="rounded-2xl border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-4">
-                <p className="mb-3 font-semibold text-[var(--ink)]">当前题干预览</p>
-                <QuestionContentRenderer
-                  content={pendingQuestion.content}
-                  fallbackText={textFromContent(pendingQuestion.content)}
-                  showTableMetadata
-                />
-              </section>
-              {renderDiff("题干", textFromContent(pendingQuestion.content), previousVersion ? textFromContent(previousVersion.content) : "")}
-              {renderDiff("选项", pendingQuestion.options ?? null, previousVersion ? previousVersion.options ?? null : null)}
-              {renderDiff("答案", pendingQuestion.answer, previousVersion ? previousVersion.answer : "")}
-              {renderDiff("解析", pendingQuestion.analysis ?? null, previousVersion ? previousVersion.analysis ?? null : null)}
-              {renderDiff("难度", pendingQuestion.difficulty, previousVersion ? previousVersion.difficulty : null)}
-              {renderDiff("知识点", pendingQuestion.knowledge_points ?? null, previousVersion ? previousVersion.knowledge_points ?? null : null)}
-            </div>
-          </aside>
-        </div>
+      {canBatchReview ? (
+        <ReviewBatchSelectionBar
+          selectedCount={validSelectedIds.size}
+          canBatchReject={tab === "re_pending"}
+          pending={batchMutation.isPending}
+          onBatchApprove={() => openConfirm({ action: "batch-approve" })}
+          onBatchReject={() => openConfirm({ action: "batch-reject" })}
+          onClear={() => setSelectedIds(new Set())}
+        />
       ) : null}
+
+      <ReviewDetailDrawer
+        open={previewId !== null}
+        questionId={previewId}
+        question={preview.data}
+        isLoading={preview.isLoading}
+        isError={preview.isError}
+        onRetry={() => {
+          void preview.refetch();
+        }}
+        onClose={closePreview}
+        canReview={canReview}
+        canRollback={canRollback}
+        versions={versionItems}
+        versionsLoading={versions.isLoading}
+        versionsError={versions.isError}
+        baselineVersion={effectiveBaseline}
+        onSelectBaseline={setBaselineVersion}
+        baselineDetail={baselineDetail.data}
+        baselineLoading={baselineDetail.isLoading}
+        baselineError={baselineDetail.isError}
+        onApprove={(id) => openConfirm({ action: "approve", id })}
+        onReject={(id) => openConfirm({ action: "reject", id })}
+        onRollback={(id, version) =>
+          openConfirm({ action: "rollback", id, version })
+        }
+      />
 
       <ConfirmDialog
         open={confirmState !== null}
-        title="确认审核操作"
-        description={
-          confirmState?.action === "reject"
-            ? "拒绝题目需要填写原因，确认后将提交到后端审核接口。"
-            : "确认后将提交审核通过操作，请确保题目内容已经完成检查。"
-        }
-        confirmText="提交"
-        danger={confirmState?.action === "reject"}
-        loading={reviewMutation.isPending || rollbackMutation.isPending}
-        onCancel={() => setConfirmState(null)}
+        title={dialogCopy.title}
+        description={dialogCopy.description}
+        confirmText={dialogCopy.confirmText}
+        danger={dialogCopy.danger}
+        loading={confirmPending}
+        confirmDisabled={Boolean(reasonError)}
+        onCancel={closeConfirm}
         onConfirm={() => {
-          if (!confirmState) return;
-          if (confirmState.action === "rollback") rollbackMutation.mutate(confirmState);
-          else reviewMutation.mutate(confirmState);
+          if (!confirmState || reasonError) return;
+          if (
+            confirmState.action === "approve" ||
+            confirmState.action === "reject"
+          ) {
+            reviewMutation.mutate(confirmState);
+            return;
+          }
+          if (confirmState.action === "rollback") {
+            rollbackMutation.mutate(confirmState);
+            return;
+          }
+          batchMutation.mutate(
+            confirmState.action === "batch-approve" ? "approved" : "rejected",
+          );
         }}
+      >
+        {showReasonInput ? (
+          <label className="block">
+            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
+              {reasonLabel}（必填）
+            </span>
+            <textarea
+              autoFocus
+              maxLength={REVIEW_REASON_MAX_LENGTH}
+              rows={3}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={
+                reasonAction === "rollback"
+                  ? "说明本次回滚的原因"
+                  : "说明拒绝原因，便于后续追溯"
+              }
+              aria-invalid={Boolean(reasonError)}
+              className="mt-2 w-full resize-y rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
+            />
+            <span className="mt-1 flex items-center justify-between gap-3 text-[11px]">
+              <span
+                className={
+                  reasonError
+                    ? "font-medium text-[var(--color-danger)]"
+                    : "text-[var(--color-text-hint)]"
+                }
+              >
+                {reasonError || "将记录到审核日志，便于后续追溯。"}
+              </span>
+              <span className="shrink-0 text-[var(--color-text-hint)]">
+                {reason.length}/{REVIEW_REASON_MAX_LENGTH}
+              </span>
+            </span>
+          </label>
+        ) : null}
+      </ConfirmDialog>
+
+      <MessageToast
+        message={message?.text ?? null}
+        tone={message?.tone}
+        onClose={clearMessage}
       />
-      {confirmState?.action === "reject" || confirmState?.action === "rollback" ? (
-        <div className="fixed inset-x-0 bottom-6 z-[60] mx-auto w-full max-w-md px-4">
-          <textarea
-            className="min-h-24 w-full rounded-2xl border border-[var(--color-border)] bg-white p-3 text-sm outline-none focus:border-[var(--color-primary)]"
-            placeholder="请输入拒绝原因"
-            value={rejectReason}
-            onChange={(event) => setRejectReason(event.target.value)}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
