@@ -21,8 +21,12 @@ export function useQuestionFeedback(
 
   useEffect(() => {
     if (!message) return;
-    const timer = scheduleTimerRef.current(() => setMessage(null), MESSAGE_AUTO_CLOSE_MS);
-    return () => cancelTimerRef.current(timer);
+    const schedule = scheduleTimerRef.current;
+    const timer = schedule(() => setMessage(null), MESSAGE_AUTO_CLOSE_MS);
+    return () => {
+      const cancel = cancelTimerRef.current;
+      cancel(timer);
+    };
   }, [message]);
 
   const clearMessage = useCallback(() => setMessage(null), []);
