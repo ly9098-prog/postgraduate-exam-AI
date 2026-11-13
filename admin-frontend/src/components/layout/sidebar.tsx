@@ -77,8 +77,9 @@ export function Sidebar() {
 
   // Keep the current page visible before paint when the route changes. useLayoutEffect
   // avoids a one-frame collapsed state when navigating directly into a child route.
+  // Routes outside every group (e.g. /dashboard) pass null here so the accordion
+  // closes instead of leaving the previous page's group open.
   useLayoutEffect(() => {
-    if (!activeGroupKey) return;
     setExpandedGroupKey(activeGroupKey);
   }, [activeGroupKey, pathname]);
 
@@ -88,7 +89,11 @@ export function Sidebar() {
 
   return (
     <aside className="hidden sticky top-0 h-full w-72 shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[rgba(255,253,248,0.82)] px-5 py-6 backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:block">
-      <Link href="/dashboard" className="mb-8 flex items-center gap-3">
+      <Link
+        href="/dashboard"
+        onClick={() => setExpandedGroupKey(null)}
+        className="mb-8 flex items-center gap-3"
+      >
         <div className="grid h-12 w-12 place-items-center rounded-2xl border border-[var(--color-primary)] bg-[var(--color-primary)] font-display text-xl font-black text-white shadow-[var(--shadow-crisp)]">
           MG
         </div>
