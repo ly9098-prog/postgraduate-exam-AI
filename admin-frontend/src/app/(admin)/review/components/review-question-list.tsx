@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   BookOpen,
@@ -252,6 +253,16 @@ export function ReviewQuestionList({
       ? "网络连接失败，请检查网络后重试。"
       : "请检查网络或后端服务后重试。";
 
+  // Entrance animation is for the first data render only. Re-running it on
+  // every filter change made the whole list fade from opacity 0 and read as
+  // flicker, so the stagger class is removed once the first pass completes.
+  const [animateEnter, setAnimateEnter] = useState(true);
+  useEffect(() => {
+    if (items.length === 0) return;
+    const timer = setTimeout(() => setAnimateEnter(false), 900);
+    return () => clearTimeout(timer);
+  }, [items.length]);
+
   return (
     <section className="space-y-3" aria-busy={isFetching}>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm">
@@ -264,18 +275,18 @@ export function ReviewQuestionList({
               disabled={items.length === 0}
             />
           ) : null}
-          <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
+            <Loader2
+              className={`h-3.5 w-3.5 ${
+                isFetching && !isLoading ? "animate-spin" : "opacity-0"
+              }`}
+              aria-hidden="true"
+            />
             当前页 {items.length} 题
           </span>
           {selectedIds.size > 0 ? (
             <span className="inline-flex h-7 items-center rounded-full bg-[var(--color-primary-light)] px-2.5 text-xs font-semibold text-[var(--color-primary-dark)]">
               已选 {selectedIds.size} 项
-            </span>
-          ) : null}
-          {isFetching && !isLoading ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-hint)]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              更新中
             </span>
           ) : null}
         </div>
@@ -289,8 +300,7 @@ export function ReviewQuestionList({
       {isLoading ? <LoadingRows /> : null}
 
       <div
-        key={`${tab}-${items.map((item) => item.id).join(",")}`}
-        className="stagger-enter space-y-2.5"
+        className={`space-y-2.5 ${animateEnter ? "stagger-enter" : ""}`}
       >
         {items.map((question) => (
           <ReviewRow

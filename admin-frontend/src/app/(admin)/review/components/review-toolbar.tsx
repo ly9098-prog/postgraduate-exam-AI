@@ -4,7 +4,6 @@ import type { KeyboardEvent, ReactNode } from "react";
 import {
   AlertTriangle,
   BookOpen,
-  Loader2,
   RefreshCw,
   RotateCcw,
   Search,
@@ -95,13 +94,7 @@ export function ReviewToolbar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-          {isFetching ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-hint)]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              更新中
-            </span>
-          ) : null}
-          <span className="inline-flex h-9 items-center rounded-full border border-[var(--color-border)] bg-white px-4">
+          <span className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-4 tabular-nums">
             共 <strong className="mx-1 text-[var(--ink)]">{total ?? 0}</strong> 条
           </span>
           <Button
@@ -111,7 +104,10 @@ export function ReviewToolbar({
             disabled={isFetching}
             className="h-9 rounded-full px-3"
           >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
             刷新
           </Button>
         </div>

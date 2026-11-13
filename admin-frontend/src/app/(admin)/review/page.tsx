@@ -119,7 +119,13 @@ export default function ReviewPage() {
     result: NormalizedBatchResult;
   } | null>(null);
   const batchIdempotencyKeysRef = useRef(new Map<string, string>());
-  const keyword = useDebouncedValue(keywordInput, 300);
+  const debouncedKeyword = useDebouncedValue(keywordInput, 300, () =>
+    setPage(1),
+  );
+  // Clearing the box should take effect immediately; otherwise the old
+  // keyword would still drive one intermediate request while the reset
+  // subject/page filters are already applied.
+  const keyword = keywordInput.trim() === "" ? "" : debouncedKeyword;
 
   const queryParams = useMemo(
     () => buildReviewQuery({ tab, keyword, subjectId, page, pageSize }),
@@ -251,7 +257,7 @@ export default function ReviewPage() {
 
   const handleKeywordChange = (value: string) => {
     setKeywordInput(value);
-    setPage(1);
+    if (value.trim() === "") setPage(1);
   };
 
   const handleSubjectChange = (value: string) => {
