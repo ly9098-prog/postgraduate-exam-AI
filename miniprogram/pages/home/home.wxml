@@ -1,5 +1,5 @@
 <app-dialog id="appDialog" theme="mint"></app-dialog>
-<view class="home-page">
+<view class="home-page" bindtap="dismissLoginGuideFromPage">
   <!-- Custom brand navigation -->
   <view class="home-nav" style="height: {{navHeight}}px; padding-top: {{statusBarHeight}}px;">
     <view class="home-nav-inner" style="height: {{navContentHeight}}px; padding-right: {{navRightPadding}}px;">
@@ -14,10 +14,22 @@
           <text class="brand-caption">STUDY DESK</text>
         </view>
       </view>
-      <view class="profile-chip" bindtap="openProfileSheet" hover-class="profile-chip-pressed" aria-label="编辑个人资料">
-        <image wx:if="{{user.avatar_url || user.avatarUrl || user.avatar}}" class="profile-avatar profile-avatar-image" src="{{user.avatar_url || user.avatarUrl || user.avatar}}" mode="aspectFill" />
-        <view wx:else class="profile-avatar">{{userInitial}}</view>
-        <text class="profile-level">{{guestMode ? '游客' : studyLevel}}</text>
+      <view class="profile-entry">
+        <view id="home-profile-chip" class="profile-chip" bindtap="openProfileSheet" hover-class="profile-chip-pressed" aria-role="button" aria-label="{{guestMode ? '登录' : '编辑个人资料'}}" aria-expanded="{{guestMode && showLoginGuide}}" aria-controls="home-login-guide">
+          <image wx:if="{{user.avatar_url || user.avatarUrl || user.avatar}}" class="profile-avatar profile-avatar-image" src="{{user.avatar_url || user.avatarUrl || user.avatar}}" mode="aspectFill" />
+          <view wx:else class="profile-avatar">{{userInitial}}</view>
+          <text class="profile-level">{{guestMode ? '游客' : studyLevel}}</text>
+        </view>
+        <view wx:if="{{guestMode && showLoginGuide}}" id="home-login-guide" class="login-guide {{loginGuideReady ? '' : 'login-guide-pending'}}" style="left: {{loginGuideLeft}}px;" catchtap="noop" aria-role="group" aria-label="登录引导" aria-hidden="{{!loginGuideReady}}">
+          <view class="login-guide-arrow" style="left: {{loginGuideArrowLeft}}px;" aria-hidden="true"></view>
+          <view class="login-guide-content">
+            <text class="login-guide-title">登录后保存学习记录</text>
+            <button class="login-guide-action" size="mini" style="display: flex; font-size: 12px; line-height: 20px;" catchtap="openLoginGuide" hover-class="login-guide-control-pressed"><text class="login-guide-action-label">立即登录</text><view class="login-guide-action-arrow" aria-hidden="true"></view></button>
+          </view>
+          <button class="login-guide-close" size="mini" catchtap="closeLoginGuide" hover-class="login-guide-control-pressed" aria-label="关闭登录引导，不再提示">
+            <view class="line-icon icon-close" aria-hidden="true"></view>
+          </button>
+        </view>
       </view>
     </view>
   </view>
