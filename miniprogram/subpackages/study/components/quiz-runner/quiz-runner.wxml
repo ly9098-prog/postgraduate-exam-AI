@@ -91,7 +91,7 @@
         <text class="runner-back-symbol line-icon icon-chevron-left" aria-hidden="true"></text>
       </view>
     </view>
-    <view class="runner-sheet-trigger" bindtap="toggleSheet" hover-class="runner-control-pressed" aria-role="button" aria-label="打开答题卡，已作答 {{answeredCount || 0}} / {{totalCount || 0}} 题">
+    <view class="runner-sheet-trigger" wx:if="{{mode !== 'practice'}}" bindtap="toggleSheet" hover-class="runner-control-pressed" aria-role="button" aria-label="打开答题卡，已作答 {{answeredCount || 0}} / {{totalCount || 0}} 题">
       <image class="runner-sheet-trigger-icon" src="/assets/icons/practice/notebook-tabs.svg" mode="aspectFit" aria-hidden="true" />
     </view>
   </view>
@@ -107,9 +107,14 @@
       <text class="runner-number-divider">/</text>
       <text class="runner-number-total">{{totalCount < 10 ? '0' : ''}}{{totalCount || 0}}</text>
     </view>
-    <view class="runner-timer-pill" aria-label="{{mode === 'exam' ? '剩余时间' : '已用时'}} {{elapsedText}}">
-      <image class="runner-timer-icon" src="/assets/icons/practice/clock.svg" mode="aspectFit" aria-hidden="true"></image>
-      <text class="runner-timer">{{elapsedText}}</text>
+    <view class="runner-number-actions">
+      <view class="runner-sheet-trigger" wx:if="{{mode === 'practice'}}" bindtap="toggleSheet" hover-class="runner-control-pressed" aria-role="button" aria-label="打开答题卡，已作答 {{answeredCount || 0}} / {{totalCount || 0}} 题">
+        <image class="runner-sheet-trigger-icon" src="/assets/icons/practice/notebook-tabs.svg" mode="aspectFit" aria-hidden="true" />
+      </view>
+      <view class="runner-timer-pill" aria-label="{{mode === 'exam' ? '剩余时间' : '已用时'}} {{elapsedText}}">
+        <image class="runner-timer-icon" src="/assets/icons/practice/clock.svg" mode="aspectFit" aria-hidden="true"></image>
+        <text class="runner-timer">{{elapsedText}}</text>
+      </view>
     </view>
   </view>
   <view class="runner-segment-progress" wx:if="{{questions && questions.length > 0}}" aria-label="答题进度">

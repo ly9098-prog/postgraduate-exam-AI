@@ -6,9 +6,33 @@ if (/(```|[{};=]|\/\/)/.test(line)) return escaped.replace(/\t/g, '    ').replac
 return escaped.replace(/ {2,}/g, function (spaces) { return ' ' + '&nbsp;'.repeat(spaces.length - 1) })
 }).join('<br>')
 }
+var LATEX_DELIMITER_PAIR = /\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)/g
+function _normalizeLatexDelimiters(text) {
+if (!text) return ''
+var source = String(text)
+if (source.indexOf('\\') === -1) return source
+// Imports and model output also use \(...\)/\[...\]; the bundled mp-html KaTeX
+// plugin only consumes $...$/$$...$$, so normalize equivalent delimiters here.
+return source.replace(LATEX_DELIMITER_PAIR, function (match, blockInner, inlineInner, offset, whole) {
+var replacement = blockInner !== undefined ? '$$' + blockInner + '$$' : '$' + inlineInner + '$'
+var before = offset > 0 ? whole.charAt(offset - 1) : ''
+var end = offset + match.length
+var after = end < whole.length ? whole.charAt(end) : ''
+// Adjacent math spans would collapse into one $$ token and mp-html drops
+// both formulas; separate the junction with a space.
+var padBefore = before === '$'
+var padAfter = after === '$' || (after === '\\' && /^\\[\(\[]/.test(whole.slice(end)))
+return (padBefore ? ' ' : '') + replacement + (padAfter ? ' ' : '')
+})
+}
+function _hasLatexDelimiters(text) {
+if (!text) return false
+var source = String(text)
+return /\\\([\s\S]*?\\\)/.test(source) || /\\\[[\s\S]*?\\\]/.test(source)
+}
 function _textToHtml(text) {
 if (!text) return ''
-var parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
+var parts = _normalizeLatexDelimiters(text).split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
 var out = parts.map(function (part, i) {
 if (i % 2 === 1) return part.replace(/\\(n|t|r)(?![a-zA-Z])/g, ' ')
 return _formatHtmlTextSegment(part)
@@ -100,14 +124,15 @@ return stripped
 }
 function _needsRichRender(text) {
 if (!text) return false
-return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text) || /\n/.test(text)
+var source = _normalizeLatexDelimiters(text)
+return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(source) || /<\/?[a-z][\s\S]*>/i.test(text) || /\n/.test(text)
 }
 function _escapeRegExp(text) {
 return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 function _toPlainInlineMathText(text) {
 if (!text) return ''
-var source = _repairFalseNumberMarkerBreaks(String(text))
+var source = _repairFalseNumberMarkerBreaks(_normalizeLatexDelimiters(String(text)))
 if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
 // Superscript/subscript syntax must keep the KaTeX render path.  The lightweight
 // formatter can only flatten a subset of TeX scripts; stripping `$...$` first made
@@ -146,6 +171,8 @@ return [{ name: 'p', attrs: {}, children: children }]
 module.exports = {
   _formatHtmlTextSegment,
   _textToHtml,
+  _normalizeLatexDelimiters,
+  _hasLatexDelimiters,
   _toCanonicalForm,
   _repairFalseNumberMarkerBreaks,
   _trimEmptyLines,

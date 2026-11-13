@@ -53,6 +53,13 @@ copy.language = String(s.language || '')
 result.push(copy)
 continue
 }
+if (type === 'text') {
+copy.text = String(s.text != null ? s.text : '')
+copy.needsRich = stemRender.needsRichRender(copy.text)
+copy.html = copy.needsRich ? stemRender.textToHtml(copy.text) : ''
+result.push(copy)
+continue
+}
 if (copy.url) copy.url = stemRender.resolveAssetUrl(copy.url)
 result.push(copy)
 }

@@ -110,4 +110,14 @@ for (const pkg of ['study', 'exam']) {
     assert.equal(segment.url, '/choice.png')
     assert.equal(list[1]._needsRich, false)
   })
+
+  test(`${pkg}: options with \\(...\\) LaTeX delimiters keep the KaTeX render path`, () => {
+    const { adapter } = loadAdapter(pkg)
+    const options = { A: 'm,\\(\\lceil m/2\\rceil-2\\)-2', B: 'm-1' }
+    const list = adapter.buildOptionListReadonly(
+      { question_type: 'single_choice' }, options, ['A', 'B'], 'A', 'B')
+    assert.equal(list[0]._needsRich, true)
+    assert.equal(list[0]._html, '<p>m,$\\lceil m/2\\rceil-2$-2</p>')
+    assert.equal(list[1]._needsRich, false)
+  })
 }

@@ -1,7 +1,8 @@
 var { appConfig, containsCode, shouldReconstructCode, reconstructCode,
   sanitizeImportedCodeArtifacts, tableStructure } = require('./stem-render-dependencies')
 var { _repairFalseNumberMarkerBreaks, _toPlainInlineMathText,
-  _toPlainSimpleInlineMathText, _buildRichTextNodes, _textToHtml } = require('./stem-render-text')
+  _toPlainSimpleInlineMathText, _buildRichTextNodes, _textToHtml,
+  _hasLatexDelimiters } = require('./stem-render-text')
 var { _cleanStemText } = require('./stem-render-options')
 var { _segmentsToText, _segmentsAgreeWithCanonicalStem, _hasCodeSegments,
   _hasVisualSegments, _restoreTextSegmentFormatting, _repairFalseRangeBreaksInSegments,
@@ -100,8 +101,9 @@ function renderMixed(state, stemBlocks, config, modes) {
   state.segments = []
 }
 
-function hasLatexCommands(cleanedStem) {
+function hasLatexCommands(cleanedStem, isCode) {
   if (/\$\$[\s\S]*?\$\$/.test(cleanedStem)) return true
+  if (!isCode && _hasLatexDelimiters(cleanedStem)) return true
   var latexMatches = cleanedStem.match(/\\[a-zA-Z]+/g)
   if (!latexMatches) return false
   var cEscapes = { n: true, t: true, r: true }
@@ -139,13 +141,14 @@ function renderCode(state, q, config, modes) {
 }
 
 function renderSingle(state, q, config, modes) {
-  var hasLatex = hasLatexCommands(state.cleanedStem)
-  var selfHealCode = config.SAFE_MODE && containsCode(state.cleanedStem)
+  var stemHasCode = containsCode(state.cleanedStem)
+  var hasLatex = hasLatexCommands(state.cleanedStem, stemHasCode)
+  var selfHealCode = config.SAFE_MODE && stemHasCode
   var plainStem = _toPlainInlineMathText(state.cleanedStem) ||
     _toPlainSimpleInlineMathText(state.cleanedStem)
   var converted = typeof plainStem === 'string' && plainStem.length > 0 &&
     !containsUnresolvedLatex(plainStem)
-  if (converted && !containsCode(state.cleanedStem)) {
+  if (converted && !stemHasCode) {
     renderPlain(state, plainStem, modes)
   } else if (hasLatex && !selfHealCode) {
     state.mode = modes.LATEX
@@ -153,7 +156,7 @@ function renderSingle(state, q, config, modes) {
     state.richTextNodes = []
     state.segments = []
     state.blocks = []
-  } else if (containsCode(state.cleanedStem)) {
+  } else if (stemHasCode) {
     renderCode(state, q, config, modes)
   } else {
     // Keep the fallback's second conversion attempt and its original timing.

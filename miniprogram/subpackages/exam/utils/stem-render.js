@@ -1,6 +1,6 @@
 var { appConfig, questionImageCache } = require('./stem-render-dependencies')
 var { _textToHtml, _needsRichRender, _escapeRegExp, _toPlainInlineMathText,
-  _buildRichTextNodes } = require('./stem-render-text')
+  _buildRichTextNodes, _normalizeLatexDelimiters, _hasLatexDelimiters } = require('./stem-render-text')
 var { _stripLeadingOptionLabel, _cleanStemText } = require('./stem-render-options')
 var { _segmentsToText, _textToSegments } = require('./stem-render-segments')
 var { splitStemBlocks, splitInlineTextAndCode } = require('./stem-render-blocks')
@@ -91,6 +91,8 @@ computeCodeHash: _hashString,
 renderDiff: _renderDiff,
 cleanStemText: _cleanStemText,
 textToHtml: _textToHtml,
+normalizeLatexDelimiters: _normalizeLatexDelimiters,
+hasLatexDelimiters: _hasLatexDelimiters,
 buildRichTextNodes: _buildRichTextNodes,
 segmentsToText: _segmentsToText,
 textToSegments: _textToSegments,

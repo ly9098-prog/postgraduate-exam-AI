@@ -22,5 +22,10 @@ assert(!wxss.includes('.ai-visual-context'), 'unused visual upload styles should
 assert(js.includes("wq.ai_analysis_status && wq.ai_analysis_status !== 'ready'"), 'stale/generating AI caches must not be treated as ready')
 assert(aiState.includes("!wq.ai_analysis_status || wq.ai_analysis_status === 'ready'"), 'only ready/legacy caches may render directly')
 assert(js.includes('return aiState._resolvePreferredAnalysis(wq, _hasStoredAnalysisValue, _normalizeAiPayload)'), 'page must delegate preferred cache selection')
+assert(wxml.includes('<template name="ai-loading-sections">'), 'regeneration skeleton template is present')
+assert(wxml.includes('ai-regenerating-skeleton'), 'regeneration renders skeleton sections')
+assert(wxml.includes('wx:if="{{aiRegenerating}}"'), 'regeneration state swaps sections for the skeleton')
+assert(!wxml.includes('ai-regenerating-banner'), 'duplicate regeneration banner is removed')
+assert(wxml.includes('正在重新生成，先保留当前解析'), 'regeneration status stays exposed to assistive technology')
 
 console.log('wrong-detail AI DB-image-only regression passed')

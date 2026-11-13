@@ -1,5 +1,5 @@
 var { containsCode } = require('./stem-render-dependencies')
-var { _toPlainInlineMathText, _toPlainSimpleInlineMathText } = require('./stem-render-text')
+var { _toPlainInlineMathText, _toPlainSimpleInlineMathText, _hasLatexDelimiters } = require('./stem-render-text')
 function _isCodeBlock(text) {
 if (!text || !text.trim()) return false
 if (/^```/.test(text.trim())) return true
@@ -117,6 +117,7 @@ var complexCmds = 'frac|sqrt|sum|prod|int|iint|iiint|oint|begin|end|left|right|'
 return (
 /\$\$[\s\S]*?\$\$/.test(value) ||
 /\$[^$\n]+?\$/.test(value) ||
+_hasLatexDelimiters(value) ||
 new RegExp('\\\\(' + complexCmds + ')\\b').test(value)
 )
 }
@@ -130,6 +131,7 @@ if (typeof plain === 'string' && plain.length > 0 && !containsUnresolvedLatex(pl
 return 'RICH_TEXT'
 }
 if (/\$\$[\s\S]*?\$\$/.test(text)) return 'LATEX'
+if (_hasLatexDelimiters(text)) return 'LATEX'
 if (/\\[a-zA-Z]+/.test(text) && !/\\[nrt]/.test(text)) return 'LATEX'
 return 'RICH_TEXT'
 }

@@ -12,7 +12,8 @@ const exportedNames = [
   'RENDER_MODE', 'buildRenderModel', 'resetRenderGuard', 'setRenderGuardPage',
   'buildOptionList', 'optionTextToHtml', 'toPlainInlineMathText', 'needsRichRender',
   'stripLeadingOptionLabel', 'computeCodeHash', 'renderDiff', 'cleanStemText',
-  'textToHtml', 'buildRichTextNodes', 'segmentsToText', 'textToSegments',
+  'textToHtml', 'normalizeLatexDelimiters', 'hasLatexDelimiters', 'buildRichTextNodes',
+  'segmentsToText', 'textToSegments',
   'splitStemBlocks', 'splitInlineTextAndCode', 'resolveAssetUrl',
 ]
 
@@ -136,6 +137,8 @@ function assertHelperParity(study, exam) {
     ['computeCodeHash', ['a\nb']], ['renderDiff', [' a\nb', 'a\nc']],
     ['cleanStemText', ['stem\nA. one\nB. two', { A: 'one', B: 'two' }, ['A', 'B']]],
     ['textToHtml', ['<a>\n$x$']], ['buildRichTextNodes', ['a\nb']],
+    ['normalizeLatexDelimiters', ['\\(x^2\\)$y$']],
+    ['hasLatexDelimiters', ['\\(x\\) and \\[y\\]']],
     ['segmentsToText', [[{ type: 'text', text: 'a' }, { type: 'newline' }]]],
     ['textToSegments', ['a\nb']], ['splitStemBlocks', ['Explain.\n\nint x = 1;']],
     ['splitInlineTextAndCode', ['Explain. int x = 1;']], ['resolveAssetUrl', [null]],

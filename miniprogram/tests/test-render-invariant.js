@@ -116,6 +116,14 @@ group('OCR imported display LaTeX → LATEX', function () {
   assertEq(result.mode, RENDER_MODE.LATEX, 'OCR $$ → LATEX')
 })
 
+group('Inline \\(...\\) LaTeX delimiters → LATEX', function () {
+  var q = { id: 9, content: { text: '下线为 \\(\\lceil m/2\\rceil-2\\) 个关键字' } }
+  var result = buildRenderModel(q, null, mockConfig)
+  assertEq(result.mode, RENDER_MODE.LATEX, 'inline \\(...\\) → LATEX')
+  assert(result.html.indexOf('$\\lceil m/2\\rceil-2$') >= 0,
+    'KaTeX delimiters are normalized for mp-html')
+})
+
 // ── SEGMENTS mode ──
 
 group('SEGMENTS mode (enableMathImage=true)', function () {

@@ -1,4 +1,12 @@
 <page-meta page-style="{{diagnosisSheetVisible || teacherSheetVisible ? 'overflow: hidden;' : ''}}"></page-meta>
+<template name="ai-loading-sections">
+<view class="ai-skeleton-section" wx:for="{{sections}}" wx:key="*this">
+<view class="skeleton-title-row"><view class="skeleton-index"></view><view class="skeleton-title"></view></view>
+<view class="skeleton-line long"></view>
+<view class="skeleton-line medium"></view>
+<view class="skeleton-line short"></view>
+</view>
+</template>
 <premium-nav
   title="错题详情"
   variant="dark"
@@ -121,18 +129,14 @@
 <view class="ai-mark {{aiCards && !aiFallback && !aiCards.formatError ? 'is-ready' : ''}}"><view class="ai-mark-dot"></view><text>{{aiCards && !aiFallback ? (aiCards.formatError ? '需更新' : '已生成') : 'AI'}}</text></view>
 </view>
 <view wx:if="{{!aiCards && (aiSkeletonVisible || aiLoading)}}" class="ai-loading-state">
-<view class="ai-skeleton-section" wx:for="{{aiSkeletonSections}}" wx:key="*this">
-<view class="skeleton-title-row"><view class="skeleton-index"></view><view class="skeleton-title"></view></view>
-<view class="skeleton-line long"></view>
-<view class="skeleton-line medium"></view>
-<view class="skeleton-line short"></view>
+<template is="ai-loading-sections" data="{{sections: aiSkeletonSections}}" />
 </view>
+<view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state">
+<view wx:if="{{aiRegenerating}}" class="ai-loading-state ai-regenerating-skeleton" aria-live="polite">
+<text class="ai-sr-only">正在重新生成，先保留当前解析</text>
+<template is="ai-loading-sections" data="{{sections: aiSkeletonSections}}" />
 </view>
-<view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state {{aiRegenerating ? 'is-regenerating' : ''}}">
-<view wx:if="{{aiRegenerating}}" class="ai-regenerating-banner">
-<view class="loading-spinner mini"></view>
-<text>正在重新生成，先保留当前解析</text>
-</view>
+<block wx:else>
 <view wx:if="{{aiCards.formatError && !aiCards.mistakeDiagnosis.raw && !aiCards.knowledgePatch.raw && !aiCards.reviewTask.raw}}" class="ai-fallback inside">
 <view class="fallback-mark">!</view>
 <text class="fallback-title">AI 解析格式异常</text>
@@ -162,6 +166,7 @@
 <view class="ai-section-body"><mp-html wx:if="{{aiCards.reviewTask.needsRich}}" content="{{aiCards.reviewTask.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.reviewTask.text}}</text></view>
 </view>
 </view>
+</block>
 <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
 <view class="ai-result-tools">
 <view class="ai-hint-row">

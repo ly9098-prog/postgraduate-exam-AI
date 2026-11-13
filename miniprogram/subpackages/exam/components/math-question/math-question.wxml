@@ -1,6 +1,7 @@
 <view class="math-question-wrap">
 <block wx:for="{{localSegments}}" wx:key="index">
-<text wx:if="{{item.type === 'text'}}" class="seg-text">{{item.text}}</text>
+<mp-html wx:if="{{item.type === 'text' && item.needsRich}}" content="{{item.html}}" set-title="{{false}}" copy-link="{{false}}" class="seg-text" />
+<text wx:elif="{{item.type === 'text'}}" class="seg-text">{{item.text}}</text>
 <view wx:elif="{{item.type === 'math_image' && item.display}}" class="seg-math-display-wrap">
 <image
         fade-in="{{false}}"
